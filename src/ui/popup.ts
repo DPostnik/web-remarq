@@ -15,8 +15,9 @@ interface DetailCallbacks {
 }
 
 interface Position {
-  top: number
-  left: number
+  top: number        // absolute page Y below the element
+  left: number       // absolute page X
+  anchorBottom: number // absolute page Y above the element (for flipping)
 }
 
 const POPUP_WIDTH = 300
@@ -81,7 +82,11 @@ export class Popup {
     this.container.appendChild(popup)
     this.popupEl = popup
 
-    this.adjustPosition(popup, position)
+    // Measure after layout, then position
+    requestAnimationFrame(() => {
+      this.adjustPosition(popup, position)
+      textarea.focus()
+    })
 
     // Cmd/Ctrl+Enter to submit
     this.keyHandler = (e: KeyboardEvent) => {
@@ -97,9 +102,6 @@ export class Popup {
       }
     }
     document.addEventListener('keydown', this.keyHandler)
-
-    // Focus textarea after render
-    requestAnimationFrame(() => textarea.focus())
   }
 
   showDetail(
@@ -157,7 +159,10 @@ export class Popup {
     this.container.appendChild(popup)
     this.popupEl = popup
 
-    this.adjustPosition(popup, position)
+    // Measure after layout, then position
+    requestAnimationFrame(() => {
+      this.adjustPosition(popup, position)
+    })
 
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -184,31 +189,31 @@ export class Popup {
   }
 
   private adjustPosition(popup: HTMLElement, position: Position): void {
-    const popupRect = popup.getBoundingClientRect()
-    const viewH = window.innerHeight
-    const viewW = window.innerWidth
+    const popupHeight = popup.offsetHeight
+    const viewportBottom = window.scrollY + window.innerHeight
+    const viewportRight = window.scrollX + window.innerWidth
 
     let top = position.top
     let left = position.left
 
-    // Flip above if overflows bottom
-    if (top + popupRect.height > viewH - POPUP_MARGIN) {
-      top = position.top - popupRect.height - 16
+    // Flip above element if overflows viewport bottom
+    if (top + popupHeight > viewportBottom - POPUP_MARGIN) {
+      top = position.anchorBottom - popupHeight
     }
 
-    // Clamp to top edge
-    if (top < POPUP_MARGIN) {
-      top = POPUP_MARGIN
+    // Clamp: don't go above visible area
+    if (top < window.scrollY + POPUP_MARGIN) {
+      top = window.scrollY + POPUP_MARGIN
     }
 
-    // Clamp to right edge
-    if (left + POPUP_WIDTH > viewW - POPUP_MARGIN) {
-      left = viewW - POPUP_WIDTH - POPUP_MARGIN
+    // Clamp right edge
+    if (left + POPUP_WIDTH > viewportRight - POPUP_MARGIN) {
+      left = viewportRight - POPUP_WIDTH - POPUP_MARGIN
     }
 
-    // Clamp to left edge
-    if (left < POPUP_MARGIN) {
-      left = POPUP_MARGIN
+    // Clamp left edge
+    if (left < window.scrollX + POPUP_MARGIN) {
+      left = window.scrollX + POPUP_MARGIN
     }
 
     popup.style.top = `${top}px`

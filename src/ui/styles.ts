@@ -131,7 +131,7 @@ const CSS = `
 .remarq-marker[data-status="resolved"] { background: var(--remarq-resolved); opacity: 0.7; }
 
 .remarq-popup {
-  position: fixed;
+  position: absolute;
   z-index: 2147483647;
   width: 300px;
   background: var(--remarq-bg);

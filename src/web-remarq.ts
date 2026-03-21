@@ -118,8 +118,9 @@ function handleInspectClick(e: MouseEvent): void {
       text: target.textContent?.trim().slice(0, 30) ?? '',
     },
     {
-      top: rect.bottom + 8,
-      left: rect.left,
+      top: window.scrollY + rect.bottom + 8,
+      left: window.scrollX + rect.left,
+      anchorBottom: window.scrollY + rect.top - 8,
     },
     (comment) => {
       const fp = createFingerprint(target, {
@@ -182,7 +183,11 @@ function handleMarkerClick(annotationId: string): void {
       comment: ann.comment,
       status: ann.status,
     },
-    { top: rect.bottom + 8, left: rect.left },
+    {
+      top: window.scrollY + rect.bottom + 8,
+      left: window.scrollX + rect.left,
+      anchorBottom: window.scrollY + rect.top - 8,
+    },
     {
       onResolve: () => {
         storage.update(ann.id, { status: 'resolved' })

@@ -19,6 +19,9 @@ interface Position {
   left: number
 }
 
+const POPUP_WIDTH = 300
+const POPUP_MARGIN = 8
+
 export class Popup {
   private popupEl: HTMLElement | null = null
   private keyHandler: ((e: KeyboardEvent) => void) | null = null
@@ -35,8 +38,6 @@ export class Popup {
 
     const popup = document.createElement('div')
     popup.className = 'remarq-popup'
-    popup.style.top = `${position.top}px`
-    popup.style.left = `${position.left}px`
 
     const header = document.createElement('div')
     header.className = 'remarq-popup-header'
@@ -80,6 +81,8 @@ export class Popup {
     this.container.appendChild(popup)
     this.popupEl = popup
 
+    this.adjustPosition(popup, position)
+
     // Cmd/Ctrl+Enter to submit
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -108,8 +111,6 @@ export class Popup {
 
     const popup = document.createElement('div')
     popup.className = 'remarq-popup'
-    popup.style.top = `${position.top}px`
-    popup.style.left = `${position.left}px`
 
     const header = document.createElement('div')
     header.className = 'remarq-popup-header'
@@ -156,6 +157,8 @@ export class Popup {
     this.container.appendChild(popup)
     this.popupEl = popup
 
+    this.adjustPosition(popup, position)
+
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         this.hide()
@@ -178,5 +181,37 @@ export class Popup {
 
   destroy(): void {
     this.hide()
+  }
+
+  private adjustPosition(popup: HTMLElement, position: Position): void {
+    const popupRect = popup.getBoundingClientRect()
+    const viewH = window.innerHeight
+    const viewW = window.innerWidth
+
+    let top = position.top
+    let left = position.left
+
+    // Flip above if overflows bottom
+    if (top + popupRect.height > viewH - POPUP_MARGIN) {
+      top = position.top - popupRect.height - 16
+    }
+
+    // Clamp to top edge
+    if (top < POPUP_MARGIN) {
+      top = POPUP_MARGIN
+    }
+
+    // Clamp to right edge
+    if (left + POPUP_WIDTH > viewW - POPUP_MARGIN) {
+      left = viewW - POPUP_WIDTH - POPUP_MARGIN
+    }
+
+    // Clamp to left edge
+    if (left < POPUP_MARGIN) {
+      left = POPUP_MARGIN
+    }
+
+    popup.style.top = `${top}px`
+    popup.style.left = `${left}px`
   }
 }

@@ -56,11 +56,12 @@ function refreshMarkers(): void {
 
 function handleInspectClick(e: MouseEvent): void {
   if (!inspecting) return
-  e.preventDefault()
-  e.stopPropagation()
 
   const target = e.target as HTMLElement
   if (!target || target.closest('[data-remarq-theme]')) return
+
+  e.preventDefault()
+  e.stopPropagation()
 
   overlay.hide()
   setInspecting(false)

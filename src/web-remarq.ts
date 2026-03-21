@@ -162,6 +162,7 @@ function handleInspectClick(e: MouseEvent): void {
         comment,
         fingerprint: fp,
         route: currentRoute(),
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
         timestamp: Date.now(),
         status: 'pending',
       }
@@ -245,27 +246,28 @@ function exportMarkdown(): void {
     if (fp.textContent) desc += ` "${fp.textContent}"`
     if (fp.parentAnchor) desc += ` (${fp.parentAnchor})`
     if (fp.dataAnnotate) desc += fp.parentAnchor ? ` > ${fp.dataAnnotate}` : ` (${fp.dataAnnotate})`
-    lines.push(`${i + 1}. [${ann.status}] ${desc}: "${ann.comment}"`)
+    const viewport = ann.viewport ? ` @${ann.viewport}` : ''
+    lines.push(`${i + 1}. [${ann.status}]${viewport} ${desc}: "${ann.comment}"`)
   })
 
   const text = lines.join('\n')
-  try {
-    navigator.clipboard.writeText(text)
-  } catch {
-    console.warn('[web-remarq] Clipboard write failed')
-  }
+  const blob = new Blob([text], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `remarq-annotations-${Date.now()}.md`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function exportJSON(): void {
   const data = storage.exportJSON()
   const json = JSON.stringify(data, null, 2)
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `remarq-annotations-${Date.now()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    navigator.clipboard.writeText(json)
+  } catch {
+    console.warn('[web-remarq] Clipboard write failed')
+  }
 }
 
 function setupMutationObserver(): void {

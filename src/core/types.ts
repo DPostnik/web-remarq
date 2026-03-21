@@ -24,6 +24,7 @@ export interface Annotation {
   comment: string
   fingerprint: ElementFingerprint
   route: string
+  viewport: string  // e.g. "1920x1080"
   timestamp: number
   status: 'pending' | 'resolved'
 }

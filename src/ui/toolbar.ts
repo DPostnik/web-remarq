@@ -116,14 +116,14 @@ export class Toolbar {
     this.exportMenu.className = 'remarq-export-menu'
 
     const mdBtn = document.createElement('button')
-    mdBtn.textContent = 'Markdown (clipboard)'
+    mdBtn.textContent = 'Markdown (file)'
     mdBtn.addEventListener('click', () => {
       this.callbacks.onExportMd()
       this.closeExportMenu()
     })
 
     const jsonBtn = document.createElement('button')
-    jsonBtn.textContent = 'JSON (file)'
+    jsonBtn.textContent = 'JSON (clipboard)'
     jsonBtn.addEventListener('click', () => {
       this.callbacks.onExportJson()
       this.closeExportMenu()

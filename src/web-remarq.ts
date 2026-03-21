@@ -1,0 +1,317 @@
+import type { Annotation, ImportResult, WebRemarqOptions } from './core/types'
+import { AnnotationStorage } from './core/storage'
+import { createFingerprint } from './core/fingerprint'
+import { matchElement } from './core/matcher'
+import { injectStyles, removeStyles } from './ui/styles'
+import { ThemeManager } from './ui/theme'
+import { Toolbar } from './ui/toolbar'
+import { Overlay } from './ui/overlay'
+import { Popup } from './ui/popup'
+import { MarkerManager } from './ui/markers'
+import { DetachedPanel } from './ui/detached-panel'
+import { RouteObserver } from './spa'
+
+let initialized = false
+let options: WebRemarqOptions = {}
+let storage: AnnotationStorage
+let themeManager: ThemeManager
+let toolbar: Toolbar
+let overlay: Overlay
+let popup: Popup
+let markers: MarkerManager
+let detachedPanel: DetachedPanel
+let routeObserver: RouteObserver
+let inspecting = false
+let mutationObserver: MutationObserver | null = null
+let unsubRoute: (() => void) | null = null
+
+function currentRoute(): string {
+  return location.pathname + location.hash
+}
+
+function generateId(): string {
+  return `ann-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function refreshMarkers(): void {
+  markers.clear()
+  const detached: Annotation[] = []
+  const route = currentRoute()
+  const anns = storage.getByRoute(route)
+
+  for (const ann of anns) {
+    const el = matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })
+    if (el) {
+      markers.addMarker(ann, el)
+    } else {
+      detached.push(ann)
+    }
+  }
+
+  detachedPanel.update(detached)
+
+  const pendingCount = anns.filter((a) => a.status === 'pending').length
+  toolbar.setBadgeCount(pendingCount)
+}
+
+function handleInspectClick(e: MouseEvent): void {
+  if (!inspecting) return
+  e.preventDefault()
+  e.stopPropagation()
+
+  const target = e.target as HTMLElement
+  if (!target || target.closest('[data-remarq-theme]')) return
+
+  overlay.hide()
+  setInspecting(false)
+
+  const rect = target.getBoundingClientRect()
+  popup.show(
+    {
+      tag: target.tagName.toLowerCase(),
+      text: target.textContent?.trim().slice(0, 30) ?? '',
+    },
+    {
+      top: rect.bottom + 8,
+      left: rect.left,
+    },
+    (comment) => {
+      const fp = createFingerprint(target, {
+        classFilter: options.classFilter,
+        dataAttribute: options.dataAttribute,
+      })
+      const ann: Annotation = {
+        id: generateId(),
+        comment,
+        fingerprint: fp,
+        route: currentRoute(),
+        timestamp: Date.now(),
+        status: 'pending',
+      }
+      storage.add(ann)
+      refreshMarkers()
+    },
+    () => {
+      // cancel
+    },
+  )
+}
+
+function handleInspectHover(e: MouseEvent): void {
+  if (!inspecting) return
+  const target = e.target as HTMLElement
+  if (!target || target.closest('[data-remarq-theme]')) return
+  overlay.show(target)
+  overlay.updateTooltipPosition(e.clientX, e.clientY)
+}
+
+function handleInspectKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape' && inspecting) {
+    setInspecting(false)
+    overlay.hide()
+  }
+}
+
+function setInspecting(value: boolean): void {
+  inspecting = value
+  toolbar.setInspectActive(value)
+  if (!value) overlay.hide()
+}
+
+function handleMarkerClick(annotationId: string): void {
+  const ann = storage.getAll().find((a) => a.id === annotationId)
+  if (!ann) return
+
+  const el = matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })
+  if (!el) return
+
+  const rect = el.getBoundingClientRect()
+
+  popup.showDetail(
+    {
+      tag: ann.fingerprint.tagName,
+      text: ann.fingerprint.textContent ?? '',
+      comment: ann.comment,
+      status: ann.status,
+    },
+    { top: rect.bottom + 8, left: rect.left },
+    {
+      onResolve: () => {
+        storage.update(ann.id, { status: 'resolved' })
+        refreshMarkers()
+      },
+      onDelete: () => {
+        storage.remove(ann.id)
+        refreshMarkers()
+      },
+      onClose: () => {},
+    },
+  )
+}
+
+function exportMarkdown(): void {
+  const route = currentRoute()
+  const anns = storage.getByRoute(route)
+  if (!anns.length) return
+
+  const lines = [`## Annotations — ${route} (${anns.length})`, '']
+  anns.forEach((ann, i) => {
+    const fp = ann.fingerprint
+    let desc = `<${fp.tagName}>`
+    if (fp.textContent) desc += ` "${fp.textContent}"`
+    if (fp.parentAnchor) desc += ` (${fp.parentAnchor})`
+    if (fp.dataAnnotate) desc += fp.parentAnchor ? ` > ${fp.dataAnnotate}` : ` (${fp.dataAnnotate})`
+    lines.push(`${i + 1}. [${ann.status}] ${desc}: "${ann.comment}"`)
+  })
+
+  const text = lines.join('\n')
+  try {
+    navigator.clipboard.writeText(text)
+  } catch {
+    console.warn('[web-remarq] Clipboard write failed')
+  }
+}
+
+function exportJSON(): void {
+  const data = storage.exportJSON()
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `remarq-annotations-${Date.now()}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function setupMutationObserver(): void {
+  mutationObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.target instanceof HTMLElement && m.target.closest('[data-remarq-theme]')) return
+    }
+    refreshMarkers()
+  })
+
+  mutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['id', 'class', 'data-annotate', 'data-testid', 'data-test', 'data-cy'],
+  })
+}
+
+export const WebRemarq = {
+  init(opts?: WebRemarqOptions): void {
+    if (initialized) return
+    options = opts ?? {}
+
+    try {
+      injectStyles()
+      storage = new AnnotationStorage()
+      themeManager = new ThemeManager(document.body, options.theme)
+      overlay = new Overlay(themeManager.container)
+      popup = new Popup(themeManager.container)
+      markers = new MarkerManager(themeManager.container, handleMarkerClick)
+      detachedPanel = new DetachedPanel(themeManager.container, (id) => {
+        storage.remove(id)
+        refreshMarkers()
+      })
+
+      toolbar = new Toolbar(themeManager.container, {
+        onInspect: () => setInspecting(!inspecting),
+        onExportMd: exportMarkdown,
+        onExportJson: exportJSON,
+        onImport: () => {
+          const file = toolbar.getFileInput().files?.[0]
+          if (file) {
+            WebRemarq.import(file)
+          }
+        },
+        onClear: () => {
+          storage.clearAll()
+          refreshMarkers()
+        },
+        onThemeToggle: () => themeManager.toggle(),
+      })
+
+      if (storage.isMemoryOnly) {
+        toolbar.setMemoryWarning(true)
+      }
+
+      routeObserver = new RouteObserver()
+      unsubRoute = routeObserver.onChange(() => refreshMarkers())
+
+      document.addEventListener('click', handleInspectClick, true)
+      document.addEventListener('mousemove', handleInspectHover)
+      document.addEventListener('keydown', handleInspectKeydown)
+
+      setupMutationObserver()
+      refreshMarkers()
+      initialized = true
+    } catch (err) {
+      console.error('[web-remarq] Init failed:', err)
+    }
+  },
+
+  destroy(): void {
+    if (!initialized) return
+    try {
+      document.removeEventListener('click', handleInspectClick, true)
+      document.removeEventListener('mousemove', handleInspectHover)
+      document.removeEventListener('keydown', handleInspectKeydown)
+      mutationObserver?.disconnect()
+      mutationObserver = null
+      unsubRoute?.()
+      routeObserver?.destroy()
+      markers?.destroy()
+      detachedPanel?.destroy()
+      popup?.destroy()
+      overlay?.destroy()
+      toolbar?.destroy()
+      themeManager?.destroy()
+      removeStyles()
+      inspecting = false
+      initialized = false
+    } catch (err) {
+      console.error('[web-remarq] Destroy failed:', err)
+    }
+  },
+
+  setTheme(theme: 'light' | 'dark'): void {
+    themeManager?.setTheme(theme)
+  },
+
+  export(format: 'md' | 'json'): void {
+    if (format === 'md') exportMarkdown()
+    else exportJSON()
+  },
+
+  async import(file: File): Promise<ImportResult> {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    storage.importJSON(data)
+    refreshMarkers()
+
+    const allAnns = storage.getAll()
+    let matched = 0
+    let detached = 0
+    for (const ann of allAnns) {
+      if (matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })) {
+        matched++
+      } else {
+        detached++
+      }
+    }
+    return { total: allAnns.length, matched, detached }
+  },
+
+  getAnnotations(route?: string): Annotation[] {
+    if (!storage) return []
+    return route ? storage.getByRoute(route) : storage.getAll()
+  },
+
+  clearAll(): void {
+    storage?.clearAll()
+    if (initialized) refreshMarkers()
+  },
+}

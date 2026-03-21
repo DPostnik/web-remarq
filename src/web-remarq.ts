@@ -24,6 +24,10 @@ let routeObserver: RouteObserver
 let inspecting = false
 let mutationObserver: MutationObserver | null = null
 let unsubRoute: (() => void) | null = null
+let refreshScheduled = false
+
+// WeakRef cache: annotation id → element (survives GC of element)
+const elementCache = new Map<string, WeakRef<HTMLElement>>()
 
 function currentRoute(): string {
   return location.pathname + location.hash
@@ -33,6 +37,37 @@ function generateId(): string {
   return `ann-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function cacheElement(annotationId: string, el: HTMLElement): void {
+  elementCache.set(annotationId, new WeakRef(el))
+}
+
+function getCachedElement(annotationId: string): HTMLElement | null {
+  const ref = elementCache.get(annotationId)
+  if (!ref) return null
+  const el = ref.deref()
+  if (!el || !el.isConnected) {
+    elementCache.delete(annotationId)
+    return null
+  }
+  return el
+}
+
+function resolveElement(ann: Annotation): HTMLElement | null {
+  // 1. Check cache first
+  const cached = getCachedElement(ann.id)
+  if (cached) return cached
+
+  // 2. Fall back to fingerprint matching
+  const el = matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })
+  if (el) {
+    cacheElement(ann.id, el)
+    console.debug(`[web-remarq] Matched "${ann.comment}" via fingerprint on <${el.tagName.toLowerCase()}>`)
+  } else {
+    console.debug(`[web-remarq] Could not match "${ann.comment}"`, ann.fingerprint)
+  }
+  return el
+}
+
 function refreshMarkers(): void {
   markers.clear()
   const detached: Annotation[] = []
@@ -40,7 +75,7 @@ function refreshMarkers(): void {
   const anns = storage.getByRoute(route)
 
   for (const ann of anns) {
-    const el = matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })
+    const el = resolveElement(ann)
     if (el) {
       markers.addMarker(ann, el)
     } else {
@@ -52,6 +87,16 @@ function refreshMarkers(): void {
 
   const pendingCount = anns.filter((a) => a.status === 'pending').length
   toolbar.setBadgeCount(pendingCount)
+}
+
+// Debounced refresh — MutationObserver can fire rapidly
+function scheduleRefresh(): void {
+  if (refreshScheduled) return
+  refreshScheduled = true
+  requestAnimationFrame(() => {
+    refreshScheduled = false
+    refreshMarkers()
+  })
 }
 
 function handleInspectClick(e: MouseEvent): void {
@@ -89,6 +134,8 @@ function handleInspectClick(e: MouseEvent): void {
         timestamp: Date.now(),
         status: 'pending',
       }
+      // Cache the element immediately — no need to re-match
+      cacheElement(ann.id, target)
       storage.add(ann)
       refreshMarkers()
     },
@@ -123,7 +170,7 @@ function handleMarkerClick(annotationId: string): void {
   const ann = storage.getAll().find((a) => a.id === annotationId)
   if (!ann) return
 
-  const el = matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })
+  const el = resolveElement(ann)
   if (!el) return
 
   const rect = el.getBoundingClientRect()
@@ -142,6 +189,7 @@ function handleMarkerClick(annotationId: string): void {
         refreshMarkers()
       },
       onDelete: () => {
+        elementCache.delete(ann.id)
         storage.remove(ann.id)
         refreshMarkers()
       },
@@ -190,7 +238,7 @@ function setupMutationObserver(): void {
     for (const m of mutations) {
       if (m.target instanceof HTMLElement && m.target.closest('[data-remarq-theme]')) return
     }
-    refreshMarkers()
+    scheduleRefresh()
   })
 
   mutationObserver.observe(document.body, {
@@ -214,6 +262,7 @@ export const WebRemarq = {
       popup = new Popup(themeManager.container)
       markers = new MarkerManager(themeManager.container, handleMarkerClick)
       detachedPanel = new DetachedPanel(themeManager.container, (id) => {
+        elementCache.delete(id)
         storage.remove(id)
         refreshMarkers()
       })
@@ -229,6 +278,7 @@ export const WebRemarq = {
           }
         },
         onClear: () => {
+          elementCache.clear()
           storage.clearAll()
           refreshMarkers()
         },
@@ -247,6 +297,8 @@ export const WebRemarq = {
       document.addEventListener('keydown', handleInspectKeydown)
 
       setupMutationObserver()
+
+      console.debug(`[web-remarq] Initialized on route: ${currentRoute()}`)
       refreshMarkers()
       initialized = true
     } catch (err) {
@@ -271,6 +323,7 @@ export const WebRemarq = {
       toolbar?.destroy()
       themeManager?.destroy()
       removeStyles()
+      elementCache.clear()
       inspecting = false
       initialized = false
     } catch (err) {
@@ -297,7 +350,7 @@ export const WebRemarq = {
     let matched = 0
     let detached = 0
     for (const ann of allAnns) {
-      if (matchElement(ann.fingerprint, { dataAttribute: options.dataAttribute })) {
+      if (resolveElement(ann)) {
         matched++
       } else {
         detached++
@@ -312,6 +365,7 @@ export const WebRemarq = {
   },
 
   clearAll(): void {
+    elementCache.clear()
     storage?.clearAll()
     if (initialized) refreshMarkers()
   },

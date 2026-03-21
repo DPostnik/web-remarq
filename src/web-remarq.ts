@@ -29,6 +29,36 @@ let refreshScheduled = false
 // WeakRef cache: annotation id → element (survives GC of element)
 const elementCache = new Map<string, WeakRef<HTMLElement>>()
 
+function describeTarget(el: HTMLElement): string {
+  const parts: string[] = []
+
+  // id
+  if (el.id) parts.push(`#${el.id}`)
+
+  // data attributes
+  const dataAnnotate = el.getAttribute(options.dataAttribute ?? 'data-annotate')
+  const dataTestId = el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-cy')
+  if (dataAnnotate) parts.push(`[${dataAnnotate}]`)
+  else if (dataTestId) parts.push(`[${dataTestId}]`)
+
+  // Meaningful classes (max 2)
+  const classes = Array.from(el.classList)
+    .filter((c) => !c.match(/^(sc-|css-)/) && !c.match(/^[a-zA-Z0-9]{8,}$/) && !c.match(/__[a-zA-Z0-9]{3,}$/))
+    .slice(0, 2)
+  if (classes.length) parts.push(`.${classes.join('.')}`)
+
+  // Direct text only
+  let text = ''
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? ''
+  }
+  text = text.trim()
+  if (!text && el.children.length <= 2) text = el.textContent?.trim() ?? ''
+  if (text) parts.push(`"${text.slice(0, 30)}"`)
+
+  return parts.join(' ') || ''
+}
+
 function currentRoute(): string {
   return location.pathname + location.hash
 }
@@ -115,7 +145,7 @@ function handleInspectClick(e: MouseEvent): void {
   popup.show(
     {
       tag: target.tagName.toLowerCase(),
-      text: target.textContent?.trim().slice(0, 30) ?? '',
+      text: describeTarget(target),
     },
     {
       top: window.scrollY + rect.bottom + 8,

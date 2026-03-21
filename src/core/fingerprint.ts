@@ -38,7 +38,20 @@ function getStableId(el: HTMLElement): string | null {
 }
 
 function getTextContent(el: HTMLElement): string | null {
-  const text = el.textContent?.trim() ?? null
+  // Use only direct text nodes, not nested children's text
+  let text = ''
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? ''
+    }
+  }
+  text = text.trim()
+
+  // If no direct text, try first meaningful child's text (for wrappers like <span><b>Text</b></span>)
+  if (!text && el.children.length <= 3) {
+    text = el.textContent?.trim() ?? ''
+  }
+
   if (!text) return null
   return text.length > TEXT_MAX_LENGTH ? text.slice(0, TEXT_MAX_LENGTH) : text
 }

@@ -1,4 +1,5 @@
 import type { ElementFingerprint, WebRemarqOptions } from './types'
+import { filterClasses } from './hash-detect'
 
 const MATCH_THRESHOLD = 50
 
@@ -84,18 +85,18 @@ function scoreCandidate(el: HTMLElement, fp: ElementFingerprint, dataAttr: strin
     }
   }
 
-  // stableClasses overlap (+15 scaled)
+  // stableClasses overlap (+30 scaled)
   if (fp.stableClasses.length > 0) {
-    const elClasses = Array.from(el.classList)
+    const elClasses = filterClasses(Array.from(el.classList))
     const jaccard = jaccardSimilarity(fp.stableClasses, elClasses)
-    score += jaccard * 15
+    score += jaccard * 30
   }
 
-  // domPath match (+15 scaled)
+  // domPath match (+20 scaled)
   if (fp.domPath) {
     const elPath = buildDomPath(el)
     const pathSim = levenshteinSimilarity(fp.domPath, elPath)
-    score += pathSim * 15
+    score += pathSim * 20
   }
 
   // siblingIndex match (+5)
@@ -114,7 +115,12 @@ function buildDomPath(el: HTMLElement): string {
   const parts: string[] = []
   let current: HTMLElement | null = el
   while (current && current !== document.body && parts.length < 5) {
-    parts.unshift(current.tagName.toLowerCase())
+    let segment = current.tagName.toLowerCase()
+    const stable = filterClasses(Array.from(current.classList))
+    if (stable.length > 0) {
+      segment += '.' + stable.slice(0, 2).join('.')
+    }
+    parts.unshift(segment)
     current = current.parentElement
   }
   return parts.join(' > ')

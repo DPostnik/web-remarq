@@ -61,7 +61,12 @@ function buildDomPath(el: HTMLElement): string {
   let current: HTMLElement | null = el
 
   while (current && current !== document.body && parts.length < 5) {
-    parts.unshift(current.tagName.toLowerCase())
+    let segment = current.tagName.toLowerCase()
+    const stable = filterClasses(Array.from(current.classList))
+    if (stable.length > 0) {
+      segment += '.' + stable.slice(0, 2).join('.')
+    }
+    parts.unshift(segment)
     current = current.parentElement
   }
 

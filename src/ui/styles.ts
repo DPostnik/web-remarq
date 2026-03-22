@@ -322,12 +322,14 @@ const CSS = `
   position: fixed;
   background: rgba(249, 115, 22, 0.2);
   pointer-events: none;
+  z-index: 1;
 }
 
 .remarq-spacing-padding {
   position: fixed;
   background: rgba(34, 197, 94, 0.2);
   pointer-events: none;
+  z-index: 2;
 }
 
 .remarq-spacing-content {
@@ -335,6 +337,7 @@ const CSS = `
   background: rgba(59, 130, 246, 0.15);
   border: 1px dashed rgba(59, 130, 246, 0.5);
   pointer-events: none;
+  z-index: 3;
 }
 
 .remarq-spacing-gap {

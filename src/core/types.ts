@@ -1,3 +1,9 @@
+export interface CSSModuleClass {
+  raw: string        // "lucky-banners__luckyBanners__cEqts"
+  moduleHint: string // "lucky-banners"
+  localName: string  // "luckyBanners"
+}
+
 export interface ElementFingerprint {
   // Priority 1 — stable anchors
   dataAnnotate: string | null
@@ -17,6 +23,10 @@ export interface ElementFingerprint {
 
   // Priority 4 — parent context
   parentAnchor: string | null
+
+  // Priority 5 — agent export (optional, not used for matching)
+  rawClasses?: string[]
+  cssModules?: CSSModuleClass[]
 }
 
 export interface Annotation {

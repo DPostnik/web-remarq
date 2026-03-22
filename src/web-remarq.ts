@@ -245,40 +245,89 @@ function handleMarkerClick(annotationId: string): void {
   )
 }
 
-function exportMarkdown(): void {
+function generateMarkdown(): string {
   const route = currentRoute()
   const anns = storage.getByRoute(route)
-  if (!anns.length) return
+  if (!anns.length) return ''
 
   const lines = [`## Annotations — ${route} (${anns.length})`, '']
+
   anns.forEach((ann, i) => {
     const fp = ann.fingerprint
-    let desc = `<${fp.tagName}>`
-    if (fp.textContent) desc += ` "${fp.textContent}"`
-    if (fp.parentAnchor) desc += ` (${fp.parentAnchor})`
-    if (fp.dataAnnotate) desc += fp.parentAnchor ? ` > ${fp.dataAnnotate}` : ` (${fp.dataAnnotate})`
-    const viewport = ann.viewport ? ` @${ann.viewport}` : ''
-    lines.push(`${i + 1}. [${ann.status}]${viewport} ${desc}: "${ann.comment}"`)
+
+    lines.push(`### ${i + 1}. [${ann.status}] "${ann.comment}"`)
+
+    let elDesc = `Element: <${fp.tagName}>`
+    if (fp.textContent) elDesc += ` "${fp.textContent}"`
+    lines.push(elDesc)
+    lines.push(`Viewport: ${ann.viewportBucket}px`)
+    lines.push('')
+
+    lines.push('Search hints:')
+
+    if (fp.dataAnnotate) {
+      lines.push(`- \`data-annotate="${fp.dataAnnotate}"\` — in template files`)
+    }
+    if (fp.dataTestId) {
+      lines.push(`- \`data-testid="${fp.dataTestId}"\` — in template files`)
+    }
+    if (fp.id) {
+      lines.push(`- \`id="${fp.id}"\` — in template files`)
+    }
+    if (fp.ariaLabel) {
+      lines.push(`- \`aria-label="${fp.ariaLabel}"\` — in template files`)
+    }
+    if (fp.textContent) {
+      lines.push(`- \`"${fp.textContent}"\` — text content in templates`)
+    }
+    if (fp.cssModules?.length) {
+      for (const mod of fp.cssModules) {
+        lines.push(`- \`.${mod.localName}\` — in CSS Module file (likely \`${mod.moduleHint}.module.*\`)`)
+        lines.push(`- \`styles.${mod.localName}\` — in component JS/TS`)
+      }
+    }
+    if (fp.domPath) {
+      lines.push(`- DOM: ${fp.domPath}`)
+    }
+    const classes = fp.rawClasses ?? fp.stableClasses
+    if (classes.length) {
+      lines.push(`- Classes: ${classes.join(' ')}`)
+    }
+
+    lines.push('')
   })
 
-  const text = lines.join('\n')
-  const blob = new Blob([text], { type: 'text/markdown' })
+  return lines.join('\n')
+}
+
+function downloadFile(content: string, filename: string, type: string): void {
+  const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `remarq-annotations-${Date.now()}.md`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function exportMarkdown(): void {
+  const md = generateMarkdown()
+  if (!md) return
+  downloadFile(md, `remarq-annotations-${Date.now()}.md`, 'text/markdown')
 }
 
 function exportJSON(): void {
   const data = storage.exportJSON()
   const json = JSON.stringify(data, null, 2)
-  try {
-    navigator.clipboard.writeText(json)
-  } catch {
+  downloadFile(json, `remarq-annotations-${Date.now()}.json`, 'application/json')
+}
+
+function copyToClipboard(): void {
+  const md = generateMarkdown()
+  if (!md) return
+  navigator.clipboard.writeText(md).catch(() => {
     console.warn('[web-remarq] Clipboard write failed')
-  }
+  })
 }
 
 function setupMutationObserver(): void {
@@ -317,6 +366,7 @@ export const WebRemarq = {
 
       toolbar = new Toolbar(themeManager.container, {
         onInspect: () => setInspecting(!inspecting),
+        onCopy: copyToClipboard,
         onExportMd: exportMarkdown,
         onExportJson: exportJSON,
         onImport: () => {
@@ -388,6 +438,10 @@ export const WebRemarq = {
   export(format: 'md' | 'json'): void {
     if (format === 'md') exportMarkdown()
     else exportJSON()
+  },
+
+  copy(): void {
+    copyToClipboard()
   },
 
   async import(file: File): Promise<ImportResult> {

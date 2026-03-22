@@ -1,5 +1,5 @@
 import type { ElementFingerprint, WebRemarqOptions } from './types'
-import { filterClasses, isHashedClass } from './hash-detect'
+import { filterClasses, isHashedClass, decomposeCSSModules } from './hash-detect'
 
 const TEXT_MAX_LENGTH = 50
 
@@ -27,6 +27,8 @@ export function createFingerprint(
     domPath: buildDomPath(el),
     siblingIndex: getSiblingIndex(el),
     parentAnchor: findParentAnchor(el, dataAttr),
+    rawClasses: Array.from(el.classList),
+    cssModules: decomposeCSSModules(Array.from(el.classList)),
   }
 }
 

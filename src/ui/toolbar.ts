@@ -1,5 +1,6 @@
 export interface ToolbarCallbacks {
   onInspect: () => void
+  onCopy: () => void
   onExportMd: () => void
   onExportJson: () => void
   onImport: () => void
@@ -9,6 +10,7 @@ export interface ToolbarCallbacks {
 
 const ICONS = {
   inspect: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>',
+  copy: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3a1 1 0 0 1 1-1h6"/></svg>',
   export: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M4 6l4-4 4 4M2 12h12"/></svg>',
   import: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10V2M4 6l4 4 4-4M2 12h12"/></svg>',
   clear: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>',
@@ -38,6 +40,7 @@ export class Toolbar {
     this.badgeEl.style.display = 'none'
     this.inspectBtn.appendChild(this.badgeEl)
 
+    const copyBtn = this.createButton('copy', ICONS.copy, () => callbacks.onCopy())
     const exportBtn = this.createButton('export', ICONS.export, (e) => this.toggleExportMenu(e))
 
     this.fileInput = document.createElement('input')
@@ -54,9 +57,10 @@ export class Toolbar {
     const themeBtn = this.createButton('theme', ICONS.theme, () => callbacks.onThemeToggle())
     const minimizeBtn = this.createButton('minimize', ICONS.minimize, () => this.toggleMinimize())
 
-    this.buttons = [this.inspectBtn, exportBtn, importBtn, clearBtn, themeBtn]
+    this.buttons = [this.inspectBtn, copyBtn, exportBtn, importBtn, clearBtn, themeBtn]
 
     this.toolbarEl.appendChild(this.inspectBtn)
+    this.toolbarEl.appendChild(copyBtn)
     this.toolbarEl.appendChild(exportBtn)
     this.toolbarEl.appendChild(importBtn)
     this.toolbarEl.appendChild(clearBtn)
@@ -116,14 +120,14 @@ export class Toolbar {
     this.exportMenu.className = 'remarq-export-menu'
 
     const mdBtn = document.createElement('button')
-    mdBtn.textContent = 'Markdown (file)'
+    mdBtn.textContent = 'MD (file)'
     mdBtn.addEventListener('click', () => {
       this.callbacks.onExportMd()
       this.closeExportMenu()
     })
 
     const jsonBtn = document.createElement('button')
-    jsonBtn.textContent = 'JSON (clipboard)'
+    jsonBtn.textContent = 'JSON (file)'
     jsonBtn.addEventListener('click', () => {
       this.callbacks.onExportJson()
       this.closeExportMenu()

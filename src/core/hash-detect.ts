@@ -1,4 +1,7 @@
+import type { CSSModuleClass } from './types'
+
 const CSS_MODULES_RE = /^(.+)__([a-zA-Z0-9]{3,})$/
+const CSS_MODULES_3SEG_RE = /^([^_]+(?:[_-][^_]+)*)__([a-zA-Z][a-zA-Z0-9]*)__([a-zA-Z0-9]{3,})$/
 const STYLED_COMPONENTS_RE = /^sc-/
 const EMOTION_RE = /^css-[a-zA-Z0-9]+$/
 const PURE_HASH_RE = /^(?=.*[a-zA-Z])(?=.*\d)[a-zA-Z0-9]{8,}$/
@@ -38,5 +41,20 @@ export function filterClasses(
     result.push(stable)
   }
 
+  return result
+}
+
+export function decomposeCSSModules(classes: string[]): CSSModuleClass[] {
+  const result: CSSModuleClass[] = []
+  for (const cls of classes) {
+    const match = cls.match(CSS_MODULES_3SEG_RE)
+    if (match) {
+      result.push({
+        raw: cls,
+        moduleHint: match[1],
+        localName: match[2],
+      })
+    }
+  }
   return result
 }

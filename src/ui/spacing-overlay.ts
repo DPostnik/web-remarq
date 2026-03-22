@@ -24,8 +24,11 @@ export class SpacingOverlay {
   private labels: HTMLElement[] = []
   private gapEls: HTMLElement[] = []
   private lastTarget: HTMLElement | null = null
+  private scrollHandler = () => { this.lastTarget = null }
 
   constructor(private parent: HTMLElement) {
+    // Capture phase to catch scroll on any container, not just window
+    window.addEventListener('scroll', this.scrollHandler, true)
     this.containerEl = document.createElement('div')
     this.containerEl.className = 'remarq-spacing'
     this.containerEl.style.display = 'none'
@@ -39,9 +42,11 @@ export class SpacingOverlay {
     this.contentEl = document.createElement('div')
     this.contentEl.className = 'remarq-spacing-content'
 
+    // Order matters: content on top of padding on top of margin
     this.containerEl.appendChild(this.marginEl)
     this.containerEl.appendChild(this.paddingEl)
     this.containerEl.appendChild(this.contentEl)
+
 
     parent.appendChild(this.containerEl)
   }
@@ -123,6 +128,7 @@ export class SpacingOverlay {
   }
 
   destroy(): void {
+    window.removeEventListener('scroll', this.scrollHandler, true)
     this.clearLabels()
     this.clearGaps()
     this.containerEl.remove()

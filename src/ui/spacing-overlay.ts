@@ -24,7 +24,13 @@ export class SpacingOverlay {
   private labels: HTMLElement[] = []
   private gapEls: HTMLElement[] = []
   private lastTarget: HTMLElement | null = null
-  private scrollHandler = () => { this.lastTarget = null }
+  private scrollHandler = () => {
+    if (this.lastTarget) {
+      const target = this.lastTarget
+      this.lastTarget = null
+      this.show(target)
+    }
+  }
 
   constructor(private parent: HTMLElement) {
     // Capture phase to catch scroll on any container, not just window

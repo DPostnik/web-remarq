@@ -309,6 +309,61 @@ const CSS = `
 .remarq-toast-fade {
   opacity: 0;
 }
+
+.remarq-spacing {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 2147483646;
+}
+
+.remarq-spacing-margin {
+  position: fixed;
+  background: rgba(249, 115, 22, 0.2);
+  pointer-events: none;
+}
+
+.remarq-spacing-padding {
+  position: fixed;
+  background: rgba(34, 197, 94, 0.2);
+  pointer-events: none;
+}
+
+.remarq-spacing-content {
+  position: fixed;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px dashed rgba(59, 130, 246, 0.5);
+  pointer-events: none;
+}
+
+.remarq-spacing-gap {
+  position: fixed;
+  background: rgba(168, 85, 247, 0.25);
+  border: 1px dashed rgba(168, 85, 247, 0.5);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remarq-spacing-label {
+  position: fixed;
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1;
+  text-shadow: 0 0 3px var(--remarq-bg), 0 0 3px var(--remarq-bg);
+}
+
+.remarq-spacing-label-margin { color: #f97316; }
+.remarq-spacing-label-padding { color: #22c55e; }
+.remarq-spacing-label-content { color: #3b82f6; font-size: 10px; }
+.remarq-spacing-label-gap { color: #a855f7; font-size: 10px; }
+
+.remarq-toolbar-btn:disabled { opacity: 0.3; cursor: default; }
+.remarq-toolbar-btn:disabled:hover { background: transparent; }
 `
 
 export function injectStyles(): void {

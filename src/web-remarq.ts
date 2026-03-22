@@ -6,6 +6,7 @@ import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
 import { Toolbar } from './ui/toolbar'
 import { Overlay } from './ui/overlay'
+import { SpacingOverlay } from './ui/spacing-overlay'
 import { Popup } from './ui/popup'
 import { MarkerManager } from './ui/markers'
 import { DetachedPanel } from './ui/detached-panel'
@@ -23,6 +24,8 @@ let markers: MarkerManager
 let detachedPanel: DetachedPanel
 let routeObserver: RouteObserver
 let inspecting = false
+let spacingMode = false
+let spacingOverlay: SpacingOverlay
 let mutationObserver: MutationObserver | null = null
 let unsubRoute: (() => void) | null = null
 let refreshScheduled = false
@@ -148,7 +151,6 @@ function handleInspectClick(e: MouseEvent): void {
   e.preventDefault()
   e.stopPropagation()
 
-  overlay.hide()
   setInspecting(false)
 
   const rect = target.getBoundingClientRect()
@@ -192,21 +194,45 @@ function handleInspectHover(e: MouseEvent): void {
   if (!inspecting) return
   const target = e.target as HTMLElement
   if (!target || target.closest('[data-remarq-theme]')) return
-  overlay.show(target)
+
+  if (spacingMode) {
+    overlay.show(target)
+    overlay.hideHighlight()
+    spacingOverlay.show(target)
+  } else {
+    overlay.show(target)
+  }
   overlay.updateTooltipPosition(e.clientX, e.clientY)
 }
 
 function handleInspectKeydown(e: KeyboardEvent): void {
+  // Ignore when typing in inputs
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+
   if (e.key === 'Escape' && inspecting) {
     setInspecting(false)
     overlay.hide()
+    spacingOverlay.hide()
+  }
+
+  if (e.key === 's' && inspecting) {
+    spacingMode = !spacingMode
+    toolbar.setSpacingActive(spacingMode)
+    if (!spacingMode) spacingOverlay.hide()
   }
 }
 
 function setInspecting(value: boolean): void {
   inspecting = value
   toolbar.setInspectActive(value)
-  if (!value) overlay.hide()
+  toolbar.setSpacingEnabled(value)
+  if (!value) {
+    overlay.hide()
+    spacingOverlay?.hide()
+    spacingMode = false
+    toolbar.setSpacingActive(false)
+  }
 }
 
 function handleMarkerClick(annotationId: string): void {
@@ -356,6 +382,7 @@ export const WebRemarq = {
       storage = new AnnotationStorage()
       themeManager = new ThemeManager(document.body, options.theme)
       overlay = new Overlay(themeManager.container)
+      spacingOverlay = new SpacingOverlay(themeManager.container)
       popup = new Popup(themeManager.container)
       markers = new MarkerManager(themeManager.container, handleMarkerClick)
       detachedPanel = new DetachedPanel(themeManager.container, (id) => {
@@ -366,6 +393,12 @@ export const WebRemarq = {
 
       toolbar = new Toolbar(themeManager.container, {
         onInspect: () => setInspecting(!inspecting),
+        onSpacingToggle: () => {
+          if (!inspecting) return
+          spacingMode = !spacingMode
+          toolbar.setSpacingActive(spacingMode)
+          if (!spacingMode) spacingOverlay.hide()
+        },
         onCopy: copyToClipboard,
         onExportMd: exportMarkdown,
         onExportJson: exportJSON,
@@ -420,11 +453,13 @@ export const WebRemarq = {
       detachedPanel?.destroy()
       popup?.destroy()
       overlay?.destroy()
+      spacingOverlay?.destroy()
       toolbar?.destroy()
       themeManager?.destroy()
       removeStyles()
       elementCache.clear()
       inspecting = false
+      spacingMode = false
       initialized = false
     } catch (err) {
       console.error('[web-remarq] Destroy failed:', err)

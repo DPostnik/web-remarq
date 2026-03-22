@@ -39,6 +39,10 @@ export class Overlay {
     this.tooltipEl.style.top = `${y - 28}px`
   }
 
+  hideHighlight(): void {
+    this.overlayEl.style.display = 'none'
+  }
+
   hide(): void {
     this.overlayEl.style.display = 'none'
     this.tooltipEl.style.display = 'none'

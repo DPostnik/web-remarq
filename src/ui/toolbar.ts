@@ -6,10 +6,12 @@ export interface ToolbarCallbacks {
   onImport: () => void
   onClear: () => void
   onThemeToggle: () => void
+  onSpacingToggle: () => void
 }
 
 const ICONS = {
   inspect: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>',
+  spacing: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h12M2 14h12M2 2v12M14 2v12"/><path d="M5 5h6v6H5z" stroke-dasharray="2 1"/></svg>',
   copy: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3a1 1 0 0 1 1-1h6"/></svg>',
   export: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M4 6l4-4 4 4M2 12h12"/></svg>',
   import: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10V2M4 6l4 4 4-4M2 12h12"/></svg>',
@@ -22,6 +24,7 @@ export class Toolbar {
   private toolbarEl: HTMLElement
   private badgeEl: HTMLElement
   private inspectBtn: HTMLElement
+  private spacingBtn: HTMLButtonElement
   private exportMenu: HTMLElement | null = null
   private fileInput: HTMLInputElement
   private minimized = false
@@ -40,6 +43,9 @@ export class Toolbar {
     this.badgeEl.style.display = 'none'
     this.inspectBtn.appendChild(this.badgeEl)
 
+    this.spacingBtn = this.createButton('spacing', ICONS.spacing, () => callbacks.onSpacingToggle()) as HTMLButtonElement
+    this.spacingBtn.disabled = true
+
     const copyBtn = this.createButton('copy', ICONS.copy, () => callbacks.onCopy())
     const exportBtn = this.createButton('export', ICONS.export, (e) => this.toggleExportMenu(e))
 
@@ -57,9 +63,10 @@ export class Toolbar {
     const themeBtn = this.createButton('theme', ICONS.theme, () => callbacks.onThemeToggle())
     const minimizeBtn = this.createButton('minimize', ICONS.minimize, () => this.toggleMinimize())
 
-    this.buttons = [this.inspectBtn, copyBtn, exportBtn, importBtn, clearBtn, themeBtn]
+    this.buttons = [this.inspectBtn, this.spacingBtn, copyBtn, exportBtn, importBtn, clearBtn, themeBtn]
 
     this.toolbarEl.appendChild(this.inspectBtn)
+    this.toolbarEl.appendChild(this.spacingBtn)
     this.toolbarEl.appendChild(copyBtn)
     this.toolbarEl.appendChild(exportBtn)
     this.toolbarEl.appendChild(importBtn)
@@ -73,6 +80,17 @@ export class Toolbar {
 
   setInspectActive(active: boolean): void {
     this.inspectBtn.classList.toggle('remarq-active', active)
+  }
+
+  setSpacingActive(active: boolean): void {
+    this.spacingBtn.classList.toggle('remarq-active', active)
+  }
+
+  setSpacingEnabled(enabled: boolean): void {
+    this.spacingBtn.disabled = !enabled
+    if (!enabled) {
+      this.spacingBtn.classList.remove('remarq-active')
+    }
   }
 
   setBadgeCount(count: number): void {

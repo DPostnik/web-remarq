@@ -280,6 +280,35 @@ const CSS = `
 }
 
 .remarq-export-menu button:hover { background: var(--remarq-bg-secondary); }
+
+.remarq-detached-header + .remarq-detached-header {
+  border-top: 2px solid var(--remarq-border);
+}
+
+.remarq-detached-item[style*="cursor"]:hover {
+  background: var(--remarq-bg-secondary);
+}
+
+.remarq-toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  padding: 8px 16px;
+  background: var(--remarq-bg);
+  border: 1px solid var(--remarq-border);
+  border-radius: 6px;
+  box-shadow: var(--remarq-shadow);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--remarq-text);
+  transition: opacity 0.3s ease;
+}
+
+.remarq-toast-fade {
+  opacity: 0;
+}
 `
 
 export function injectStyles(): void {

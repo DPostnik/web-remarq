@@ -10,6 +10,7 @@ import { Popup } from './ui/popup'
 import { MarkerManager } from './ui/markers'
 import { DetachedPanel } from './ui/detached-panel'
 import { RouteObserver } from './spa'
+import { toBucket, initViewportListener, destroyViewportListener } from './core/viewport'
 
 let initialized = false
 let options: WebRemarqOptions = {}
@@ -100,20 +101,29 @@ function resolveElement(ann: Annotation): HTMLElement | null {
 
 function refreshMarkers(): void {
   markers.clear()
+  const attached: { ann: Annotation; el: HTMLElement }[] = []
+  const otherBreakpoint: Annotation[] = []
   const detached: Annotation[] = []
   const route = currentRoute()
   const anns = storage.getByRoute(route)
+  const bucket = toBucket(window.innerWidth)  // always read fresh
 
   for (const ann of anns) {
     const el = resolveElement(ann)
     if (el) {
-      markers.addMarker(ann, el)
+      attached.push({ ann, el })
+    } else if (bucket !== ann.viewportBucket) {
+      otherBreakpoint.push(ann)
     } else {
       detached.push(ann)
     }
   }
 
-  detachedPanel.update(detached)
+  for (const { ann, el } of attached) {
+    markers.addMarker(ann, el)
+  }
+
+  detachedPanel.update(otherBreakpoint, detached)
 
   const pendingCount = anns.filter((a) => a.status === 'pending').length
   toolbar.setBadgeCount(pendingCount)
@@ -163,6 +173,7 @@ function handleInspectClick(e: MouseEvent): void {
         fingerprint: fp,
         route: currentRoute(),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
+        viewportBucket: toBucket(window.innerWidth),
         timestamp: Date.now(),
         status: 'pending',
       }
@@ -334,6 +345,7 @@ export const WebRemarq = {
       document.addEventListener('keydown', handleInspectKeydown)
 
       setupMutationObserver()
+      initViewportListener(() => refreshMarkers())
 
       console.debug(`[web-remarq] Initialized on route: ${currentRoute()}`)
       refreshMarkers()
@@ -351,6 +363,7 @@ export const WebRemarq = {
       document.removeEventListener('keydown', handleInspectKeydown)
       mutationObserver?.disconnect()
       mutationObserver = null
+      destroyViewportListener()
       unsubRoute?.()
       routeObserver?.destroy()
       markers?.destroy()
@@ -384,16 +397,20 @@ export const WebRemarq = {
     refreshMarkers()
 
     const allAnns = storage.getAll()
+    const bucket = toBucket(window.innerWidth)
     let matched = 0
+    let otherBreakpoint = 0
     let detached = 0
     for (const ann of allAnns) {
       if (resolveElement(ann)) {
         matched++
+      } else if (bucket !== ann.viewportBucket) {
+        otherBreakpoint++
       } else {
         detached++
       }
     }
-    return { total: allAnns.length, matched, detached }
+    return { total: allAnns.length, matched, otherBreakpoint, detached }
   },
 
   getAnnotations(route?: string): Annotation[] {

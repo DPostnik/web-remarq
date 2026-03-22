@@ -25,6 +25,7 @@ export interface Annotation {
   fingerprint: ElementFingerprint
   route: string
   viewport: string  // e.g. "1920x1080"
+  viewportBucket: number  // e.g. 300 (width rounded down to 100px)
   timestamp: number
   status: 'pending' | 'resolved'
 }
@@ -43,5 +44,6 @@ export interface WebRemarqOptions {
 export interface ImportResult {
   total: number
   matched: number
+  otherBreakpoint: number
   detached: number
 }

@@ -1,4 +1,5 @@
 import type { Annotation, AnnotationStore } from './types'
+import { toBucket } from './viewport'
 
 const STORAGE_KEY = 'remarq:annotations'
 
@@ -51,7 +52,17 @@ export class AnnotationStorage {
 
   importJSON(data: AnnotationStore): void {
     this.annotations = [...data.annotations]
+    this.migrateViewportBuckets()
     this.save()
+  }
+
+  private migrateViewportBuckets(): void {
+    for (const ann of this.annotations) {
+      if (ann.viewportBucket == null && ann.viewport) {
+        const width = parseInt(ann.viewport.split('x')[0], 10)
+        ann.viewportBucket = toBucket(width)
+      }
+    }
   }
 
   private load(): void {
@@ -62,6 +73,7 @@ export class AnnotationStorage {
         const { version, annotations, ...rest } = parsed
         this.annotations = annotations ?? []
         this.extraFields = rest
+        this.migrateViewportBuckets()
       }
     } catch {
       this.isMemoryOnly = true

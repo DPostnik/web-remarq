@@ -354,13 +354,14 @@ const CSS = `
   pointer-events: none;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1;
-  text-shadow: 0 0 3px var(--remarq-bg), 0 0 3px var(--remarq-bg);
+  padding: 1px 3px;
+  border-radius: 2px;
 }
 
-.remarq-spacing-label-margin { color: #f97316; }
-.remarq-spacing-label-padding { color: #22c55e; }
-.remarq-spacing-label-content { color: #3b82f6; font-size: 10px; }
-.remarq-spacing-label-gap { color: #a855f7; font-size: 10px; }
+.remarq-spacing-label-margin { color: #fff; background: rgba(249, 115, 22, 0.85); }
+.remarq-spacing-label-padding { color: #fff; background: rgba(34, 197, 94, 0.85); }
+.remarq-spacing-label-content { color: #fff; background: rgba(59, 130, 246, 0.85); font-size: 10px; }
+.remarq-spacing-label-gap { color: #fff; background: rgba(168, 85, 247, 0.85); font-size: 10px; }
 
 .remarq-toolbar-btn:disabled { opacity: 0.3; cursor: default; }
 .remarq-toolbar-btn:disabled:hover { background: transparent; }

@@ -334,8 +334,8 @@ const CSS = `
 
 .remarq-spacing-content {
   position: fixed;
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px dashed rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.3);
+  border: 1px dashed rgba(96, 165, 250, 0.8);
   pointer-events: none;
   z-index: 3;
 }

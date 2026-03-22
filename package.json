@@ -1,6 +1,6 @@
 {
   "name": "web-remarq",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Visual annotation tool for design review workflows",
   "type": "module",
   "main": "dist/index.cjs",
@@ -34,6 +34,18 @@
   "bugs": {
     "url": "https://github.com/DPostnik/web-remarq/issues"
   },
+  "keywords": [
+    "annotation",
+    "design-review",
+    "visual-feedback",
+    "ui-review",
+    "qa",
+    "element-inspector",
+    "ai-agent",
+    "design-handoff",
+    "web-annotation",
+    "dom-fingerprint"
+  ],
   "license": "MIT",
   "devDependencies": {
     "tsup": "^8.5.1",

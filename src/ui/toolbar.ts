@@ -9,6 +9,17 @@ export interface ToolbarCallbacks {
   onSpacingToggle: () => void
 }
 
+const TOOLTIPS: Record<string, string> = {
+  inspect: 'Inspect element',
+  spacing: 'Spacing overlay (S)',
+  copy: 'Copy as Markdown',
+  export: 'Export',
+  import: 'Import JSON',
+  clear: 'Clear all',
+  theme: 'Toggle theme',
+  minimize: 'Minimize',
+}
+
 const ICONS = {
   inspect: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>',
   spacing: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h12M2 14h12M2 2v12M14 2v12"/><path d="M5 5h6v6H5z" stroke-dasharray="2 1"/></svg>',
@@ -115,6 +126,7 @@ export class Toolbar {
     const btn = document.createElement('button')
     btn.className = 'remarq-toolbar-btn'
     btn.setAttribute('data-remarq-action', action)
+    btn.title = TOOLTIPS[action] ?? ''
     btn.innerHTML = icon
     btn.addEventListener('click', handler)
     return btn

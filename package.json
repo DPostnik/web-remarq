@@ -1,54 +1,8 @@
 {
-  "name": "web-remarq",
-  "version": "0.3.0",
-  "description": "Visual annotation tool for design review workflows",
-  "type": "module",
-  "main": "dist/index.cjs",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
-    },
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js",
-      "require": "./dist/core/index.cjs"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
+  "private": true,
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build": "tsup",
-    "typecheck": "tsc --noEmit"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/DPostnik/web-remarq.git"
-  },
-  "homepage": "https://github.com/DPostnik/web-remarq",
-  "bugs": {
-    "url": "https://github.com/DPostnik/web-remarq/issues"
-  },
-  "keywords": [
-    "annotation",
-    "design-review",
-    "visual-feedback",
-    "ui-review",
-    "qa",
-    "element-inspector",
-    "ai-agent",
-    "design-handoff",
-    "web-annotation",
-    "dom-fingerprint"
-  ],
-  "license": "MIT",
-  "devDependencies": {
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

@@ -290,6 +290,14 @@ function generateMarkdown(): string {
     lines.push(`Viewport: ${ann.viewportBucket}px`)
     lines.push('')
 
+    if (fp.sourceLocation) {
+      lines.push(`Source: \`${fp.sourceLocation}\`${fp.componentName ? ` (${fp.componentName})` : ''}`)
+      lines.push('')
+    } else if (fp.detectedSource) {
+      lines.push(`Source (detected): \`${fp.detectedSource}\`${fp.detectedComponent ? ` (${fp.detectedComponent})` : ''}`)
+      lines.push('')
+    }
+
     lines.push('Search hints:')
 
     if (fp.dataAnnotate) {

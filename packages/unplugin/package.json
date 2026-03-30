@@ -1,7 +1,7 @@
 {
   "name": "@web-remarq/unplugin",
   "version": "0.0.1",
-  "description": "Unplugin for web-remarq source location injection",
+  "description": "Unplugin for web-remarq source location injection (Vite/webpack/Rollup/esbuild/Rspack)",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -11,16 +11,63 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "require": "./dist/vite.cjs"
+    },
+    "./webpack": {
+      "types": "./dist/webpack.d.ts",
+      "import": "./dist/webpack.js",
+      "require": "./dist/webpack.cjs"
+    },
+    "./rollup": {
+      "types": "./dist/rollup.d.ts",
+      "import": "./dist/rollup.js",
+      "require": "./dist/rollup.cjs"
+    },
+    "./esbuild": {
+      "types": "./dist/esbuild.d.ts",
+      "import": "./dist/esbuild.js",
+      "require": "./dist/esbuild.cjs"
+    },
+    "./rspack": {
+      "types": "./dist/rspack.d.ts",
+      "import": "./dist/rspack.js",
+      "require": "./dist/rspack.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
-  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.29.2",
+    "magic-string": "^0.30.21",
+    "unplugin": "^3.0.0"
+  },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DPostnik/web-remarq",
+    "directory": "packages/unplugin"
+  },
+  "keywords": [
+    "unplugin",
+    "vite-plugin",
+    "webpack-plugin",
+    "rollup-plugin",
+    "web-remarq",
+    "source-location",
+    "annotation"
+  ]
 }

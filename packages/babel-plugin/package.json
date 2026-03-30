@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/babel-plugin",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Babel plugin for web-remarq source location injection",
   "type": "module",
   "main": "dist/index.cjs",

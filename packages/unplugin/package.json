@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/unplugin",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Unplugin for web-remarq source location injection (Vite/webpack/Rollup/esbuild/Rspack)",
   "type": "module",
   "main": "dist/index.cjs",

@@ -13,10 +13,11 @@ export interface RemarqOptions {
  * export default withRemarq({})
  * ```
  */
-function withRemarq(
-  nextConfig: Record<string, unknown> = {},
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withRemarq<T extends Record<string, any>>(
+  nextConfig: T = {} as T,
   options: RemarqOptions = {},
-): Record<string, unknown> {
+): T {
   const { production = false } = options
 
   // Don't add the plugin at all in production (avoids loading WASM for nothing)
@@ -24,7 +25,7 @@ function withRemarq(
     return nextConfig
   }
 
-  const existingExperimental = (nextConfig.experimental ?? {}) as Record<string, unknown>
+  const existingExperimental = (nextConfig.experimental ?? {}) as Record<string, any>
   const existingPlugins = (existingExperimental.swcPlugins ?? []) as unknown[]
 
   return {
@@ -36,7 +37,7 @@ function withRemarq(
         ['@web-remarq/swc-plugin', {}],
       ],
     },
-  }
+  } as T
 }
 
 export default withRemarq

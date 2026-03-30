@@ -4,6 +4,11 @@ export interface CSSModuleClass {
   localName: string  // "luckyBanners"
 }
 
+export interface SourceDetectionResult {
+  source: string | null
+  component: string | null
+}
+
 export interface ElementFingerprint {
   // Priority 1 — stable anchors
   dataAnnotate: string | null
@@ -27,6 +32,12 @@ export interface ElementFingerprint {
   // Priority 5 — agent export (optional, not used for matching)
   rawClasses?: string[]
   cssModules?: CSSModuleClass[]
+
+  // Priority 6 — source location (from build plugin or runtime detection)
+  sourceLocation: string | null   // "src/components/Form.tsx:24:6"
+  componentName: string | null    // "Form"
+  detectedSource: string | null   // from React fiber or external data-source
+  detectedComponent: string | null // from fiber.type.name or displayName
 }
 
 export interface Annotation {
@@ -56,4 +67,43 @@ export interface ImportResult {
   matched: number
   otherBreakpoint: number
   detached: number
+}
+
+export type SearchConfidence = 'high' | 'medium' | 'low'
+
+export interface GrepQuery {
+  query: string
+  glob: string
+  confidence: SearchConfidence
+}
+
+export interface AgentSearchHints {
+  grepQueries: GrepQuery[]
+  domContext: string
+  tagName: string
+  classes: string[]
+}
+
+export interface AgentAnnotationSource {
+  file: string
+  line: number
+  column: number
+  component: string | null
+}
+
+export interface AgentAnnotation {
+  id: string
+  route: string
+  comment: string
+  status: 'pending' | 'resolved'
+  timestamp: number
+  source: AgentAnnotationSource | null
+  searchHints: AgentSearchHints
+}
+
+export interface AgentExport {
+  version: 1
+  format: 'agent'
+  viewportBucket: number
+  annotations: AgentAnnotation[]
 }

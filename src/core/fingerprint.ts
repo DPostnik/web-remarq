@@ -1,5 +1,6 @@
 import type { ElementFingerprint, WebRemarqOptions } from './types'
 import { filterClasses, isHashedClass, decomposeCSSModules } from './hash-detect'
+import { detectRemarqPlugin, detectSource } from './source-detect'
 
 const TEXT_MAX_LENGTH = 50
 
@@ -29,6 +30,32 @@ export function createFingerprint(
     parentAnchor: findParentAnchor(el, dataAttr),
     rawClasses: Array.from(el.classList),
     cssModules: decomposeCSSModules(Array.from(el.classList)),
+    ...resolveSourceFields(el),
+  }
+}
+
+function resolveSourceFields(el: HTMLElement): {
+  sourceLocation: string | null
+  componentName: string | null
+  detectedSource: string | null
+  detectedComponent: string | null
+} {
+  const plugin = detectRemarqPlugin(el)
+  if (plugin.source) {
+    return {
+      sourceLocation: plugin.source,
+      componentName: plugin.component,
+      detectedSource: null,
+      detectedComponent: null,
+    }
+  }
+
+  const detected = detectSource(el)
+  return {
+    sourceLocation: null,
+    componentName: null,
+    detectedSource: detected.source,
+    detectedComponent: detected.component,
   }
 }
 

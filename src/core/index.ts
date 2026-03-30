@@ -1,4 +1,6 @@
-export type { Annotation, AnnotationStore, ElementFingerprint, CSSModuleClass } from './types'
+export type { Annotation, AnnotationStore, ElementFingerprint, CSSModuleClass, SourceDetectionResult, SearchConfidence, GrepQuery, AgentSearchHints, AgentAnnotationSource, AgentAnnotation, AgentExport } from './types'
 export { createFingerprint } from './fingerprint'
 export { matchElement } from './matcher'
 export { AnnotationStorage } from './storage'
+export { detectRemarqPlugin, detectSource } from './source-detect'
+export { generateAgentExport } from './agent-export'

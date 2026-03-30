@@ -2,6 +2,7 @@ import type { Annotation, ImportResult, WebRemarqOptions } from './core/types'
 import { AnnotationStorage } from './core/storage'
 import { createFingerprint } from './core/fingerprint'
 import { matchElement } from './core/matcher'
+import { generateAgentExport } from './core/agent-export'
 import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
 import { Toolbar } from './ui/toolbar'
@@ -356,6 +357,24 @@ function copyToClipboard(): void {
   })
 }
 
+function exportAgent(): void {
+  const anns = storage.getAll()
+  if (!anns.length) return
+  const data = generateAgentExport(anns, toBucket(window.innerWidth))
+  const json = JSON.stringify(data, null, 2)
+  downloadFile(json, `remarq-agent-${Date.now()}.json`, 'application/json')
+}
+
+function copyAgentToClipboard(): void {
+  const anns = storage.getAll()
+  if (!anns.length) return
+  const data = generateAgentExport(anns, toBucket(window.innerWidth))
+  const json = JSON.stringify(data, null, 2)
+  navigator.clipboard.writeText(json).catch(() => {
+    console.warn('[web-remarq] Clipboard write failed')
+  })
+}
+
 function setupMutationObserver(): void {
   mutationObserver = new MutationObserver((mutations) => {
     for (const m of mutations) {
@@ -470,13 +489,15 @@ export const WebRemarq = {
     themeManager?.setTheme(theme)
   },
 
-  export(format: 'md' | 'json'): void {
+  export(format: 'md' | 'json' | 'agent'): void {
     if (format === 'md') exportMarkdown()
-    else exportJSON()
+    else if (format === 'json') exportJSON()
+    else exportAgent()
   },
 
-  copy(): void {
-    copyToClipboard()
+  copy(format?: 'md' | 'agent'): void {
+    if (format === 'agent') copyAgentToClipboard()
+    else copyToClipboard()
   },
 
   async import(file: File): Promise<ImportResult> {

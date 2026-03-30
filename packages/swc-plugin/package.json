@@ -1,0 +1,24 @@
+{
+  "name": "@web-remarq/swc-plugin",
+  "version": "0.1.0",
+  "description": "SWC plugin for web-remarq source location injection (Turbopack/Next.js)",
+  "main": "web_remarq_swc_plugin.wasm",
+  "files": [
+    "web_remarq_swc_plugin.wasm"
+  ],
+  "scripts": {},
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DPostnik/web-remarq",
+    "directory": "packages/swc-plugin"
+  },
+  "keywords": [
+    "swc-plugin",
+    "turbopack",
+    "nextjs",
+    "web-remarq",
+    "source-location",
+    "annotation"
+  ]
+}

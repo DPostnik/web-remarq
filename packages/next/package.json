@@ -1,0 +1,42 @@
+{
+  "name": "@web-remarq/next",
+  "version": "0.1.0",
+  "description": "Next.js integration for web-remarq source location injection",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@web-remarq/swc-plugin": "^0.1.0"
+  },
+  "peerDependencies": {
+    "next": ">=14"
+  },
+  "peerDependenciesMeta": {
+    "next": { "optional": false }
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DPostnik/web-remarq",
+    "directory": "packages/next"
+  },
+  "keywords": ["nextjs", "turbopack", "web-remarq", "swc-plugin", "source-location", "annotation"]
+}

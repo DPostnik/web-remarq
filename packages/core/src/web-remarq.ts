@@ -228,7 +228,7 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     if (!spacingMode) spacingOverlay.hide()
   }
 
-  if (e.key === 'i' && e.altKey) {
+  if (e.altKey && e.code === 'KeyI') {
     e.preventDefault()
     setInspecting(!inspecting)
     if (!inspecting) {
@@ -409,12 +409,35 @@ function exportJSON(): void {
 
 function copyToClipboard(): void {
   const md = generateMarkdown()
-  if (!md) return
-  navigator.clipboard.writeText(md).then(() => {
+  if (!md) {
+    showToast(themeManager.container, 'No annotations to copy')
+    return
+  }
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(md).then(() => {
+      showToast(themeManager.container, 'Copied to clipboard')
+    }).catch(() => {
+      fallbackCopy(md)
+    })
+  } else {
+    fallbackCopy(md)
+  }
+}
+
+function fallbackCopy(text: string): void {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    document.execCommand('copy')
     showToast(themeManager.container, 'Copied to clipboard')
-  }).catch(() => {
-    console.warn('[web-remarq] Clipboard write failed')
-  })
+  } catch {
+    showToast(themeManager.container, 'Failed to copy')
+  }
+  textarea.remove()
 }
 
 function exportAgent(): void {
@@ -437,10 +460,13 @@ function copyAgentToClipboard(): void {
 
 function setupMutationObserver(): void {
   mutationObserver = new MutationObserver((mutations) => {
+    let hasExternalMutation = false
     for (const m of mutations) {
-      if (m.target instanceof HTMLElement && m.target.closest('[data-remarq-theme]')) return
+      if (m.target instanceof HTMLElement && m.target.closest('[data-remarq-theme]')) continue
+      hasExternalMutation = true
+      break
     }
-    scheduleRefresh()
+    if (hasExternalMutation) scheduleRefresh()
   })
 
   mutationObserver.observe(document.body, {

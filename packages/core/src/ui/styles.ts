@@ -47,7 +47,7 @@ const CSS = `
 .remarq-toolbar.remarq-pos-top-right { top: 16px; right: 16px; }
 .remarq-toolbar.remarq-pos-top-left { top: 16px; left: 16px; flex-direction: row-reverse; }
 
-.remarq-toolbar.remarq-minimized { padding: 4px; }
+.remarq-toolbar.remarq-minimized { padding: 8px; }
 
 .remarq-toolbar-btn {
   display: flex;

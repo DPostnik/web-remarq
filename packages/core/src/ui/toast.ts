@@ -1,5 +1,6 @@
 let currentToast: HTMLElement | null = null
 let currentTimer: ReturnType<typeof setTimeout> | null = null
+let fadeTimer: ReturnType<typeof setTimeout> | null = null
 
 export function showToast(container: HTMLElement, message: string, duration = 3000): void {
   hideToast()
@@ -13,7 +14,7 @@ export function showToast(container: HTMLElement, message: string, duration = 30
   currentTimer = setTimeout(() => {
     if (currentToast) {
       currentToast.classList.add('remarq-toast-fade')
-      setTimeout(() => hideToast(), 300)
+      fadeTimer = setTimeout(() => hideToast(), 300)
     }
   }, duration)
 }
@@ -22,6 +23,10 @@ export function hideToast(): void {
   if (currentTimer) {
     clearTimeout(currentTimer)
     currentTimer = null
+  }
+  if (fadeTimer) {
+    clearTimeout(fadeTimer)
+    fadeTimer = null
   }
   if (currentToast) {
     currentToast.remove()

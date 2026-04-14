@@ -11,6 +11,7 @@ import { SpacingOverlay } from './ui/spacing-overlay'
 import { Popup } from './ui/popup'
 import { MarkerManager } from './ui/markers'
 import { DetachedPanel } from './ui/detached-panel'
+import { showToast, hideToast } from './ui/toast'
 import { RouteObserver } from './spa'
 import { toBucket, initViewportListener, destroyViewportListener } from './core/viewport'
 
@@ -30,6 +31,7 @@ let spacingOverlay: SpacingOverlay
 let mutationObserver: MutationObserver | null = null
 let unsubRoute: (() => void) | null = null
 let refreshScheduled = false
+let savedCursor = ''
 
 // WeakRef cache: annotation id → element (survives GC of element)
 const elementCache = new Map<string, WeakRef<HTMLElement>>()
@@ -184,6 +186,7 @@ function handleInspectClick(e: MouseEvent): void {
       cacheElement(ann.id, target)
       storage.add(ann)
       refreshMarkers()
+      showToast(themeManager.container, 'Annotation added')
     },
     () => {
       // cancel
@@ -222,9 +225,24 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     toolbar.setSpacingActive(spacingMode)
     if (!spacingMode) spacingOverlay.hide()
   }
+
+  if (e.key === 'i') {
+    setInspecting(!inspecting)
+    if (!inspecting) {
+      overlay.hide()
+      spacingOverlay.hide()
+    }
+  }
 }
 
 function setInspecting(value: boolean): void {
+  if (value && !inspecting) {
+    savedCursor = document.body.style.cursor
+    document.body.style.cursor = 'crosshair'
+  }
+  if (!value && inspecting) {
+    document.body.style.cursor = savedCursor
+  }
   inspecting = value
   toolbar.setInspectActive(value)
   toolbar.setSpacingEnabled(value)
@@ -268,6 +286,10 @@ function handleMarkerClick(annotationId: string): void {
         refreshMarkers()
       },
       onClose: () => {},
+      onEdit: (newComment: string) => {
+        storage.update(ann.id, { comment: newComment })
+        refreshMarkers()
+      },
     },
   )
 }
@@ -349,18 +371,22 @@ function exportMarkdown(): void {
   const md = generateMarkdown()
   if (!md) return
   downloadFile(md, `remarq-annotations-${Date.now()}.md`, 'text/markdown')
+  showToast(themeManager.container, 'Exported as Markdown')
 }
 
 function exportJSON(): void {
   const data = storage.exportJSON()
   const json = JSON.stringify(data, null, 2)
   downloadFile(json, `remarq-annotations-${Date.now()}.json`, 'application/json')
+  showToast(themeManager.container, 'Exported as JSON')
 }
 
 function copyToClipboard(): void {
   const md = generateMarkdown()
   if (!md) return
-  navigator.clipboard.writeText(md).catch(() => {
+  navigator.clipboard.writeText(md).then(() => {
+    showToast(themeManager.container, 'Copied to clipboard')
+  }).catch(() => {
     console.warn('[web-remarq] Clipboard write failed')
   })
 }
@@ -439,6 +465,7 @@ export const WebRemarq = {
           elementCache.clear()
           storage.clearAll()
           refreshMarkers()
+          showToast(themeManager.container, 'All annotations cleared')
         },
         onThemeToggle: () => themeManager.toggle(),
       })
@@ -473,6 +500,10 @@ export const WebRemarq = {
       document.removeEventListener('keydown', handleInspectKeydown)
       mutationObserver?.disconnect()
       mutationObserver = null
+      if (inspecting) {
+        document.body.style.cursor = savedCursor
+      }
+      hideToast()
       destroyViewportListener()
       unsubRoute?.()
       routeObserver?.destroy()

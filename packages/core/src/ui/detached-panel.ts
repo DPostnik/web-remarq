@@ -1,9 +1,8 @@
 import type { Annotation } from '../core/types'
+import { showToast, hideToast } from './toast'
 
 export class DetachedPanel {
   private panelEl: HTMLElement | null = null
-  private toastEl: HTMLElement | null = null
-  private toastTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private container: HTMLElement,
@@ -31,7 +30,7 @@ export class DetachedPanel {
 
   destroy(): void {
     this.remove()
-    this.hideToast()
+    hideToast()
   }
 
   private renderSection(
@@ -72,7 +71,7 @@ export class DetachedPanel {
       if (type === 'other') {
         item.style.cursor = 'pointer'
         item.addEventListener('click', () => {
-          this.showToast(`Annotation created at ${ann.viewportBucket}px width. Resize viewport to view.`)
+          showToast(this.container, `Annotation created at ${ann.viewportBucket}px width. Resize viewport to view.`)
         })
       } else {
         const deleteBtn = document.createElement('button')
@@ -85,34 +84,6 @@ export class DetachedPanel {
       }
 
       panel.appendChild(item)
-    }
-  }
-
-  private showToast(message: string): void {
-    this.hideToast()
-
-    const toast = document.createElement('div')
-    toast.className = 'remarq-toast'
-    toast.textContent = message
-    this.container.appendChild(toast)
-    this.toastEl = toast
-
-    this.toastTimer = setTimeout(() => {
-      if (this.toastEl) {
-        this.toastEl.classList.add('remarq-toast-fade')
-        setTimeout(() => this.hideToast(), 300)
-      }
-    }, 3000)
-  }
-
-  private hideToast(): void {
-    if (this.toastTimer) {
-      clearTimeout(this.toastTimer)
-      this.toastTimer = null
-    }
-    if (this.toastEl) {
-      this.toastEl.remove()
-      this.toastEl = null
     }
   }
 

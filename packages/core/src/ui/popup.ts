@@ -12,6 +12,7 @@ interface DetailCallbacks {
   onResolve: () => void
   onDelete: () => void
   onClose: () => void
+  onEdit: (newComment: string) => void
 }
 
 interface Position {
@@ -26,6 +27,7 @@ const POPUP_MARGIN = 8
 export class Popup {
   private popupEl: HTMLElement | null = null
   private keyHandler: ((e: KeyboardEvent) => void) | null = null
+  private outsideClickHandler: ((e: MouseEvent) => void) | null = null
 
   constructor(private container: HTMLElement) {}
 
@@ -50,7 +52,12 @@ export class Popup {
     const textarea = document.createElement('textarea')
     textarea.placeholder = 'Add your comment...'
 
+    const hint = document.createElement('div')
+    hint.className = 'remarq-popup-hint'
+    hint.textContent = 'Enter to submit \u00b7 Shift+Enter for new line'
+
     body.appendChild(textarea)
+    body.appendChild(hint)
 
     const actions = document.createElement('div')
     actions.className = 'remarq-popup-actions'
@@ -88,20 +95,41 @@ export class Popup {
       textarea.focus()
     })
 
-    // Cmd/Ctrl+Enter to submit
     this.keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        this.hide()
+        onCancel()
+        return
+      }
+      // Enter submits from textarea (Shift+Enter = newline)
+      if (e.key === 'Enter' && !e.shiftKey && e.target === textarea) {
+        e.preventDefault()
+        const comment = textarea.value.trim()
+        if (!comment) return
+        this.hide()
+        onSubmit(comment)
+        return
+      }
+      // Keep Cmd/Ctrl+Enter as alternative
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         const comment = textarea.value.trim()
         if (!comment) return
         this.hide()
         onSubmit(comment)
       }
-      if (e.key === 'Escape') {
-        this.hide()
-        onCancel()
-      }
     }
     document.addEventListener('keydown', this.keyHandler)
+
+    setTimeout(() => {
+      this.outsideClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement
+        if (target && !target.closest('.remarq-popup')) {
+          this.hide()
+          onCancel()
+        }
+      }
+      document.addEventListener('mousedown', this.outsideClickHandler)
+    }, 0)
   }
 
   showDetail(
@@ -120,7 +148,16 @@ export class Popup {
 
     const body = document.createElement('div')
     body.className = 'remarq-popup-body'
-    body.textContent = info.comment
+
+    const makeCommentEl = (): HTMLElement => {
+      const el = document.createElement('div')
+      el.textContent = info.comment
+      el.style.cursor = 'pointer'
+      el.title = 'Click to edit'
+      el.addEventListener('click', () => this.enterEditMode(el, info, callbacks))
+      return el
+    }
+    body.appendChild(makeCommentEl())
 
     const actions = document.createElement('div')
     actions.className = 'remarq-popup-actions'
@@ -171,6 +208,17 @@ export class Popup {
       }
     }
     document.addEventListener('keydown', this.keyHandler)
+
+    setTimeout(() => {
+      this.outsideClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement
+        if (target && !target.closest('.remarq-popup')) {
+          this.hide()
+          callbacks.onClose()
+        }
+      }
+      document.addEventListener('mousedown', this.outsideClickHandler)
+    }, 0)
   }
 
   hide(): void {
@@ -182,10 +230,77 @@ export class Popup {
       document.removeEventListener('keydown', this.keyHandler)
       this.keyHandler = null
     }
+    if (this.outsideClickHandler) {
+      document.removeEventListener('mousedown', this.outsideClickHandler)
+      this.outsideClickHandler = null
+    }
   }
 
   destroy(): void {
     this.hide()
+  }
+
+  private enterEditMode(
+    commentEl: HTMLElement,
+    info: DetailInfo,
+    callbacks: DetailCallbacks,
+  ): void {
+    const textarea = document.createElement('textarea')
+    textarea.value = info.comment
+    textarea.className = 'remarq-popup-edit-textarea'
+    textarea.style.width = '100%'
+    textarea.style.minHeight = '60px'
+    textarea.style.padding = '8px'
+    textarea.style.border = '1px solid var(--remarq-border)'
+    textarea.style.borderRadius = '4px'
+    textarea.style.background = 'var(--remarq-bg-secondary)'
+    textarea.style.color = 'var(--remarq-text)'
+    textarea.style.fontFamily = 'inherit'
+    textarea.style.fontSize = '13px'
+    textarea.style.resize = 'vertical'
+    textarea.style.boxSizing = 'border-box'
+
+    commentEl.replaceWith(textarea)
+    textarea.focus()
+    textarea.selectionStart = textarea.value.length
+
+    const saveEdit = () => {
+      const newComment = textarea.value.trim()
+      if (newComment && newComment !== info.comment) {
+        info.comment = newComment
+        callbacks.onEdit(newComment)
+      }
+      const restored = document.createElement('div')
+      restored.textContent = info.comment
+      restored.style.cursor = 'pointer'
+      restored.title = 'Click to edit'
+      restored.addEventListener('click', () => this.enterEditMode(restored, info, callbacks))
+      textarea.replaceWith(restored)
+    }
+
+    textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        saveEdit()
+      }
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        const restored = document.createElement('div')
+        restored.textContent = info.comment
+        restored.style.cursor = 'pointer'
+        restored.title = 'Click to edit'
+        restored.addEventListener('click', () => this.enterEditMode(restored, info, callbacks))
+        textarea.replaceWith(restored)
+      }
+    })
+
+    textarea.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (textarea.isConnected) {
+          saveEdit()
+        }
+      }, 50)
+    })
   }
 
   private adjustPosition(popup: HTMLElement, position: Position): void {

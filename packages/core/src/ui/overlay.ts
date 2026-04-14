@@ -27,16 +27,14 @@ export class Overlay {
 
       this.tooltipEl.textContent = describeElement(target)
       this.tooltipEl.style.display = 'block'
-      this.tooltipEl.style.top = `${rect.top - 28}px`
-      this.tooltipEl.style.left = `${rect.left}px`
+      this.positionTooltip(rect.left, rect.top - 28)
     } catch {
       this.hide()
     }
   }
 
   updateTooltipPosition(x: number, y: number): void {
-    this.tooltipEl.style.left = `${x + 12}px`
-    this.tooltipEl.style.top = `${y - 28}px`
+    this.positionTooltip(x + 12, y - 28)
   }
 
   hideHighlight(): void {
@@ -51,6 +49,21 @@ export class Overlay {
   destroy(): void {
     this.overlayEl.remove()
     this.tooltipEl.remove()
+  }
+
+  private positionTooltip(left: number, top: number): void {
+    // Temporarily position at origin to measure
+    this.tooltipEl.style.left = '0px'
+    this.tooltipEl.style.top = '0px'
+    const tooltipWidth = this.tooltipEl.offsetWidth
+    const tooltipHeight = this.tooltipEl.offsetHeight
+
+    // Clamp to viewport
+    const maxLeft = window.innerWidth - tooltipWidth - 8
+    const maxTop = window.innerHeight - tooltipHeight - 8
+
+    this.tooltipEl.style.left = `${Math.max(8, Math.min(left, maxLeft))}px`
+    this.tooltipEl.style.top = `${Math.max(8, Math.min(top, maxTop))}px`
   }
 }
 

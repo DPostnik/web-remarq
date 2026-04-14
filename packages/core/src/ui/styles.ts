@@ -368,6 +368,12 @@ const CSS = `
 
 .remarq-toolbar-btn:disabled { opacity: 0.3; cursor: default; }
 .remarq-toolbar-btn:disabled:hover { background: transparent; }
+
+.remarq-popup-hint {
+  font-size: 11px;
+  color: var(--remarq-text-secondary);
+  margin-top: 4px;
+}
 `
 
 export function injectStyles(): void {

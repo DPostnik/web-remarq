@@ -13,6 +13,7 @@ interface DetailCallbacks {
   onDelete: () => void
   onClose: () => void
   onEdit: (newComment: string) => void
+  onCopy: () => void
 }
 
 interface Position {
@@ -172,6 +173,13 @@ export class Popup {
       })
       actions.appendChild(resolveBtn)
     }
+
+    const copyBtn = document.createElement('button')
+    copyBtn.textContent = 'Copy'
+    copyBtn.addEventListener('click', () => {
+      callbacks.onCopy()
+    })
+    actions.appendChild(copyBtn)
 
     const deleteBtn = document.createElement('button')
     deleteBtn.textContent = 'Delete'

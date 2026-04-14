@@ -33,6 +33,7 @@ export class MarkerManager {
 
     this.container.appendChild(markerEl)
     this.markers.set(annotation.id, { annotation, target, markerEl })
+    this.applyOutline(target, annotation.status)
     this.updatePosition(annotation.id)
   }
 
@@ -40,6 +41,7 @@ export class MarkerManager {
     const entry = this.markers.get(id)
     if (entry) {
       entry.markerEl.remove()
+      this.removeOutline(entry.target)
       this.markers.delete(id)
     }
   }
@@ -55,6 +57,7 @@ export class MarkerManager {
   clear(): void {
     for (const entry of this.markers.values()) {
       entry.markerEl.remove()
+      this.removeOutline(entry.target)
     }
     this.markers.clear()
     this.counter = 0
@@ -66,6 +69,18 @@ export class MarkerManager {
       this.rafId = null
     }
     this.clear()
+  }
+
+  private applyOutline(target: HTMLElement, status: 'pending' | 'resolved'): void {
+    // Use rgba for resolved to get lower opacity without affecting element content
+    const color = status === 'pending' ? '#f97316' : 'rgba(34, 197, 94, 0.5)'
+    target.style.outline = `2px solid ${color}`
+    target.style.outlineOffset = '2px'
+  }
+
+  private removeOutline(target: HTMLElement): void {
+    target.style.outline = ''
+    target.style.outlineOffset = ''
   }
 
   private updatePosition(id: string): void {

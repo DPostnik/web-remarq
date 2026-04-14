@@ -290,6 +290,21 @@ function handleMarkerClick(annotationId: string): void {
         storage.update(ann.id, { comment: newComment })
         refreshMarkers()
       },
+      onCopy: () => {
+        const fp = ann.fingerprint
+        const lines = [
+          `[${ann.status}] "${ann.comment}"`,
+          `Element: <${fp.tagName}>${fp.textContent ? ` "${fp.textContent}"` : ''}`,
+          `Route: ${ann.route}`,
+          `Viewport: ${ann.viewportBucket}px`,
+        ]
+        if (fp.sourceLocation) lines.push(`Source: ${fp.sourceLocation}`)
+        navigator.clipboard.writeText(lines.join('\n')).then(() => {
+          showToast(themeManager.container, 'Annotation copied')
+        }).catch(() => {
+          console.warn('[web-remarq] Clipboard write failed')
+        })
+      },
     },
   )
 }

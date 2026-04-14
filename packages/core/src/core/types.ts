@@ -56,10 +56,14 @@ export interface AnnotationStore {
   annotations: Annotation[]
 }
 
+export type ToolbarPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
 export interface WebRemarqOptions {
   theme?: 'light' | 'dark'
   classFilter?: (className: string) => boolean
   dataAttribute?: string
+  position?: ToolbarPosition
+  shortcuts?: boolean
 }
 
 export interface ImportResult {

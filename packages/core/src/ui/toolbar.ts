@@ -1,3 +1,5 @@
+import type { ToolbarPosition } from '../core/types'
+
 export interface ToolbarCallbacks {
   onInspect: () => void
   onCopy: () => void
@@ -7,16 +9,21 @@ export interface ToolbarCallbacks {
   onClear: () => void
   onThemeToggle: () => void
   onSpacingToggle: () => void
+  onHelp: () => void
 }
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '')
+const modKey = isMac ? '\u2325' : 'Alt'
+
 const TOOLTIPS: Record<string, string> = {
-  inspect: 'Inspect element',
+  inspect: `Inspect element (${modKey}+I)`,
   spacing: 'Spacing overlay (S)',
-  copy: 'Copy as Markdown',
+  copy: 'Copy as Markdown (C)',
   export: 'Export',
   import: 'Import JSON',
   clear: 'Clear all',
   theme: 'Toggle theme',
+  help: 'Keyboard shortcuts (?)',
   minimize: 'Minimize',
 }
 
@@ -28,6 +35,7 @@ const ICONS = {
   import: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10V2M4 6l4 4 4-4M2 12h12"/></svg>',
   clear: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>',
   theme: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>',
+  help: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M6 6.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1-1.5 2"/><circle cx="8" cy="12" r="0.5" fill="currentColor" stroke="none"/></svg>',
   minimize: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h8"/></svg>',
 }
 
@@ -44,9 +52,10 @@ export class Toolbar {
   constructor(
     private container: HTMLElement,
     private callbacks: ToolbarCallbacks,
+    private position: ToolbarPosition = 'bottom-right',
   ) {
     this.toolbarEl = document.createElement('div')
-    this.toolbarEl.className = 'remarq-toolbar'
+    this.toolbarEl.className = `remarq-toolbar remarq-pos-${position}`
 
     this.inspectBtn = this.createButton('inspect', ICONS.inspect, () => callbacks.onInspect())
     this.badgeEl = document.createElement('span')
@@ -72,9 +81,10 @@ export class Toolbar {
 
     const clearBtn = this.createButton('clear', ICONS.clear, () => callbacks.onClear())
     const themeBtn = this.createButton('theme', ICONS.theme, () => callbacks.onThemeToggle())
+    const helpBtn = this.createButton('help', ICONS.help, () => callbacks.onHelp())
     const minimizeBtn = this.createButton('minimize', ICONS.minimize, () => this.toggleMinimize())
 
-    this.buttons = [this.inspectBtn, this.spacingBtn, copyBtn, exportBtn, importBtn, clearBtn, themeBtn]
+    this.buttons = [this.inspectBtn, this.spacingBtn, copyBtn, exportBtn, importBtn, clearBtn, themeBtn, helpBtn]
 
     this.toolbarEl.appendChild(this.inspectBtn)
     this.toolbarEl.appendChild(this.spacingBtn)
@@ -83,6 +93,7 @@ export class Toolbar {
     this.toolbarEl.appendChild(importBtn)
     this.toolbarEl.appendChild(clearBtn)
     this.toolbarEl.appendChild(themeBtn)
+    this.toolbarEl.appendChild(helpBtn)
     this.toolbarEl.appendChild(minimizeBtn)
     this.toolbarEl.appendChild(this.fileInput)
 

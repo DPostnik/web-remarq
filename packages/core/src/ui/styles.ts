@@ -29,8 +29,6 @@ const CSS = `
 
 .remarq-toolbar {
   position: fixed;
-  bottom: 16px;
-  right: 16px;
   z-index: 2147483647;
   display: flex;
   gap: 4px;
@@ -43,6 +41,11 @@ const CSS = `
   font-size: 13px;
   color: var(--remarq-text);
 }
+
+.remarq-toolbar.remarq-pos-bottom-right { bottom: 16px; right: 16px; }
+.remarq-toolbar.remarq-pos-bottom-left { bottom: 16px; left: 16px; flex-direction: row-reverse; }
+.remarq-toolbar.remarq-pos-top-right { top: 16px; right: 16px; }
+.remarq-toolbar.remarq-pos-top-left { top: 16px; left: 16px; flex-direction: row-reverse; }
 
 .remarq-toolbar.remarq-minimized { padding: 4px; }
 
@@ -197,8 +200,6 @@ const CSS = `
 
 .remarq-detached-panel {
   position: fixed;
-  bottom: 60px;
-  right: 16px;
   z-index: 2147483646;
   width: 280px;
   max-height: 300px;
@@ -211,6 +212,11 @@ const CSS = `
   font-size: 13px;
   color: var(--remarq-text);
 }
+
+.remarq-detached-panel.remarq-pos-bottom-right { bottom: 60px; right: 16px; }
+.remarq-detached-panel.remarq-pos-bottom-left { bottom: 60px; left: 16px; }
+.remarq-detached-panel.remarq-pos-top-right { top: 60px; right: 16px; }
+.remarq-detached-panel.remarq-pos-top-left { top: 60px; left: 16px; }
 
 .remarq-detached-header {
   padding: 8px 12px;
@@ -264,6 +270,20 @@ const CSS = `
   border-radius: 6px;
   box-shadow: var(--remarq-shadow);
   overflow: hidden;
+}
+
+.remarq-pos-top-right .remarq-export-menu,
+.remarq-pos-top-left .remarq-export-menu {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 4px;
+}
+
+.remarq-pos-bottom-left .remarq-export-menu,
+.remarq-pos-top-left .remarq-export-menu {
+  right: auto;
+  left: 0;
 }
 
 .remarq-export-menu button {
@@ -368,6 +388,70 @@ const CSS = `
 
 .remarq-toolbar-btn:disabled { opacity: 0.3; cursor: default; }
 .remarq-toolbar-btn:disabled:hover { background: transparent; }
+
+.remarq-shortcuts-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remarq-shortcuts-modal {
+  background: var(--remarq-bg);
+  border: 1px solid var(--remarq-border);
+  border-radius: 12px;
+  box-shadow: var(--remarq-shadow);
+  padding: 20px 24px;
+  min-width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--remarq-text);
+}
+
+.remarq-shortcuts-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--remarq-border);
+}
+
+.remarq-shortcuts-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.remarq-shortcuts-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 2px 8px;
+  background: var(--remarq-bg-secondary);
+  border: 1px solid var(--remarq-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.remarq-shortcuts-context {
+  font-size: 10px;
+  color: var(--remarq-text-secondary);
+  background: var(--remarq-bg-secondary);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: auto;
+}
 
 .remarq-popup-hint {
   font-size: 11px;

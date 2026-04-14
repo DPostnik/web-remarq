@@ -1,4 +1,4 @@
-import type { Annotation } from '../core/types'
+import type { Annotation, ToolbarPosition } from '../core/types'
 import { showToast, hideToast } from './toast'
 
 export class DetachedPanel {
@@ -7,6 +7,7 @@ export class DetachedPanel {
   constructor(
     private container: HTMLElement,
     private onDelete?: (id: string) => void,
+    private position: ToolbarPosition = 'bottom-right',
   ) {}
 
   update(otherBreakpoint: Annotation[], detached: Annotation[]): void {
@@ -14,7 +15,7 @@ export class DetachedPanel {
     if (otherBreakpoint.length === 0 && detached.length === 0) return
 
     const panel = document.createElement('div')
-    panel.className = 'remarq-detached-panel'
+    panel.className = `remarq-detached-panel remarq-pos-${this.position}`
 
     if (otherBreakpoint.length > 0) {
       this.renderSection(panel, `Other viewport (${otherBreakpoint.length})`, otherBreakpoint, 'other')

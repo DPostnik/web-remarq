@@ -12,6 +12,7 @@ import { Popup } from './ui/popup'
 import { MarkerManager } from './ui/markers'
 import { DetachedPanel } from './ui/detached-panel'
 import { showToast, hideToast } from './ui/toast'
+import { showShortcutsModal, hideShortcutsModal } from './ui/shortcuts-modal'
 import { RouteObserver } from './spa'
 import { toBucket, initViewportListener, destroyViewportListener } from './core/viewport'
 
@@ -210,6 +211,7 @@ function handleInspectHover(e: MouseEvent): void {
 }
 
 function handleInspectKeydown(e: KeyboardEvent): void {
+  if (options.shortcuts === false) return
   // Ignore when typing in inputs
   const tag = (e.target as HTMLElement)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
@@ -226,12 +228,21 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     if (!spacingMode) spacingOverlay.hide()
   }
 
-  if (e.key === 'i') {
+  if (e.key === 'i' && e.altKey) {
+    e.preventDefault()
     setInspecting(!inspecting)
     if (!inspecting) {
       overlay.hide()
       spacingOverlay.hide()
     }
+  }
+
+  if (e.key === 'c' && inspecting) {
+    copyToClipboard()
+  }
+
+  if (e.key === '?') {
+    showShortcutsModal(themeManager.container)
   }
 }
 
@@ -453,11 +464,13 @@ export const WebRemarq = {
       spacingOverlay = new SpacingOverlay(themeManager.container)
       popup = new Popup(themeManager.container)
       markers = new MarkerManager(themeManager.container, handleMarkerClick)
+      const position = options.position ?? 'bottom-right'
+
       detachedPanel = new DetachedPanel(themeManager.container, (id) => {
         elementCache.delete(id)
         storage.remove(id)
         refreshMarkers()
-      })
+      }, position)
 
       toolbar = new Toolbar(themeManager.container, {
         onInspect: () => setInspecting(!inspecting),
@@ -483,7 +496,8 @@ export const WebRemarq = {
           showToast(themeManager.container, 'All annotations cleared')
         },
         onThemeToggle: () => themeManager.toggle(),
-      })
+        onHelp: () => showShortcutsModal(themeManager.container),
+      }, position)
 
       if (storage.isMemoryOnly) {
         toolbar.setMemoryWarning(true)
@@ -519,6 +533,7 @@ export const WebRemarq = {
         document.body.style.cursor = savedCursor
       }
       hideToast()
+      hideShortcutsModal()
       destroyViewportListener()
       unsubRoute?.()
       routeObserver?.destroy()

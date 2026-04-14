@@ -1,4 +1,4 @@
-export type { Annotation, AnnotationStore, ElementFingerprint, CSSModuleClass, SourceDetectionResult, SearchConfidence, GrepQuery, AgentSearchHints, AgentAnnotationSource, AgentAnnotation, AgentExport } from './types'
+export type { Annotation, AnnotationStore, ElementFingerprint, CSSModuleClass, SourceDetectionResult, SearchConfidence, GrepQuery, AgentSearchHints, AgentAnnotationSource, AgentAnnotation, AgentExport, ToolbarPosition } from './types'
 export { createFingerprint } from './fingerprint'
 export { matchElement } from './matcher'
 export { AnnotationStorage } from './storage'

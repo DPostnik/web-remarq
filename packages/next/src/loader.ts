@@ -24,6 +24,11 @@ export default function remarqLoader(this: LoaderContext, source: string) {
         : filePath.endsWith('.ts')
           ? { syntax: 'typescript', tsx: false }
           : { syntax: 'ecmascript', jsx: true },
+      transform: {
+        react: {
+          runtime: 'automatic',
+        },
+      },
       experimental: {
         plugins: [[WASM_PATH, {}]],
       },

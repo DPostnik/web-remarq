@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/next",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Next.js integration for web-remarq source location injection",
   "type": "module",
   "main": "dist/index.cjs",
@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./loader": {
+      "types": "./dist/loader.d.ts",
+      "import": "./dist/loader.js",
+      "require": "./dist/loader.cjs"
     }
   },
   "files": ["dist"],
@@ -19,10 +24,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@swc/core": "^1.15.2",
     "@web-remarq/swc-plugin": "^0.1.0"
   },
   "peerDependencies": {
-    "next": ">=14"
+    "next": ">=13"
   },
   "peerDependenciesMeta": {
     "next": { "optional": false }

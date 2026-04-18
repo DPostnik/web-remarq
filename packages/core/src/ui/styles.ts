@@ -332,28 +332,26 @@ const CSS = `
 
 .remarq-spacing {
   position: fixed;
-  top: 0;
-  left: 0;
   pointer-events: none;
   z-index: 2147483646;
 }
 
 .remarq-spacing-margin {
-  position: fixed;
+  position: absolute;
   background: rgba(249, 115, 22, 0.2);
   pointer-events: none;
   z-index: 1;
 }
 
 .remarq-spacing-padding {
-  position: fixed;
+  position: absolute;
   background: rgba(34, 197, 94, 0.2);
   pointer-events: none;
   z-index: 2;
 }
 
 .remarq-spacing-content {
-  position: fixed;
+  position: absolute;
   background: rgba(59, 130, 246, 0.3);
   border: 1px dashed rgba(96, 165, 250, 0.8);
   pointer-events: none;
@@ -371,7 +369,7 @@ const CSS = `
 }
 
 .remarq-spacing-label {
-  position: fixed;
+  position: absolute;
   font-size: 11px;
   font-weight: 700;
   pointer-events: none;

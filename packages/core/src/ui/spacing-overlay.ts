@@ -5,15 +5,41 @@ interface Sides {
   left: number
 }
 
-interface BoxRect {
-  top: number
-  left: number
-  width: number
-  height: number
-}
-
 function parsePx(value: string): number {
   return parseFloat(value) || 0
+}
+
+/**
+ * Compute the untransformed top-left screen position for an element,
+ * accounting for its CSS transform and transform-origin.
+ */
+function computeUntransformedOrigin(
+  rect: DOMRect,
+  offsetW: number,
+  offsetH: number,
+  transform: string,
+  transformOrigin: string,
+): { x: number; y: number } {
+  if (!transform || transform === 'none') {
+    return { x: rect.left, y: rect.top }
+  }
+
+  const [ox, oy] = transformOrigin.split(' ').map(parseFloat)
+  const matrix = new DOMMatrix(transform)
+
+  const corners = [
+    matrix.transformPoint(new DOMPoint(-ox, -oy)),
+    matrix.transformPoint(new DOMPoint(offsetW - ox, -oy)),
+    matrix.transformPoint(new DOMPoint(-ox, offsetH - oy)),
+    matrix.transformPoint(new DOMPoint(offsetW - ox, offsetH - oy)),
+  ]
+  const minX = Math.min(corners[0].x, corners[1].x, corners[2].x, corners[3].x)
+  const minY = Math.min(corners[0].y, corners[1].y, corners[2].y, corners[3].y)
+
+  return {
+    x: rect.left - minX - ox,
+    y: rect.top - minY - oy,
+  }
 }
 
 export class SpacingOverlay {
@@ -33,7 +59,6 @@ export class SpacingOverlay {
   }
 
   constructor(private parent: HTMLElement) {
-    // Capture phase to catch scroll on any container, not just window
     window.addEventListener('scroll', this.scrollHandler, true)
     this.containerEl = document.createElement('div')
     this.containerEl.className = 'remarq-spacing'
@@ -48,11 +73,9 @@ export class SpacingOverlay {
     this.contentEl = document.createElement('div')
     this.contentEl.className = 'remarq-spacing-content'
 
-    // Order matters: content on top of padding on top of margin
     this.containerEl.appendChild(this.marginEl)
     this.containerEl.appendChild(this.paddingEl)
     this.containerEl.appendChild(this.contentEl)
-
 
     parent.appendChild(this.containerEl)
   }
@@ -69,55 +92,71 @@ export class SpacingOverlay {
       const padding = this.readSides(cs, 'padding')
       const border = this.readBorderSides(cs)
 
-      // Margin box: expand outward from border-box
-      const marginBox: BoxRect = {
-        top: rect.top - margin.top,
-        left: rect.left - margin.left,
-        width: rect.width + margin.left + margin.right,
-        height: rect.height + margin.top + margin.bottom,
+      const transform = cs.transform
+      const transformOrigin = cs.transformOrigin
+      const hasTransform = transform && transform !== 'none'
+
+      // Element's untransformed border-box dimensions
+      const w = target.offsetWidth
+      const h = target.offsetHeight
+
+      // Untransformed top-left position on screen
+      const origin = computeUntransformedOrigin(rect, w, h, transform, transformOrigin)
+
+      // Position and transform the container at the element's border-box
+      this.containerEl.style.left = `${origin.x}px`
+      this.containerEl.style.top = `${origin.y}px`
+      this.containerEl.style.width = `${w}px`
+      this.containerEl.style.height = `${h}px`
+
+      if (hasTransform) {
+        this.containerEl.style.transform = transform
+        this.containerEl.style.transformOrigin = transformOrigin
+      } else {
+        this.containerEl.style.transform = ''
+        this.containerEl.style.transformOrigin = ''
       }
 
-      // Padding box = rect (border-box)
-      const paddingBox: BoxRect = {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      }
+      // All inner boxes use coordinates relative to container (0,0 = border-box top-left)
+
+      // Margin box: expand outward
+      this.positionEl(this.marginEl, -margin.left, -margin.top,
+        w + margin.left + margin.right, h + margin.top + margin.bottom)
+
+      // Padding box = border-box = container itself
+      this.positionEl(this.paddingEl, 0, 0, w, h)
 
       // Content box: shrink inward by border + padding
-      const contentBox: BoxRect = {
-        top: rect.top + border.top + padding.top,
-        left: rect.left + border.left + padding.left,
-        width: rect.width - border.left - border.right - padding.left - padding.right,
-        height: rect.height - border.top - border.bottom - padding.top - padding.bottom,
-      }
-
-      this.positionEl(this.marginEl, marginBox)
-      this.positionEl(this.paddingEl, paddingBox)
-      this.positionEl(this.contentEl, contentBox)
+      const contentLeft = border.left + padding.left
+      const contentTop = border.top + padding.top
+      const contentW = w - border.left - border.right - padding.left - padding.right
+      const contentH = h - border.top - border.bottom - padding.top - padding.bottom
+      this.positionEl(this.contentEl, contentLeft, contentTop, contentW, contentH)
 
       // Clear old labels and gaps
       this.clearLabels()
       this.clearGaps()
 
-      // Margin labels
-      this.addSideLabels(margin, marginBox, paddingBox, 'margin')
+      // Margin labels (relative to container)
+      this.addMarginPaddingLabels(margin, -margin.left, -margin.top,
+        w + margin.left + margin.right, h + margin.top + margin.bottom,
+        0, 0, w, h, 'margin')
 
-      // Padding labels
-      this.addSideLabels(padding, paddingBox, contentBox, 'padding')
+      // Padding labels (relative to container)
+      this.addMarginPaddingLabels(padding, 0, 0, w, h,
+        contentLeft, contentTop, contentW, contentH, 'padding')
 
       // Content size label
-      if (contentBox.width > 40 && contentBox.height > 14) {
+      if (contentW > 40 && contentH > 14) {
         this.addLabel(
-          `${Math.round(contentBox.width)} × ${Math.round(contentBox.height)}`,
-          contentBox.top + contentBox.height / 2 - 6,
-          contentBox.left + contentBox.width / 2,
+          `${Math.round(contentW)} × ${Math.round(contentH)}`,
+          contentTop + contentH / 2 - 6,
+          contentLeft + contentW / 2,
           'content',
         )
       }
 
-      // Gap visualization
+      // Gap visualization (appended to parent, not container — gaps relate to siblings)
       this.showGaps(target)
 
       this.containerEl.style.display = 'block'
@@ -158,42 +197,40 @@ export class SpacingOverlay {
     }
   }
 
-  private positionEl(el: HTMLElement, box: BoxRect): void {
-    el.style.top = `${box.top}px`
-    el.style.left = `${box.left}px`
-    el.style.width = `${Math.max(0, box.width)}px`
-    el.style.height = `${Math.max(0, box.height)}px`
+  private positionEl(el: HTMLElement, left: number, top: number, width: number, height: number): void {
+    el.style.left = `${left}px`
+    el.style.top = `${top}px`
+    el.style.width = `${Math.max(0, width)}px`
+    el.style.height = `${Math.max(0, height)}px`
   }
 
-  private addSideLabels(sides: Sides, outerBox: BoxRect, innerBox: BoxRect, type: 'margin' | 'padding'): void {
-    // Top label
+  private addMarginPaddingLabels(
+    sides: Sides,
+    outerLeft: number, outerTop: number, outerW: number, outerH: number,
+    innerLeft: number, innerTop: number, innerW: number, innerH: number,
+    type: 'margin' | 'padding',
+  ): void {
     if (sides.top > 0) {
-      const y = outerBox.top + (innerBox.top - outerBox.top) / 2 - 6
-      const x = outerBox.left + outerBox.width / 2
+      const y = outerTop + (innerTop - outerTop) / 2 - 6
+      const x = outerLeft + outerW / 2
       this.addLabel(String(Math.round(sides.top)), y, x, type)
     }
-
-    // Bottom label
     if (sides.bottom > 0) {
-      const innerBottom = innerBox.top + innerBox.height
-      const outerBottom = outerBox.top + outerBox.height
+      const innerBottom = innerTop + innerH
+      const outerBottom = outerTop + outerH
       const y = innerBottom + (outerBottom - innerBottom) / 2 - 6
-      const x = outerBox.left + outerBox.width / 2
+      const x = outerLeft + outerW / 2
       this.addLabel(String(Math.round(sides.bottom)), y, x, type)
     }
-
-    // Left label
     if (sides.left > 0) {
-      const y = outerBox.top + outerBox.height / 2 - 6
-      const x = outerBox.left + (innerBox.left - outerBox.left) / 2
+      const y = outerTop + outerH / 2 - 6
+      const x = outerLeft + (innerLeft - outerLeft) / 2
       this.addLabel(String(Math.round(sides.left)), y, x, type)
     }
-
-    // Right label
     if (sides.right > 0) {
-      const innerRight = innerBox.left + innerBox.width
-      const outerRight = outerBox.left + outerBox.width
-      const y = outerBox.top + outerBox.height / 2 - 6
+      const innerRight = innerLeft + innerW
+      const outerRight = outerLeft + outerW
+      const y = outerTop + outerH / 2 - 6
       const x = innerRight + (outerRight - innerRight) / 2
       this.addLabel(String(Math.round(sides.right)), y, x, type)
     }
@@ -216,14 +253,12 @@ export class SpacingOverlay {
   }
 
   private showGaps(target: HTMLElement): void {
-    // Case 1: Target IS a flex container — show gaps between its own children
     const targetCs = window.getComputedStyle(target)
     if (targetCs.display.includes('flex')) {
       this.showContainerGaps(target, targetCs)
       return
     }
 
-    // Case 2: Target is a child of a flex container — show adjacent gaps
     const parent = target.parentElement
     if (!parent) return
 
@@ -242,12 +277,9 @@ export class SpacingOverlay {
     const targetIndex = children.indexOf(target)
     if (targetIndex === -1) return
 
-    // Show gap before target (between prev sibling and target)
     if (targetIndex > 0) {
       this.renderGap(children[targetIndex - 1], target, gap, isRow)
     }
-
-    // Show gap after target (between target and next sibling)
     if (targetIndex < children.length - 1) {
       this.renderGap(target, children[targetIndex + 1], gap, isRow)
     }
@@ -263,7 +295,6 @@ export class SpacingOverlay {
     if (gap <= 0) return
 
     const children = Array.from(container.children) as HTMLElement[]
-    // Show all gaps between children (since we're hovering the container itself)
     for (let i = 0; i < children.length - 1; i++) {
       this.renderGap(children[i], children[i + 1], gap, isRow)
     }
@@ -300,7 +331,6 @@ export class SpacingOverlay {
       gapEl.style.height = `${Math.abs(bottom - top)}px`
     }
 
-    // Label inside gap (skip if too small)
     if (gap >= 10) {
       const label = document.createElement('span')
       label.className = 'remarq-spacing-label-gap'
@@ -309,7 +339,8 @@ export class SpacingOverlay {
       gapEl.appendChild(label)
     }
 
-    this.containerEl.appendChild(gapEl)
+    // Gaps are between siblings — render outside the transformed container
+    this.parent.appendChild(gapEl)
     this.gapEls.push(gapEl)
   }
 

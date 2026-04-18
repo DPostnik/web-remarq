@@ -18,12 +18,47 @@ export class Overlay {
   show(target: HTMLElement): void {
     try {
       const rect = target.getBoundingClientRect()
+      const cs = window.getComputedStyle(target)
+      const transform = cs.transform
+      const hasTransform = transform && transform !== 'none'
 
       this.overlayEl.style.display = 'block'
-      this.overlayEl.style.top = `${rect.top}px`
-      this.overlayEl.style.left = `${rect.left}px`
-      this.overlayEl.style.width = `${rect.width}px`
-      this.overlayEl.style.height = `${rect.height}px`
+
+      if (hasTransform) {
+        const w = target.offsetWidth
+        const h = target.offsetHeight
+        const origin = cs.transformOrigin
+        const [ox, oy] = origin.split(' ').map(parseFloat)
+        const matrix = new DOMMatrix(transform)
+
+        // Compute where transform-origin maps on screen
+        const corners = [
+          matrix.transformPoint(new DOMPoint(-ox, -oy)),
+          matrix.transformPoint(new DOMPoint(w - ox, -oy)),
+          matrix.transformPoint(new DOMPoint(-ox, h - oy)),
+          matrix.transformPoint(new DOMPoint(w - ox, h - oy)),
+        ]
+        const minX = Math.min(corners[0].x, corners[1].x, corners[2].x, corners[3].x)
+        const minY = Math.min(corners[0].y, corners[1].y, corners[2].y, corners[3].y)
+
+        // Origin screen position, then untransformed top-left
+        const overlayX = rect.left - minX - ox
+        const overlayY = rect.top - minY - oy
+
+        this.overlayEl.style.left = `${overlayX}px`
+        this.overlayEl.style.top = `${overlayY}px`
+        this.overlayEl.style.width = `${w}px`
+        this.overlayEl.style.height = `${h}px`
+        this.overlayEl.style.transform = transform
+        this.overlayEl.style.transformOrigin = origin
+      } else {
+        this.overlayEl.style.left = `${rect.left}px`
+        this.overlayEl.style.top = `${rect.top}px`
+        this.overlayEl.style.width = `${rect.width}px`
+        this.overlayEl.style.height = `${rect.height}px`
+        this.overlayEl.style.transform = ''
+        this.overlayEl.style.transformOrigin = ''
+      }
 
       this.tooltipEl.textContent = describeElement(target)
       this.tooltipEl.style.display = 'block'

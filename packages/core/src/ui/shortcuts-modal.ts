@@ -5,6 +5,7 @@ const SHORTCUTS = [
   { key: `${modKey}+I`, description: 'Toggle inspect mode' },
   { key: 'S', description: 'Toggle spacing overlay', context: 'inspect' },
   { key: `${modKey}+C`, description: 'Copy all annotations to clipboard' },
+  { key: `${modKey}+D`, description: 'Delete all annotations' },
   { key: 'Esc', description: 'Exit inspect mode / close popup' },
   { key: '?', description: 'Show this help' },
   { key: 'Enter', description: 'Submit annotation', context: 'popup' },

@@ -242,6 +242,14 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     copyToClipboard()
   }
 
+  if (e.altKey && e.code === 'KeyD') {
+    e.preventDefault()
+    elementCache.clear()
+    storage.clearAll()
+    refreshMarkers()
+    showToast(themeManager.container, 'All annotations cleared')
+  }
+
   if (e.key === '?') {
     showShortcutsModal(themeManager.container)
   }

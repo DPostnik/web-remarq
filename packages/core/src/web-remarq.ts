@@ -237,7 +237,7 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     }
   }
 
-  if (e.altKey && e.key === 'c') {
+  if (e.altKey && e.code === 'KeyC') {
     e.preventDefault()
     copyToClipboard()
   }

@@ -272,6 +272,8 @@ export class SpacingOverlay {
   private renderGap(before: HTMLElement, after: HTMLElement, gap: number, isRow: boolean): void {
     const rectBefore = before.getBoundingClientRect()
     const rectAfter = after.getBoundingClientRect()
+    const parent = before.parentElement
+    const parentRect = parent ? parent.getBoundingClientRect() : null
 
     const gapEl = document.createElement('div')
     gapEl.className = 'remarq-spacing-gap'
@@ -279,8 +281,8 @@ export class SpacingOverlay {
     if (isRow) {
       const left = Math.min(rectBefore.right, rectAfter.right)
       const right = Math.max(rectBefore.left, rectAfter.left)
-      const top = Math.min(rectBefore.top, rectAfter.top)
-      const height = Math.max(rectBefore.height, rectAfter.height)
+      const top = parentRect ? parentRect.top : Math.min(rectBefore.top, rectAfter.top)
+      const height = parentRect ? parentRect.height : Math.max(rectBefore.height, rectAfter.height)
 
       gapEl.style.top = `${top}px`
       gapEl.style.left = `${left}px`
@@ -289,8 +291,8 @@ export class SpacingOverlay {
     } else {
       const top = Math.min(rectBefore.bottom, rectAfter.bottom)
       const bottom = Math.max(rectBefore.top, rectAfter.top)
-      const left = Math.min(rectBefore.left, rectAfter.left)
-      const width = Math.max(rectBefore.width, rectAfter.width)
+      const left = parentRect ? parentRect.left : Math.min(rectBefore.left, rectAfter.left)
+      const width = parentRect ? parentRect.width : Math.max(rectBefore.width, rectAfter.width)
 
       gapEl.style.top = `${top}px`
       gapEl.style.left = `${left}px`

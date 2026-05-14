@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`transformVueSFC > annotates nested elements with correct line numbers 1`] = `
+"<template>
+  <section data-remarq-source="src/Nested.vue:2:2" data-remarq-component="Nested" class="page">
+    <header data-remarq-source="src/Nested.vue:3:4" data-remarq-component="Nested">
+      <h1 data-remarq-source="src/Nested.vue:4:6" data-remarq-component="Nested">Hello</h1>
+    </header>
+    <main data-remarq-source="src/Nested.vue:6:4" data-remarq-component="Nested">
+      <article data-remarq-source="src/Nested.vue:7:6" data-remarq-component="Nested">
+        <p data-remarq-source="src/Nested.vue:8:8" data-remarq-component="Nested">Body</p>
+      </article>
+    </main>
+  </section>
+</template>
+"
+`;
+
+exports[`transformVueSFC > injects attrs on HTML elements inside <template> 1`] = `
+"<template>
+  <div data-remarq-source="src/Card.vue:2:2" data-remarq-component="Card" class="card">
+    <h2 data-remarq-source="src/Card.vue:3:4" data-remarq-component="Card">Title</h2>
+    <p data-remarq-source="src/Card.vue:4:4" data-remarq-component="Card">Body</p>
+  </div>
+</template>
+
+<script setup lang="ts">
+defineProps<{ title: string }>();
+</script>
+"
+`;
+
+exports[`transformVueSFC > skips Vue built-in tags: template, slot, component, transition, transition-group, keep-alive, teleport, suspense 1`] = `
+"<template>
+  <transition name="fade">
+    <div data-remarq-source="src/Builtins.vue:3:4" data-remarq-component="Builtins" v-if="visible">
+      <slot name="content" />
+      <component :is="dynamic" />
+    </div>
+  </transition>
+</template>
+"
+`;

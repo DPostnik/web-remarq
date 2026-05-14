@@ -1,0 +1,102 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`transformJSX — component name detection via snapshots > assigns each JSX element to its own enclosing component 1`] = `
+"function Header() {
+  return <h1 data-remarq-source="src/Page.tsx:2:9" data-remarq-component="Header">Title</h1>;
+}
+
+function Footer() {
+  return <footer data-remarq-source="src/Page.tsx:6:9" data-remarq-component="Footer">Bottom</footer>;
+}
+
+export default function Page() {
+  return (
+    <article data-remarq-source="src/Page.tsx:11:4" data-remarq-component="Page">
+      <Header data-remarq-source="src/Page.tsx:12:6" data-remarq-component="Page" />
+      <p data-remarq-source="src/Page.tsx:13:6" data-remarq-component="Page">Body</p>
+      <Footer data-remarq-source="src/Page.tsx:14:6" data-remarq-component="Page" />
+    </article>
+  );
+}
+"
+`;
+
+exports[`transformJSX — component name detection via snapshots > detects arrow component assigned to const 1`] = `
+"const Card = ({ title }: { title: string }) => (
+  <div data-remarq-source="src/Card.tsx:2:2" data-remarq-component="Card" className="card">
+    <h2 data-remarq-source="src/Card.tsx:3:4" data-remarq-component="Card">{title}</h2>
+    <p data-remarq-source="src/Card.tsx:4:4" data-remarq-component="Card">Body text</p>
+  </div>
+);
+
+export default Card;
+"
+`;
+
+exports[`transformJSX — component name detection via snapshots > detects class component name 1`] = `
+"import { Component } from 'react';
+
+export class Counter extends Component<{}, { count: number }> {
+  state = { count: 0 };
+  render() {
+    return <button data-remarq-source="src/Counter.tsx:6:11" onClick={() => this.setState({ count: this.state.count + 1 })}>Inc</button>;
+  }
+}
+"
+`;
+
+exports[`transformJSX — component name detection via snapshots > detects const Foo = memo(() => ...) (HOC wrapped) 1`] = `
+"import { memo } from 'react';
+
+const HeavyList = memo(({ items }: { items: string[] }) => (
+  <ul data-remarq-source="src/HeavyList.tsx:4:2" data-remarq-component="HeavyList">
+    {items.map((item) => (
+      <li data-remarq-source="src/HeavyList.tsx:6:6" data-remarq-component="HeavyList" key={item}>{item}</li>
+    ))}
+  </ul>
+));
+
+export default HeavyList;
+"
+`;
+
+exports[`transformJSX — component name detection via snapshots > detects export default function name 1`] = `
+"export default function App() {
+  return (
+    <main data-remarq-source="src/App.tsx:3:4" data-remarq-component="App">
+      <section data-remarq-source="src/App.tsx:4:6" data-remarq-component="App">Content</section>
+    </main>
+  );
+}
+"
+`;
+
+exports[`transformJSX — component name detection via snapshots > detects function declaration name 1`] = `
+"function Greeting() {
+  return <button data-remarq-source="src/Greeting.tsx:2:9" data-remarq-component="Greeting" className="primary">Hello</button>;
+}
+"
+`;
+
+exports[`transformJSX — skip conditions > does not re-annotate elements that already have data-remarq-source 1`] = `
+"function Already() {
+  return (
+    <div data-remarq-source="manual.tsx:1:0" data-remarq-component="Already">
+      <span data-remarq-source="src/Already.tsx:4:6" data-remarq-component="Already">preserved</span>
+    </div>
+  );
+}
+"
+`;
+
+exports[`transformJSX — skip conditions > skips JSX fragments (<>...</>) but still transforms children 1`] = `
+"function List() {
+  return (
+    <>
+      <li data-remarq-source="src/List.tsx:4:6" data-remarq-component="List">a</li>
+      <li data-remarq-source="src/List.tsx:5:6" data-remarq-component="List">b</li>
+    </>
+  );
+}
+"
+`;

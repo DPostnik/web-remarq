@@ -1,0 +1,127 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateAgentExport — full snapshot > matches full snapshot for representative annotation 1`] = `
+{
+  "annotations": [
+    {
+      "comment": "Increase padding",
+      "id": "a1",
+      "route": "/checkout",
+      "searchHints": {
+        "classes": [
+          "btn",
+          "primary",
+        ],
+        "domContext": "section.checkout > button.btn.primary",
+        "grepQueries": [
+          {
+            "confidence": "high",
+            "glob": "*.{tsx,jsx,vue,svelte,html}",
+            "query": "data-testid="cta-buy"",
+          },
+          {
+            "confidence": "medium",
+            "glob": "*.{tsx,jsx,vue,svelte,html}",
+            "query": ""Buy now"",
+          },
+          {
+            "confidence": "low",
+            "glob": "*.{tsx,jsx,vue,svelte,html}",
+            "query": ""btn"",
+          },
+          {
+            "confidence": "low",
+            "glob": "*.{tsx,jsx,vue,svelte,html}",
+            "query": ""primary"",
+          },
+        ],
+        "tagName": "button",
+      },
+      "source": {
+        "column": 10,
+        "component": "Cta",
+        "file": "src/components/Cta.tsx",
+        "line": 42,
+      },
+      "status": "pending",
+      "timestamp": 1700000000000,
+    },
+  ],
+  "format": "agent",
+  "version": 1,
+  "viewportBucket": 1200,
+}
+`;
+
+exports[`generateAgentExport — search hints > builds full hint set for richly-annotated element 1`] = `
+{
+  "classes": [
+    "btn",
+    "primary",
+    "sc-xyz",
+  ],
+  "domContext": "section > button.btn.primary",
+  "grepQueries": [
+    {
+      "confidence": "high",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": "data-annotate="save-btn"",
+    },
+    {
+      "confidence": "high",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": "data-testid="save"",
+    },
+    {
+      "confidence": "high",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": "id="save-action"",
+    },
+    {
+      "confidence": "high",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": "aria-label="Save changes"",
+    },
+    {
+      "confidence": "medium",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": ""Save"",
+    },
+    {
+      "confidence": "medium",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": "role="button"",
+    },
+    {
+      "confidence": "medium",
+      "glob": "*.module.{css,scss,less}",
+      "query": ".save",
+    },
+    {
+      "confidence": "medium",
+      "glob": "*.{tsx,jsx,vue,ts,js}",
+      "query": "styles.save",
+    },
+    {
+      "confidence": "low",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": ""btn"",
+    },
+    {
+      "confidence": "low",
+      "glob": "*.{tsx,jsx,vue,svelte,html}",
+      "query": ""primary"",
+    },
+  ],
+  "tagName": "button",
+}
+`;
+
+exports[`generateAgentExport — search hints > builds minimal hints for sparsely-annotated element 1`] = `
+{
+  "classes": [],
+  "domContext": "div",
+  "grepQueries": [],
+  "tagName": "div",
+}
+`;

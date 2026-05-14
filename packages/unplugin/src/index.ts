@@ -21,8 +21,10 @@ function createFilter(include: string[], exclude: string[]): (id: string) => boo
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
       .replace(/\*\*/g, '§GLOBSTAR§')
       .replace(/\*/g, '[^/]*')
+      .replace(/\/§GLOBSTAR§\//g, '§OPTPATH§')
       .replace(/§GLOBSTAR§/g, '.*')
       .replace(/\?/g, '[^/]')
+      .replace(/§OPTPATH§/g, '/(?:.*/)?')
     return new RegExp(`(?:^|/)${escaped}$`)
   }
 

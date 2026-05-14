@@ -45,6 +45,14 @@ describe('unplugin — include / exclude filters', () => {
     expect(plugin.transformInclude('src/App.tsx')).toBe(false);
   });
 
+  it('supports /**/ matching zero path segments (src/**/*.svelte → src/App.svelte)', () => {
+    const plugin = makeRaw({ include: ['src/**/*.svelte'] });
+    expect(plugin.transformInclude('src/App.svelte')).toBe(true);
+    expect(plugin.transformInclude('src/components/App.svelte')).toBe(true);
+    expect(plugin.transformInclude('src/a/b/c/App.svelte')).toBe(true);
+    expect(plugin.transformInclude('lib/App.svelte')).toBe(false);
+  });
+
   it('respects custom exclude patterns', () => {
     const plugin = makeRaw({ exclude: ['**/legacy/**'] });
     expect(plugin.transformInclude('src/App.tsx')).toBe(true);

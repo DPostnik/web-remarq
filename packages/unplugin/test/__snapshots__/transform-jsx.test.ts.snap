@@ -39,7 +39,7 @@ exports[`transformJSX — component name detection via snapshots > detects class
 export class Counter extends Component<{}, { count: number }> {
   state = { count: 0 };
   render() {
-    return <button data-remarq-source="src/Counter.tsx:6:11" onClick={() => this.setState({ count: this.state.count + 1 })}>Inc</button>;
+    return <button data-remarq-source="src/Counter.tsx:6:11" data-remarq-component="Counter" onClick={() => this.setState({ count: this.state.count + 1 })}>Inc</button>;
   }
 }
 "

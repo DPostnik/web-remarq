@@ -47,6 +47,20 @@ describe('transformJSX — component name detection via snapshots', () => {
   });
 });
 
+describe('transformJSX — export class component name (bug fix)', () => {
+  it('detects component name on export class declaration', () => {
+    const code = `export class Foo extends Component { render() { return <div>x</div>; } }`;
+    const result = transformJSX(code, 'src/Foo.tsx');
+    expect(result?.code).toContain('data-remarq-component="Foo"');
+  });
+
+  it('detects component name on export default class', () => {
+    const code = `export default class Bar extends Component { render() { return <span>y</span>; } }`;
+    const result = transformJSX(code, 'src/Bar.tsx');
+    expect(result?.code).toContain('data-remarq-component="Bar"');
+  });
+});
+
 describe('transformJSX — skip conditions', () => {
   it('skips JSX fragments (<>...</>) but still transforms children', () => {
     const code = loadFixture('fragment.input.tsx');

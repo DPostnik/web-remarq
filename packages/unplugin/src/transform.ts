@@ -29,7 +29,10 @@ function findComponentName(ast: ReturnType<typeof parse>, jsxStart: number): str
       if (node.type === 'ExportDefaultDeclaration') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const decl = node.declaration as any
-        if (decl.type === 'FunctionDeclaration' && decl.id && typeof decl.id.name === 'string') {
+        if (
+          (decl.type === 'FunctionDeclaration' || decl.type === 'ClassDeclaration') &&
+          decl.id && typeof decl.id.name === 'string'
+        ) {
           return decl.id.name as string
         }
       }
@@ -63,6 +66,9 @@ function findComponentName(ast: ReturnType<typeof parse>, jsxStart: number): str
         }
       }
       if (decl.type === 'FunctionDeclaration' && decl.id && containsPosition(decl, jsxStart)) {
+        return decl.id.name
+      }
+      if (decl.type === 'ClassDeclaration' && decl.id && containsPosition(decl, jsxStart)) {
         return decl.id.name
       }
     }

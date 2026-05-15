@@ -5,6 +5,8 @@ export default defineConfig({
     projects: [
       'packages/core/vitest.config.ts',
       'packages/unplugin/vitest.config.ts',
+      'packages/babel-plugin/vitest.config.ts',
+      'packages/next/vitest.config.ts',
     ],
   },
 });

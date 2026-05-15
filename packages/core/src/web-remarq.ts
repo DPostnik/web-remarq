@@ -1,5 +1,6 @@
 import type { Annotation, ImportResult, WebRemarqOptions } from './core/types'
 import { AnnotationStorage } from './core/storage'
+import { LocalStorageAdapter } from './core/local-storage-adapter'
 import { createFingerprint } from './core/fingerprint'
 import { matchElement } from './core/matcher'
 import { generateAgentExport } from './core/agent-export'
@@ -493,7 +494,7 @@ export const WebRemarq = {
 
     try {
       injectStyles()
-      storage = new AnnotationStorage()
+      storage = new AnnotationStorage(options.storage ?? new LocalStorageAdapter())
       themeManager = new ThemeManager(document.body, options.theme)
       overlay = new Overlay(themeManager.container)
       spacingOverlay = new SpacingOverlay(themeManager.container)
@@ -534,10 +535,6 @@ export const WebRemarq = {
         onHelp: () => showShortcutsModal(themeManager.container),
       }, position)
 
-      if (storage.isMemoryOnly) {
-        toolbar.setMemoryWarning(true)
-      }
-
       routeObserver = new RouteObserver()
       unsubRoute = routeObserver.onChange(() => refreshMarkers())
 
@@ -548,8 +545,14 @@ export const WebRemarq = {
       setupMutationObserver()
       initViewportListener(() => refreshMarkers())
 
+      storage.ready.then(() => {
+        if (storage.isMemoryOnly) {
+          toolbar.setMemoryWarning(true)
+        }
+        refreshMarkers()
+      })
+
       console.debug(`[web-remarq] Initialized on route: ${currentRoute()}`)
-      refreshMarkers()
       initialized = true
     } catch (err) {
       console.error('[web-remarq] Init failed:', err)

@@ -1,96 +1,79 @@
-import type { Annotation, AnnotationStore } from './types'
+import type { Annotation, AnnotationStore, StorageAdapter } from './types'
 import { toBucket } from './viewport'
 
-const STORAGE_KEY = 'remarq:annotations'
-
 export class AnnotationStorage {
-  private annotations: Annotation[] = []
-  private extraFields: Record<string, unknown> = {}
-  isMemoryOnly = false
+  private cache: Annotation[] = []
+  readonly ready: Promise<void>
 
-  constructor() {
-    this.load()
+  constructor(private adapter: StorageAdapter) {
+    this.ready = this.init()
+  }
+
+  get isMemoryOnly(): boolean {
+    return this.adapter.isMemoryOnly ?? false
   }
 
   getAll(): Annotation[] {
-    return [...this.annotations]
+    return [...this.cache]
   }
 
   getByRoute(route: string): Annotation[] {
-    return this.annotations.filter((a) => a.route === route)
+    return this.cache.filter((a) => a.route === route)
   }
 
-  add(annotation: Annotation): void {
-    this.annotations.push(annotation)
-    this.save()
+  async add(annotation: Annotation): Promise<void> {
+    this.cache.push(annotation)
+    await this.adapter.save(annotation)
   }
 
-  remove(id: string): void {
-    this.annotations = this.annotations.filter((a) => a.id !== id)
-    this.save()
+  async remove(id: string): Promise<void> {
+    this.cache = this.cache.filter((a) => a.id !== id)
+    await this.adapter.remove(id)
   }
 
-  update(id: string, changes: Partial<Annotation>): void {
-    const idx = this.annotations.findIndex((a) => a.id === id)
-    if (idx !== -1) {
-      this.annotations[idx] = { ...this.annotations[idx], ...changes }
-      this.save()
-    }
+  async update(id: string, changes: Partial<Annotation>): Promise<void> {
+    const idx = this.cache.findIndex((a) => a.id === id)
+    if (idx === -1) return
+    const updated = { ...this.cache[idx], ...changes }
+    this.cache[idx] = updated
+    await this.adapter.save(updated)
   }
 
-  clearAll(): void {
-    this.annotations = []
-    this.save()
+  async clearAll(): Promise<void> {
+    this.cache = []
+    await this.adapter.clear()
   }
 
   exportJSON(): AnnotationStore {
     return {
       version: 1,
-      annotations: [...this.annotations],
+      annotations: [...this.cache],
     }
   }
 
-  importJSON(data: AnnotationStore): void {
-    this.annotations = [...data.annotations]
+  async importJSON(data: AnnotationStore): Promise<void> {
+    this.cache = [...data.annotations]
     this.migrateViewportBuckets()
-    this.save()
+    await this.adapter.clear()
+    for (const ann of this.cache) {
+      await this.adapter.save(ann)
+    }
+  }
+
+  private async init(): Promise<void> {
+    const data = await this.adapter.load()
+    if (data) {
+      this.cache = data.annotations
+      this.migrateViewportBuckets()
+    }
   }
 
   private migrateViewportBuckets(): void {
-    for (const ann of this.annotations) {
+    for (const ann of this.cache) {
       if (ann.viewportBucket == null && ann.viewport) {
         const width = parseInt(ann.viewport.split('x')[0], 10)
         ann.viewportBucket = toBucket(width)
       }
-    }
-  }
-
-  private load(): void {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        const { version, annotations, ...rest } = parsed
-        this.annotations = annotations ?? []
-        this.extraFields = rest
-        this.migrateViewportBuckets()
-      }
-    } catch {
-      this.isMemoryOnly = true
-    }
-  }
-
-  private save(): void {
-    if (this.isMemoryOnly) return
-    try {
-      const data = {
-        version: 1,
-        ...this.extraFields,
-        annotations: this.annotations,
-      }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    } catch {
-      this.isMemoryOnly = true
     }
   }
 }

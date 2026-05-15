@@ -44,10 +44,15 @@ WebRemarq.init({ theme: 'light' })
 Initialize the tool. Idempotent — safe to call multiple times.
 
 ```ts
+import { WebRemarq, LocalStorageAdapter } from 'web-remarq'
+
 WebRemarq.init({
   theme: 'light',                    // 'light' | 'dark'
   classFilter: (name) => boolean,    // custom class filter for fingerprinting
   dataAttribute: 'data-annotate',    // which data-attr to use as stable anchor
+  position: 'bottom-right',          // toolbar anchor
+  shortcuts: true,                   // enable keyboard shortcuts (default true)
+  storage: new LocalStorageAdapter() // pluggable storage backend (default)
 })
 ```
 
@@ -89,6 +94,29 @@ Get all annotations, or filter by route.
 ### `WebRemarq.clearAll()`
 
 Remove all annotations.
+
+## Storage
+
+Annotations persist via a pluggable `StorageAdapter` interface. Default = `LocalStorageAdapter` (localStorage, key `remarq:annotations`, automatic in-memory fallback on quota errors).
+
+### Custom adapters
+
+```ts
+import { WebRemarq, type StorageAdapter, type Annotation, type AnnotationStore } from 'web-remarq'
+
+const myAdapter: StorageAdapter = {
+  async load(): Promise<AnnotationStore | null> { /* ... */ },
+  async save(annotation: Annotation): Promise<void> { /* upsert by id */ },
+  async remove(id: string): Promise<void> { /* ... */ },
+  async clear(): Promise<void> { /* ... */ },
+}
+
+WebRemarq.init({ storage: myAdapter })
+```
+
+The interface is async by design — supports remote backends (Supabase, REST, IndexedDB) without changing the public WebRemarq API. The domain layer (`AnnotationStorage`) keeps an in-memory cache, so synchronous getters like `WebRemarq.getAnnotations()` stay sync.
+
+`@web-remarq/cloud` (planned) will ship a Supabase-backed `StorageAdapter` implementation for team collaboration.
 
 ## Agent Export Format
 
@@ -134,7 +162,13 @@ Source detection uses a 3-level fallback:
 For programmatic access without UI:
 
 ```ts
-import { createFingerprint, matchElement, AnnotationStorage } from 'web-remarq/core'
+import {
+  createFingerprint,
+  matchElement,
+  AnnotationStorage,
+  LocalStorageAdapter,
+  type StorageAdapter,
+} from 'web-remarq/core'
 ```
 
 ## How It Works

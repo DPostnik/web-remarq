@@ -64,6 +64,7 @@ export interface WebRemarqOptions {
   dataAttribute?: string
   position?: ToolbarPosition
   shortcuts?: boolean
+  storage?: StorageAdapter
 }
 
 export interface ImportResult {
@@ -110,4 +111,19 @@ export interface AgentExport {
   format: 'agent'
   viewportBucket: number
   annotations: AgentAnnotation[]
+}
+
+export interface StorageChangeEvent {
+  type: 'add' | 'update' | 'remove' | 'clear'
+  annotation?: Annotation
+  id?: string
+}
+
+export interface StorageAdapter {
+  load(): Promise<AnnotationStore | null>
+  save(annotation: Annotation): Promise<void>
+  remove(id: string): Promise<void>
+  clear(): Promise<void>
+  subscribe?(callback: (event: StorageChangeEvent) => void): () => void
+  readonly isMemoryOnly?: boolean
 }

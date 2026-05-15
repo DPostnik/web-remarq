@@ -25,6 +25,10 @@ WebRemarq.init({ theme: 'light' })
 
 See each package's README for detailed docs.
 
+## Storage
+
+`WebRemarq.init({ storage })` accepts any `StorageAdapter` implementation. Default is localStorage. See the [core package README](./packages/core/README.md#storage) for the interface and custom adapter examples. A Supabase-backed adapter for team collaboration ships separately as `@web-remarq/cloud` (planned).
+
 ## License
 
 MIT

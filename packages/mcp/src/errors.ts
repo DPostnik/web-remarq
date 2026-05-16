@@ -23,7 +23,12 @@ export function toolError(code: ToolErrorCode, message: string, details?: Record
   }
 }
 
-export function toolSuccess(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
+export interface ToolSuccessResult {
+  isError?: false
+  content: Array<{ type: 'text'; text: string }>
+}
+
+export function toolSuccess(value: unknown): ToolSuccessResult {
   return {
     content: [{ type: 'text', text: JSON.stringify(value) }],
   }

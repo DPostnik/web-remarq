@@ -1,9 +1,11 @@
 import type { StorageAdapter } from 'web-remarq'
+import { CloudStorageAdapter } from './cloud-storage-adapter'
 import type { CloudStorageOptions } from './types'
 
 export { generateProjectKey, hashProjectKey } from './project-key'
+export { CloudStorageAdapter } from './cloud-storage-adapter'
 export type { CloudStorageOptions } from './types'
 
 export function createCloudStorage(opts: CloudStorageOptions): StorageAdapter {
-  throw new Error('createCloudStorage: not implemented yet (Task 6)')
+  return new CloudStorageAdapter(opts)
 }

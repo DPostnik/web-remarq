@@ -16,8 +16,12 @@
   "files": [
     "dist",
     "README.md",
-    "sql"
+    "sql",
+    "bin"
   ],
+  "bin": {
+    "web-remarq-cloud": "./bin/gen-key.mjs"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"

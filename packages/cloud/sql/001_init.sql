@@ -1,5 +1,8 @@
 -- 001_init.sql
 
+-- digest() из pgcrypto. В Supabase живёт в схеме `extensions`.
+create extension if not exists pgcrypto;
+
 -- Projects: один project = один независимый scope аннотаций.
 -- secret_key_hash — sha256 от 'pk_<32 random chars>'. Никогда не храним plaintext.
 create table projects (
@@ -10,11 +13,35 @@ create table projects (
   created_at timestamptz not null default now()
 );
 
+-- Helper: достаёт project_id по ключу из заголовка.
+-- SECURITY DEFINER + explicit search_path: иначе SELECT projects внутри функции
+-- рекурсивно идёт через RLS policy, которая снова зовёт эту функцию → stack overflow.
+-- `extensions` нужен чтобы найти digest() из pgcrypto.
+create or replace function current_project_id() returns uuid
+  language plpgsql stable
+  security definer
+  set search_path = public, extensions, pg_catalog
+as $$
+declare
+  key_header text;
+  key_hash text;
+  project uuid;
+begin
+  key_header := current_setting('request.headers', true)::json->>'x-remarq-project-key';
+  if key_header is null then return null; end if;
+  key_hash := encode(digest(key_header, 'sha256'), 'hex');
+  select id into project from projects where secret_key_hash = key_hash limit 1;
+  return project;
+end;
+$$;
+
 -- Annotations: формат зеркалит web-remarq Annotation тип.
+-- project_id заполняется default-ом из заголовка — клиент не должен его знать.
+-- RLS WITH CHECK дополнительно валидирует что default совпал с current_project_id().
 -- fingerprint целиком в JSONB — не нормализуем (нам этого не надо в MVP).
 create table annotations (
   id text primary key,  -- web-remarq id (не uuid! shortid из клиента)
-  project_id uuid not null references projects(id) on delete cascade,
+  project_id uuid not null default current_project_id() references projects(id) on delete cascade,
   route text not null,
   viewport text not null,
   viewport_bucket integer not null,
@@ -39,23 +66,6 @@ create index annotations_project_status_idx on annotations(project_id, status);
 alter table projects enable row level security;
 alter table annotations enable row level security;
 
--- Helper: достаёт project_id по ключу из заголовка.
-create or replace function current_project_id() returns uuid
-  language plpgsql stable
-as $$
-declare
-  key_header text;
-  key_hash text;
-  project uuid;
-begin
-  key_header := current_setting('request.headers', true)::json->>'x-remarq-project-key';
-  if key_header is null then return null; end if;
-  key_hash := encode(digest(key_header, 'sha256'), 'hex');
-  select id into project from projects where secret_key_hash = key_hash limit 1;
-  return project;
-end;
-$$;
-
 -- Projects: видны только самим себе (через ключ); insert/update — через service role (out of scope MVP).
 create policy projects_select on projects
   for select using (id = current_project_id());
@@ -70,6 +80,3 @@ create policy annotations_update on annotations
   with check (project_id = current_project_id());
 create policy annotations_delete on annotations
   for delete using (project_id = current_project_id());
-
--- digest() из pgcrypto extension.
-create extension if not exists pgcrypto;

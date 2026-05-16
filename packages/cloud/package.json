@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/cloud",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cloud storage adapter for web-remarq — Supabase-backed sync",
   "type": "module",
   "main": "dist/index.cjs",

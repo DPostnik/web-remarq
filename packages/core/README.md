@@ -118,6 +118,31 @@ The interface is async by design — supports remote backends (Supabase, REST, I
 
 `@web-remarq/cloud` (planned) will ship a Supabase-backed `StorageAdapter` implementation for team collaboration.
 
+## Lifecycle states
+
+Annotations follow a 5-state lifecycle with a verification gate between AI-claimed fixes and human confirmation. Every transition is recorded in `annotation.lifecycle: AnnotationEvent[]` (`{ type, actor, actorName?, timestamp, reason? }`).
+
+| Status | Semantics |
+|---|---|
+| `pending` | Newly created — needs attention |
+| `in_progress` | Acknowledged, work started |
+| `fixed_unverified` | Agent claims it's fixed, awaiting human verification |
+| `verified` | Human confirmed the fix |
+| `dismissed` | Won't fix (terminal) |
+
+### Lifecycle API
+
+```ts
+WebRemarq.acknowledge(id, opts?)              // → in_progress
+WebRemarq.claimFix(id, opts?)                 // → fixed_unverified (agent-only — no UI button)
+WebRemarq.verify(id, opts?)                   // → verified (from in_progress or fixed_unverified)
+WebRemarq.reject(id, opts?: { reason?: string })   // fixed_unverified → pending
+WebRemarq.dismiss(id, opts?: { reason?: string })  // → dismissed
+WebRemarq.reopen(id, opts?)                   // verified | dismissed → pending
+```
+
+`opts?: { actor?: 'designer' | 'agent' | 'developer', actorName?: string }`. `claimFix` is intended for agents over MCP; humans skip it and call `verify` directly from `in_progress` for manual fixes. Legacy `'resolved'` status migrates to `'verified'` on load with a synthetic `migrated` event appended to `lifecycle`.
+
 ## Agent Export Format
 
 The `export('agent')` format is optimized for AI coding agents:
@@ -213,8 +238,8 @@ Works without any markup changes, but for guaranteed stable matching add `data-a
 - **Toolbar** — fixed bottom-right panel with inspect, spacing, copy, export, import, clear, theme, minimize
 - **Inspect mode** — hover to highlight, click to annotate
 - **Spacing inspector** — visualizes margin, padding, content, flex gap on hover
-- **Markers** — numbered circles (orange = pending, green = resolved)
-- **Popup** — comment input / detail view with Resolve/Delete
+- **Markers** — numbered circles, color per lifecycle state (orange = pending, yellow = in_progress, blue = fixed_unverified, green = verified, gray = dismissed)
+- **Popup** — comment input / detail view with dynamic lifecycle actions + history viewer
 
 ## License
 

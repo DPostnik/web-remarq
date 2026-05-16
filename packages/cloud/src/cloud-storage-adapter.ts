@@ -1,5 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { Annotation, AnnotationStore, ElementFingerprint, StorageAdapter } from 'web-remarq'
+import type {
+  Annotation,
+  AnnotationEvent,
+  AnnotationStatus,
+  AnnotationStore,
+  ElementFingerprint,
+  StorageAdapter,
+} from 'web-remarq'
 import type { CloudStorageOptions } from './types'
 
 interface AnnotationRow {
@@ -10,8 +17,9 @@ interface AnnotationRow {
   viewport_bucket: number
   fingerprint: ElementFingerprint
   comment: string
-  status: 'pending' | 'resolved'
+  status: AnnotationStatus
   timestamp_ms: number
+  lifecycle?: AnnotationEvent[]
   created_at?: string
   updated_at?: string
 }
@@ -28,10 +36,15 @@ function rowToAnnotation(row: AnnotationRow): Annotation {
     viewportBucket: row.viewport_bucket,
     timestamp: row.timestamp_ms,
     status: row.status,
+    lifecycle: row.lifecycle ?? [],
   }
 }
 
 function annotationToRow(a: Annotation): AnnotationWriteRow {
+  // lifecycle is intentionally NOT written here — cloud-0.1.0 schema doesn't
+  // have a lifecycle column. Will be added in cloud-0.1.1 alongside SQL migration.
+  // Until then, lifecycle history doesn't survive across browser sessions for
+  // cloud users; migrateAnnotation synthesizes a created event on load.
   return {
     id: a.id,
     route: a.route,

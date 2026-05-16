@@ -100,6 +100,7 @@ const ANNOTATION: Annotation = {
   viewportBucket: 1900,
   timestamp: 1711814400000,
   status: 'pending',
+  lifecycle: [{ type: 'created', actor: 'designer', timestamp: 1711814400000 }],
 }
 
 const OPTS = {
@@ -148,8 +149,12 @@ describe('CloudStorageAdapter.load', () => {
         viewport_bucket: 1000,
         fingerprint: FP,
         comment: 'two',
-        status: 'resolved',
+        status: 'verified',
         timestamp_ms: 200,
+        lifecycle: [
+          { type: 'created', actor: 'designer', timestamp: 200 },
+          { type: 'verified', actor: 'developer', timestamp: 250 },
+        ],
       },
     ]
     const { client, spies } = buildChain({ data: rows, error: null })
@@ -173,6 +178,7 @@ describe('CloudStorageAdapter.load', () => {
           viewportBucket: 1900,
           timestamp: 100,
           status: 'pending',
+          lifecycle: [],
         },
         {
           id: 'a2',
@@ -182,7 +188,11 @@ describe('CloudStorageAdapter.load', () => {
           viewport: '1024x768',
           viewportBucket: 1000,
           timestamp: 200,
-          status: 'resolved',
+          status: 'verified',
+          lifecycle: [
+            { type: 'created', actor: 'designer', timestamp: 200 },
+            { type: 'verified', actor: 'developer', timestamp: 250 },
+          ],
         },
       ],
     })

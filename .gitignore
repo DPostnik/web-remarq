@@ -6,3 +6,6 @@ wiki/
 .obsidian/
 *.tsbuildinfo
 CLAUDE.md
+.env
+.env.*
+!.env.example

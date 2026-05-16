@@ -10,3 +10,4 @@ CLAUDE.md
 .env.*
 !.env.example
 packages/cloud/test/
+packages/core/test/

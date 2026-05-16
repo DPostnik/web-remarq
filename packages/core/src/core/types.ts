@@ -40,6 +40,33 @@ export interface ElementFingerprint {
   detectedComponent: string | null // from fiber.type.name or displayName
 }
 
+export type AnnotationStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'fixed_unverified'
+  | 'verified'
+  | 'dismissed'
+
+export type Actor = 'designer' | 'agent' | 'developer'
+
+export type AnnotationEventType =
+  | 'created'
+  | 'acknowledged'
+  | 'fix_claimed'
+  | 'verified'
+  | 'rejected'
+  | 'dismissed'
+  | 'reopened'
+  | 'migrated'
+
+export interface AnnotationEvent {
+  type: AnnotationEventType
+  actor: Actor | null
+  actorName?: string
+  timestamp: number
+  reason?: string
+}
+
 export interface Annotation {
   id: string
   comment: string
@@ -48,7 +75,8 @@ export interface Annotation {
   viewport: string  // e.g. "1920x1080"
   viewportBucket: number  // e.g. 300 (width rounded down to 100px)
   timestamp: number
-  status: 'pending' | 'resolved'
+  status: AnnotationStatus
+  lifecycle: AnnotationEvent[]
 }
 
 export interface AnnotationStore {
@@ -96,14 +124,22 @@ export interface AgentAnnotationSource {
   component: string | null
 }
 
+export interface AgentLifecycleEvent {
+  type: AnnotationEventType
+  actor: Actor | null
+  timestamp: number
+  reason?: string
+}
+
 export interface AgentAnnotation {
   id: string
   route: string
   comment: string
-  status: 'pending' | 'resolved'
+  status: AnnotationStatus
   timestamp: number
   source: AgentAnnotationSource | null
   searchHints: AgentSearchHints
+  lifecycle: AgentLifecycleEvent[]
 }
 
 export interface AgentExport {

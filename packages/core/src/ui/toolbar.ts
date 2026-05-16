@@ -10,6 +10,7 @@ export interface ToolbarCallbacks {
   onThemeToggle: () => void
   onSpacingToggle: () => void
   onHelp: () => void
+  onVerificationBadgeClick?: () => void
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '')
@@ -42,6 +43,7 @@ const ICONS = {
 export class Toolbar {
   private toolbarEl: HTMLElement
   private badgeEl: HTMLElement
+  private verificationBadgeEl: HTMLElement
   private inspectBtn: HTMLElement
   private spacingBtn: HTMLButtonElement
   private exportMenu: HTMLElement | null = null
@@ -60,8 +62,19 @@ export class Toolbar {
     this.inspectBtn = this.createButton('inspect', ICONS.inspect, () => callbacks.onInspect())
     this.badgeEl = document.createElement('span')
     this.badgeEl.className = 'remarq-badge'
+    this.badgeEl.title = 'Needs attention'
     this.badgeEl.style.display = 'none'
     this.inspectBtn.appendChild(this.badgeEl)
+
+    this.verificationBadgeEl = document.createElement('span')
+    this.verificationBadgeEl.className = 'remarq-badge remarq-toolbar-badge--verification'
+    this.verificationBadgeEl.title = 'Pending your verification'
+    this.verificationBadgeEl.style.display = 'none'
+    this.verificationBadgeEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      callbacks.onVerificationBadgeClick?.()
+    })
+    this.inspectBtn.appendChild(this.verificationBadgeEl)
 
     this.spacingBtn = this.createButton('spacing', ICONS.spacing, () => callbacks.onSpacingToggle()) as HTMLButtonElement
     this.spacingBtn.disabled = true
@@ -118,6 +131,11 @@ export class Toolbar {
   setBadgeCount(count: number): void {
     this.badgeEl.textContent = String(count)
     this.badgeEl.style.display = count > 0 ? 'flex' : 'none'
+  }
+
+  setVerificationBadgeCount(count: number): void {
+    this.verificationBadgeEl.textContent = String(count)
+    this.verificationBadgeEl.style.display = count > 0 ? 'flex' : 'none'
   }
 
   getFileInput(): HTMLInputElement {

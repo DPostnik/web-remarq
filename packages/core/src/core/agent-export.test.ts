@@ -11,6 +11,7 @@ function ann(id: string, fp: Partial<ElementFingerprint>, overrides: Partial<Ann
     viewportBucket: 1200,
     timestamp: 1_700_000_000_000,
     status: 'pending',
+    lifecycle: [{ type: 'created', actor: 'designer', timestamp: 1_700_000_000_000 }],
     fingerprint: {
       dataAnnotate: null,
       dataTestId: null,
@@ -186,9 +187,48 @@ describe('generateAgentExport — full snapshot', () => {
         sourceLocation: 'src/components/Cta.tsx:42:10',
         componentName: 'Cta',
         domPath: 'section.checkout > button.btn.primary',
-      }, { comment: 'Increase padding', route: '/checkout', status: 'pending' })],
+      }, {
+        comment: 'Increase padding',
+        route: '/checkout',
+        status: 'fixed_unverified',
+        lifecycle: [
+          { type: 'created', actor: 'designer', timestamp: 1_700_000_000_000 },
+          { type: 'acknowledged', actor: 'developer', timestamp: 1_700_000_010_000 },
+          { type: 'fix_claimed', actor: 'agent', actorName: 'claude-agent', timestamp: 1_700_000_020_000 },
+        ],
+      })],
       1200,
     );
     expect(result).toMatchSnapshot();
+  });
+});
+
+describe('generateAgentExport — lifecycle pass-through', () => {
+  it('includes lifecycle events with type, actor, timestamp, reason', () => {
+    const result = generateAgentExport(
+      [ann('a1', {}, {
+        lifecycle: [
+          { type: 'created', actor: 'designer', timestamp: 100 },
+          { type: 'rejected', actor: 'developer', timestamp: 200, reason: 'still broken' },
+        ],
+      })],
+      1200,
+    );
+    expect(result.annotations[0].lifecycle).toEqual([
+      { type: 'created', actor: 'designer', timestamp: 100 },
+      { type: 'rejected', actor: 'developer', timestamp: 200, reason: 'still broken' },
+    ]);
+  });
+
+  it('drops actorName from output (agent does not need display name)', () => {
+    const result = generateAgentExport(
+      [ann('a1', {}, {
+        lifecycle: [
+          { type: 'created', actor: 'designer', actorName: 'Alice', timestamp: 1 },
+        ],
+      })],
+      1200,
+    );
+    expect('actorName' in result.annotations[0].lifecycle[0]).toBe(false);
   });
 });

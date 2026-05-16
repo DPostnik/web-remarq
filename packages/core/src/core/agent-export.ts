@@ -94,6 +94,15 @@ export function generateAgentExport(annotations: Annotation[], viewportBucket: n
     timestamp: ann.timestamp,
     source: resolveSource(ann.fingerprint),
     searchHints: buildSearchHints(ann.fingerprint),
+    lifecycle: ann.lifecycle.map((ev) => {
+      const out: { type: typeof ev.type; actor: typeof ev.actor; timestamp: number; reason?: string } = {
+        type: ev.type,
+        actor: ev.actor,
+        timestamp: ev.timestamp,
+      }
+      if (ev.reason !== undefined) out.reason = ev.reason
+      return out
+    }),
   }))
 
   return {

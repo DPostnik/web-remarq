@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Annotation } from './types';
-import { AnnotationStorage } from './storage';
+import { AnnotationStorage, migrateAnnotation } from './storage';
 import { LocalStorageAdapter } from './local-storage-adapter';
 
 const STORAGE_KEY = 'remarq:annotations';
@@ -14,6 +14,7 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
     viewportBucket: 1200,
     timestamp: 1_700_000_000_000,
     status: 'pending',
+    lifecycle: [{ type: 'created', actor: 'designer', timestamp: 1_700_000_000_000 }],
     fingerprint: {
       dataAnnotate: null,
       dataTestId: null,
@@ -86,11 +87,11 @@ describe('AnnotationStorage round-trip', () => {
   it('updates annotation by id with partial changes', async () => {
     const store = await makeStore();
     await store.add(makeAnnotation({ id: 'a1', comment: 'old' }));
-    await store.update('a1', { comment: 'new', status: 'resolved' });
+    await store.update('a1', { comment: 'new', status: 'verified' });
 
     const updated = store.getAll()[0];
     expect(updated.comment).toBe('new');
-    expect(updated.status).toBe('resolved');
+    expect(updated.status).toBe('verified');
     expect(updated.id).toBe('a1');
   });
 
@@ -110,6 +111,46 @@ describe('AnnotationStorage round-trip', () => {
     expect(store.getAll()).toEqual([]);
     const reloaded = await makeStore();
     expect(reloaded.getAll()).toEqual([]);
+  });
+
+  it('getById returns the annotation when present, undefined otherwise', async () => {
+    const store = await makeStore();
+    await store.add(makeAnnotation({ id: 'a1', comment: 'first' }));
+    await store.add(makeAnnotation({ id: 'a2', comment: 'second' }));
+
+    expect(store.getById('a1')?.comment).toBe('first');
+    expect(store.getById('a2')?.comment).toBe('second');
+    expect(store.getById('missing')).toBeUndefined();
+  });
+
+  it('getById reflects updates made via update() — no stale snapshots', async () => {
+    const store = await makeStore();
+    await store.add(makeAnnotation({ id: 'a1', comment: 'original' }));
+
+    // Capture a reference before update — should NOT be what a fresh call returns later.
+    const before = store.getById('a1');
+    expect(before?.comment).toBe('original');
+
+    await store.update('a1', { comment: 'edited' });
+
+    expect(store.getById('a1')?.comment).toBe('edited');
+  });
+
+  it('getById reflects status changes from lifecycle transitions', async () => {
+    const store = await makeStore();
+    await store.add(makeAnnotation({ id: 'a1', status: 'pending' }));
+
+    await store.update('a1', {
+      status: 'in_progress',
+      lifecycle: [
+        { type: 'created', actor: 'designer', timestamp: 1 },
+        { type: 'acknowledged', actor: 'developer', timestamp: 2 },
+      ],
+    });
+
+    const fresh = store.getById('a1');
+    expect(fresh?.status).toBe('in_progress');
+    expect(fresh?.lifecycle).toHaveLength(2);
   });
 });
 
@@ -244,5 +285,98 @@ describe('AnnotationStorage with custom adapter', () => {
     const store = new AnnotationStorage(adapter);
     await store.ready;
     expect(store.getAll().map((a) => a.id)).toEqual(['seeded']);
+  });
+});
+
+describe('migrateAnnotation', () => {
+  function legacyBase(extra: Record<string, unknown> = {}) {
+    return {
+      id: 'a1',
+      comment: 'x',
+      route: '/',
+      viewport: '1280x720',
+      viewportBucket: 1200,
+      timestamp: 1_700_000_000_000,
+      fingerprint: {} as any,
+      ...extra,
+    };
+  }
+
+  it('legacy pending without lifecycle → status pending + created event', () => {
+    const result = migrateAnnotation(legacyBase({ status: 'pending' }));
+    expect(result.status).toBe('pending');
+    expect(result.lifecycle).toHaveLength(1);
+    expect(result.lifecycle[0]).toEqual({
+      type: 'created',
+      actor: 'designer',
+      timestamp: 1_700_000_000_000,
+    });
+  });
+
+  it('legacy resolved → status verified + created + migrated events', () => {
+    const result = migrateAnnotation(legacyBase({ status: 'resolved' }));
+    expect(result.status).toBe('verified');
+    expect(result.lifecycle).toHaveLength(2);
+    expect(result.lifecycle[0].type).toBe('created');
+    expect(result.lifecycle[1].type).toBe('migrated');
+    expect(result.lifecycle[1].actor).toBeNull();
+  });
+
+  it('annotation with existing lifecycle passes through (status pending preserved)', () => {
+    const existing = [
+      { type: 'created' as const, actor: 'designer' as const, timestamp: 1 },
+      { type: 'acknowledged' as const, actor: 'developer' as const, timestamp: 2 },
+    ];
+    const result = migrateAnnotation(legacyBase({ status: 'in_progress', lifecycle: existing }));
+    expect(result.status).toBe('in_progress');
+    expect(result.lifecycle).toEqual(existing);
+  });
+
+  it('annotation with existing lifecycle and legacy resolved still maps status to verified', () => {
+    const existing = [{ type: 'created' as const, actor: 'designer' as const, timestamp: 1 }];
+    const result = migrateAnnotation(legacyBase({ status: 'resolved', lifecycle: existing }));
+    expect(result.status).toBe('verified');
+    expect(result.lifecycle).toEqual(existing);
+  });
+
+  it('is idempotent', () => {
+    const once = migrateAnnotation(legacyBase({ status: 'pending' }));
+    const twice = migrateAnnotation(once);
+    expect(twice.status).toBe(once.status);
+    expect(twice.lifecycle).toEqual(once.lifecycle);
+  });
+});
+
+describe('AnnotationStorage migration on load', () => {
+  it('migrates legacy annotations loaded from localStorage', async () => {
+    localStorage.setItem(
+      'remarq:annotations',
+      JSON.stringify({
+        version: 1,
+        annotations: [
+          { ...{ id: 'a1', comment: 'x', route: '/', viewport: '1280x720', viewportBucket: 1200, timestamp: 1_700_000_000_000, fingerprint: {} }, status: 'resolved' },
+        ],
+      }),
+    );
+
+    const store = new AnnotationStorage(new LocalStorageAdapter());
+    await store.ready;
+    const loaded = store.getAll()[0];
+    expect(loaded.status).toBe('verified');
+    expect(loaded.lifecycle.length).toBeGreaterThanOrEqual(1);
+    expect(loaded.lifecycle[0].type).toBe('created');
+  });
+
+  it('migrates legacy annotations via importJSON', async () => {
+    const store = await makeStore();
+    await store.importJSON({
+      version: 1,
+      annotations: [
+        { id: 'imp', comment: 'x', route: '/', viewport: '1280x720', viewportBucket: 1200, timestamp: 1_700_000_000_000, status: 'pending', fingerprint: {} as any } as any,
+      ],
+    });
+    const ann = store.getAll()[0];
+    expect(ann.lifecycle[0].type).toBe('created');
+    expect(ann.lifecycle[0].actor).toBe('designer');
   });
 });

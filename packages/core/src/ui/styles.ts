@@ -12,6 +12,11 @@ const CSS = `
   --remarq-resolved: #22c55e;
   --remarq-overlay: rgba(59, 130, 246, 0.15);
   --remarq-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  --remarq-status-pending: #f97316;
+  --remarq-status-in-progress: #eab308;
+  --remarq-status-fixed-unverified: #3b82f6;
+  --remarq-status-verified: #22c55e;
+  --remarq-status-dismissed: #6b7280;
 }
 
 [data-remarq-theme="dark"] {
@@ -25,6 +30,11 @@ const CSS = `
   --remarq-resolved: #4ade80;
   --remarq-overlay: rgba(96, 165, 250, 0.15);
   --remarq-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  --remarq-status-pending: #fb923c;
+  --remarq-status-in-progress: #facc15;
+  --remarq-status-fixed-unverified: #60a5fa;
+  --remarq-status-verified: #4ade80;
+  --remarq-status-dismissed: #9ca3af;
 }
 
 .remarq-toolbar {
@@ -68,19 +78,29 @@ const CSS = `
 
 .remarq-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
   background: var(--remarq-pending);
   color: #ffffff;
   font-size: 10px;
   font-weight: 600;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+}
+
+.remarq-toolbar-badge--verification {
+  top: auto;
+  bottom: -6px;
+  right: -6px;
+  background: var(--remarq-status-fixed-unverified);
+  cursor: pointer;
 }
 
 .remarq-overlay {
@@ -130,8 +150,11 @@ const CSS = `
 }
 
 .remarq-marker:hover { transform: scale(1.2); }
-.remarq-marker[data-status="pending"] { background: var(--remarq-pending); }
-.remarq-marker[data-status="resolved"] { background: var(--remarq-resolved); opacity: 0.7; }
+.remarq-marker--pending { background: var(--remarq-status-pending); }
+.remarq-marker--in-progress { background: var(--remarq-status-in-progress); }
+.remarq-marker--fixed-unverified { background: var(--remarq-status-fixed-unverified); }
+.remarq-marker--verified { background: var(--remarq-status-verified); opacity: 0.7; }
+.remarq-marker--dismissed { background: var(--remarq-status-dismissed); opacity: 0.5; }
 
 .remarq-popup {
   position: absolute;
@@ -176,14 +199,30 @@ const CSS = `
 
 .remarq-popup-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--remarq-border);
 }
 
+.remarq-popup-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.remarq-popup-actions-row--transitions {
+  justify-content: flex-start;
+}
+
+.remarq-popup-actions-row--utility {
+  justify-content: flex-end;
+  padding-top: 6px;
+  border-top: 1px dashed var(--remarq-border);
+}
+
 .remarq-popup-actions button {
-  padding: 4px 12px;
+  padding: 5px 12px;
   border: 1px solid var(--remarq-border);
   border-radius: 4px;
   background: var(--remarq-bg);
@@ -196,6 +235,19 @@ const CSS = `
   background: var(--remarq-accent);
   border-color: var(--remarq-accent);
   color: #ffffff;
+}
+
+.remarq-popup-utility-btn {
+  font-size: 11px !important;
+  padding: 3px 10px !important;
+  color: var(--remarq-text-secondary) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.remarq-popup-utility-btn:hover {
+  background: var(--remarq-bg-secondary) !important;
+  color: var(--remarq-text) !important;
 }
 
 .remarq-detached-panel {
@@ -455,6 +507,51 @@ const CSS = `
   font-size: 11px;
   color: var(--remarq-text-secondary);
   margin-top: 4px;
+}
+
+.remarq-popup-history {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--remarq-text-secondary);
+}
+
+.remarq-popup-history summary {
+  cursor: pointer;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.remarq-popup-history-list {
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 0;
+}
+
+.remarq-popup-history-list li {
+  padding: 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.remarq-popup-reason {
+  width: 100%;
+  min-height: 50px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 1px solid var(--remarq-border);
+  border-radius: 4px;
+  background: var(--remarq-bg-secondary);
+  color: var(--remarq-text);
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.remarq-popup-reason-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 `
 

@@ -1,5 +1,9 @@
 export type {
   Annotation,
+  AnnotationStatus,
+  AnnotationEvent,
+  AnnotationEventType,
+  Actor,
   AnnotationStore,
   ElementFingerprint,
   CSSModuleClass,
@@ -9,6 +13,7 @@ export type {
   AgentSearchHints,
   AgentAnnotationSource,
   AgentAnnotation,
+  AgentLifecycleEvent,
   AgentExport,
   ToolbarPosition,
   StorageAdapter,
@@ -16,7 +21,9 @@ export type {
 } from './types'
 export { createFingerprint } from './fingerprint'
 export { matchElement } from './matcher'
-export { AnnotationStorage } from './storage'
+export { AnnotationStorage, migrateAnnotation } from './storage'
 export { LocalStorageAdapter } from './local-storage-adapter'
 export { detectRemarqPlugin, detectSource } from './source-detect'
 export { generateAgentExport } from './agent-export'
+export { transition, createEvent, InvalidTransitionError } from './lifecycle'
+export type { LifecycleAction, EventOpts } from './lifecycle'

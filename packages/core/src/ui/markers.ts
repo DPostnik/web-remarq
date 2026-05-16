@@ -1,9 +1,21 @@
-import type { Annotation } from '../core/types'
+import type { Annotation, AnnotationStatus } from '../core/types'
 
 interface MarkerEntry {
   annotation: Annotation
   target: HTMLElement
   markerEl: HTMLElement
+}
+
+const STATUS_COLOR: Record<AnnotationStatus, string> = {
+  pending: 'var(--remarq-status-pending)',
+  in_progress: 'var(--remarq-status-in-progress)',
+  fixed_unverified: 'var(--remarq-status-fixed-unverified)',
+  verified: 'var(--remarq-status-verified)',
+  dismissed: 'var(--remarq-status-dismissed)',
+}
+
+function statusClass(status: AnnotationStatus): string {
+  return `remarq-marker--${status.replace('_', '-')}`
 }
 
 export class MarkerManager {
@@ -21,7 +33,7 @@ export class MarkerManager {
   addMarker(annotation: Annotation, target: HTMLElement): void {
     this.counter++
     const markerEl = document.createElement('div')
-    markerEl.className = 'remarq-marker'
+    markerEl.className = `remarq-marker ${statusClass(annotation.status)}`
     markerEl.setAttribute('data-status', annotation.status)
     markerEl.setAttribute('data-annotation-id', annotation.id)
     markerEl.textContent = String(this.counter)
@@ -46,11 +58,23 @@ export class MarkerManager {
     }
   }
 
-  updateStatus(id: string, status: 'pending' | 'resolved'): void {
+  updateStatus(id: string, status: AnnotationStatus): void {
     const entry = this.markers.get(id)
     if (entry) {
       entry.annotation.status = status
+      entry.markerEl.className = `remarq-marker ${statusClass(status)}`
       entry.markerEl.setAttribute('data-status', status)
+      this.applyOutline(entry.target, status)
+    }
+  }
+
+  scrollToMarker(id: string): void {
+    const entry = this.markers.get(id)
+    if (!entry) return
+    try {
+      entry.target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } catch {
+      // ignore
     }
   }
 
@@ -71,9 +95,8 @@ export class MarkerManager {
     this.clear()
   }
 
-  private applyOutline(target: HTMLElement, status: 'pending' | 'resolved'): void {
-    // Use rgba for resolved to get lower opacity without affecting element content
-    const color = status === 'pending' ? '#f97316' : 'rgba(34, 197, 94, 0.5)'
+  private applyOutline(target: HTMLElement, status: AnnotationStatus): void {
+    const color = STATUS_COLOR[status]
     target.style.outline = `2px solid ${color}`
     target.style.outlineOffset = '2px'
   }

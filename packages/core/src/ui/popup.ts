@@ -3,17 +3,72 @@ interface ElementInfo {
   text: string
 }
 
+import type { AnnotationEvent, AnnotationStatus } from '../core/types'
+import type { LifecycleAction } from '../core/lifecycle'
+
 interface DetailInfo extends ElementInfo {
   comment: string
-  status: 'pending' | 'resolved'
+  status: AnnotationStatus
+  lifecycle: AnnotationEvent[]
 }
 
 interface DetailCallbacks {
-  onResolve: () => void
+  onTransition: (action: LifecycleAction, reason?: string) => void
   onDelete: () => void
   onClose: () => void
   onEdit: (newComment: string) => void
   onCopy: () => void
+}
+
+const STATUS_LABEL: Record<AnnotationStatus, string> = {
+  pending: 'Pending',
+  in_progress: 'In progress',
+  fixed_unverified: 'Fix claimed',
+  verified: 'Verified',
+  dismissed: 'Dismissed',
+}
+
+const EVENT_LABEL: Record<AnnotationEvent['type'], string> = {
+  created: 'Created',
+  acknowledged: 'In progress',
+  fix_claimed: 'Fix claimed',
+  verified: 'Verified',
+  rejected: 'Rejected',
+  dismissed: 'Dismissed',
+  reopened: 'Reopened',
+  migrated: 'Migrated',
+}
+
+interface ActionDef {
+  label: string
+  action: LifecycleAction
+  needsReason?: boolean
+  primary?: boolean
+}
+
+function actionsForStatus(status: AnnotationStatus): ActionDef[] {
+  switch (status) {
+    case 'pending':
+      return [
+        { label: 'Acknowledge', action: 'acknowledge', primary: true },
+        { label: 'Dismiss', action: 'dismiss', needsReason: true },
+      ]
+    case 'in_progress':
+      return [
+        { label: 'Mark verified', action: 'verify', primary: true },
+        { label: 'Dismiss', action: 'dismiss', needsReason: true },
+      ]
+    case 'fixed_unverified':
+      return [
+        { label: 'Verify', action: 'verify', primary: true },
+        { label: 'Reject', action: 'reject', needsReason: true },
+        { label: 'Dismiss', action: 'dismiss', needsReason: true },
+      ]
+    case 'verified':
+      return [{ label: 'Reopen', action: 'reopen' }]
+    case 'dismissed':
+      return [{ label: 'Reopen', action: 'reopen' }]
+  }
 }
 
 interface Position {
@@ -29,6 +84,7 @@ export class Popup {
   private popupEl: HTMLElement | null = null
   private keyHandler: ((e: KeyboardEvent) => void) | null = null
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null
+  private pendingEditFlush: (() => void) | null = null
 
   constructor(private container: HTMLElement) {}
 
@@ -145,7 +201,8 @@ export class Popup {
 
     const header = document.createElement('div')
     header.className = 'remarq-popup-header'
-    header.textContent = `<${info.tag}>${info.text ? ` "${info.text}"` : ''} [${info.status}]`
+    header.textContent =
+      `<${info.tag}>${info.text ? ` "${info.text}"` : ''} [${STATUS_LABEL[info.status]}]`
 
     const body = document.createElement('div')
     body.className = 'remarq-popup-body'
@@ -159,43 +216,11 @@ export class Popup {
       return el
     }
     body.appendChild(makeCommentEl())
+    body.appendChild(this.buildLifecycleViewer(info.lifecycle))
 
     const actions = document.createElement('div')
     actions.className = 'remarq-popup-actions'
-
-    if (info.status === 'pending') {
-      const resolveBtn = document.createElement('button')
-      resolveBtn.className = 'remarq-primary'
-      resolveBtn.textContent = 'Resolve'
-      resolveBtn.addEventListener('click', () => {
-        this.hide()
-        callbacks.onResolve()
-      })
-      actions.appendChild(resolveBtn)
-    }
-
-    const copyBtn = document.createElement('button')
-    copyBtn.textContent = 'Copy'
-    copyBtn.addEventListener('click', () => {
-      callbacks.onCopy()
-    })
-    actions.appendChild(copyBtn)
-
-    const deleteBtn = document.createElement('button')
-    deleteBtn.textContent = 'Delete'
-    deleteBtn.addEventListener('click', () => {
-      this.hide()
-      callbacks.onDelete()
-    })
-    actions.appendChild(deleteBtn)
-
-    const closeBtn = document.createElement('button')
-    closeBtn.textContent = 'Close'
-    closeBtn.addEventListener('click', () => {
-      this.hide()
-      callbacks.onClose()
-    })
-    actions.appendChild(closeBtn)
+    this.renderActionButtons(actions, info, callbacks)
 
     popup.appendChild(header)
     popup.appendChild(body)
@@ -229,7 +254,130 @@ export class Popup {
     }, 0)
   }
 
+  private buildLifecycleViewer(lifecycle: AnnotationEvent[]): HTMLElement {
+    const details = document.createElement('details')
+    details.className = 'remarq-popup-history'
+
+    const summary = document.createElement('summary')
+    summary.textContent = `History (${lifecycle.length})`
+    details.appendChild(summary)
+
+    const list = document.createElement('ul')
+    list.className = 'remarq-popup-history-list'
+
+    for (const ev of lifecycle) {
+      const li = document.createElement('li')
+      const when = new Date(ev.timestamp).toLocaleString()
+      const who = ev.actor ?? 'system'
+      const what = EVENT_LABEL[ev.type] ?? ev.type
+      let text = `${when} · ${who} · ${what}`
+      if (ev.reason) text += ` — ${ev.reason}`
+      li.textContent = text
+      list.appendChild(li)
+    }
+    details.appendChild(list)
+    return details
+  }
+
+  private renderActionButtons(
+    container: HTMLElement,
+    info: DetailInfo,
+    callbacks: DetailCallbacks,
+  ): void {
+    container.replaceChildren()
+
+    const transitions = document.createElement('div')
+    transitions.className = 'remarq-popup-actions-row remarq-popup-actions-row--transitions'
+
+    for (const def of actionsForStatus(info.status)) {
+      const btn = document.createElement('button')
+      btn.textContent = def.label
+      if (def.primary) btn.className = 'remarq-primary'
+      btn.addEventListener('click', () => {
+        if (def.needsReason) {
+          this.showReasonInput(container, info, callbacks, def)
+        } else {
+          this.hide()
+          callbacks.onTransition(def.action)
+        }
+      })
+      transitions.appendChild(btn)
+    }
+    container.appendChild(transitions)
+
+    const utility = document.createElement('div')
+    utility.className = 'remarq-popup-actions-row remarq-popup-actions-row--utility'
+
+    const copyBtn = document.createElement('button')
+    copyBtn.className = 'remarq-popup-utility-btn'
+    copyBtn.textContent = 'Copy'
+    copyBtn.addEventListener('click', () => callbacks.onCopy())
+    utility.appendChild(copyBtn)
+
+    const deleteBtn = document.createElement('button')
+    deleteBtn.className = 'remarq-popup-utility-btn'
+    deleteBtn.textContent = 'Delete'
+    deleteBtn.addEventListener('click', () => {
+      this.hide()
+      callbacks.onDelete()
+    })
+    utility.appendChild(deleteBtn)
+
+    const closeBtn = document.createElement('button')
+    closeBtn.className = 'remarq-popup-utility-btn'
+    closeBtn.textContent = 'Close'
+    closeBtn.addEventListener('click', () => {
+      this.hide()
+      callbacks.onClose()
+    })
+    utility.appendChild(closeBtn)
+
+    container.appendChild(utility)
+  }
+
+  private showReasonInput(
+    container: HTMLElement,
+    info: DetailInfo,
+    callbacks: DetailCallbacks,
+    def: ActionDef,
+  ): void {
+    container.replaceChildren()
+
+    const textarea = document.createElement('textarea')
+    textarea.placeholder = `Reason for ${def.label.toLowerCase()} (optional)…`
+    textarea.className = 'remarq-popup-reason'
+    container.appendChild(textarea)
+
+    const row = document.createElement('div')
+    row.className = 'remarq-popup-reason-row'
+
+    const cancel = document.createElement('button')
+    cancel.textContent = 'Cancel'
+    cancel.addEventListener('click', () => {
+      this.renderActionButtons(container, info, callbacks)
+    })
+
+    const submit = document.createElement('button')
+    submit.className = 'remarq-primary'
+    submit.textContent = 'Submit'
+    submit.addEventListener('click', () => {
+      const reason = textarea.value.trim() || undefined
+      this.hide()
+      callbacks.onTransition(def.action, reason)
+    })
+
+    row.appendChild(cancel)
+    row.appendChild(submit)
+    container.appendChild(row)
+
+    textarea.focus()
+  }
+
   hide(): void {
+    if (this.pendingEditFlush) {
+      this.pendingEditFlush()
+      this.pendingEditFlush = null
+    }
     if (this.popupEl) {
       this.popupEl.remove()
       this.popupEl = null
@@ -272,12 +420,8 @@ export class Popup {
     textarea.focus()
     textarea.selectionStart = textarea.value.length
 
-    const saveEdit = () => {
-      const newComment = textarea.value.trim()
-      if (newComment && newComment !== info.comment) {
-        info.comment = newComment
-        callbacks.onEdit(newComment)
-      }
+    const restoreView = (): void => {
+      if (!textarea.isConnected) return
       const restored = document.createElement('div')
       restored.textContent = info.comment
       restored.style.cursor = 'pointer'
@@ -286,27 +430,40 @@ export class Popup {
       textarea.replaceWith(restored)
     }
 
+    const commitEdit = (): void => {
+      this.pendingEditFlush = null
+      const newComment = textarea.value.trim()
+      if (newComment && newComment !== info.comment) {
+        info.comment = newComment
+        callbacks.onEdit(newComment)
+      }
+      restoreView()
+    }
+
+    const cancelEdit = (): void => {
+      this.pendingEditFlush = null
+      restoreView()
+    }
+
+    this.pendingEditFlush = commitEdit
+
     textarea.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        saveEdit()
+        commitEdit()
       }
       if (e.key === 'Escape') {
         e.stopPropagation()
-        const restored = document.createElement('div')
-        restored.textContent = info.comment
-        restored.style.cursor = 'pointer'
-        restored.title = 'Click to edit'
-        restored.addEventListener('click', () => this.enterEditMode(restored, info, callbacks))
-        textarea.replaceWith(restored)
+        cancelEdit()
       }
     })
 
     textarea.addEventListener('blur', () => {
+      // Defer so click-outside-to-close has a chance to fire hide() first,
+      // which already calls pendingEditFlush. If popup is still open after
+      // the deferred tick, commit normally.
       setTimeout(() => {
-        if (textarea.isConnected) {
-          saveEdit()
-        }
+        if (textarea.isConnected) commitEdit()
       }, 50)
     })
   }

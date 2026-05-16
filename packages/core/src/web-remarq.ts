@@ -1,9 +1,10 @@
-import type { Annotation, ImportResult, WebRemarqOptions } from './core/types'
+import type { Actor, Annotation, ImportResult, WebRemarqOptions } from './core/types'
 import { AnnotationStorage } from './core/storage'
 import { LocalStorageAdapter } from './core/local-storage-adapter'
 import { createFingerprint } from './core/fingerprint'
 import { matchElement } from './core/matcher'
 import { generateAgentExport } from './core/agent-export'
+import { transition, type LifecycleAction } from './core/lifecycle'
 import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
 import { Toolbar } from './ui/toolbar'
@@ -133,8 +134,19 @@ function refreshMarkers(): void {
 
   detachedPanel.update(otherBreakpoint, detached)
 
-  const pendingCount = anns.filter((a) => a.status === 'pending').length
-  toolbar.setBadgeCount(pendingCount)
+  const needsAttention = anns.filter(
+    (a) => a.status === 'pending' || a.status === 'in_progress',
+  ).length
+  const needsVerification = anns.filter((a) => a.status === 'fixed_unverified').length
+  toolbar.setBadgeCount(needsAttention)
+  toolbar.setVerificationBadgeCount(needsVerification)
+}
+
+function jumpToFirstUnverified(): void {
+  if (!storage || !markers) return
+  const ann = storage.getByRoute(currentRoute()).find((a) => a.status === 'fixed_unverified')
+  if (!ann) return
+  markers.scrollToMarker(ann.id)
 }
 
 // Debounced refresh — MutationObserver can fire rapidly
@@ -174,6 +186,7 @@ function handleInspectClick(e: MouseEvent): void {
         classFilter: options.classFilter,
         dataAttribute: options.dataAttribute,
       })
+      const now = Date.now()
       const ann: Annotation = {
         id: generateId(),
         comment,
@@ -181,8 +194,9 @@ function handleInspectClick(e: MouseEvent): void {
         route: currentRoute(),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         viewportBucket: toBucket(window.innerWidth),
-        timestamp: Date.now(),
+        timestamp: now,
         status: 'pending',
+        lifecycle: [{ type: 'created', actor: 'designer', timestamp: now }],
       }
       // Cache the element immediately — no need to re-match
       cacheElement(ann.id, target)
@@ -290,6 +304,7 @@ function handleMarkerClick(annotationId: string): void {
       text: ann.fingerprint.textContent ?? '',
       comment: ann.comment,
       status: ann.status,
+      lifecycle: ann.lifecycle,
     },
     {
       top: window.scrollY + rect.bottom + 8,
@@ -297,9 +312,8 @@ function handleMarkerClick(annotationId: string): void {
       anchorBottom: window.scrollY + rect.top - 8,
     },
     {
-      onResolve: () => {
-        storage.update(ann.id, { status: 'resolved' })
-        refreshMarkers()
+      onTransition: (action, reason) => {
+        applyTransition(ann.id, action, reason ? { reason } : undefined)
       },
       onDelete: () => {
         elementCache.delete(ann.id)
@@ -312,12 +326,13 @@ function handleMarkerClick(annotationId: string): void {
         refreshMarkers()
       },
       onCopy: () => {
-        const fp = ann.fingerprint
+        const fresh = storage.getById(ann.id) ?? ann
+        const fp = fresh.fingerprint
         const lines = [
-          `[${ann.status}] "${ann.comment}"`,
+          `[${fresh.status}] "${fresh.comment}"`,
           `Element: <${fp.tagName}>${fp.textContent ? ` "${fp.textContent}"` : ''}`,
-          `Route: ${ann.route}`,
-          `Viewport: ${ann.viewportBucket}px`,
+          `Route: ${fresh.route}`,
+          `Viewport: ${fresh.viewportBucket}px`,
         ]
         if (fp.sourceLocation) lines.push(`Source: ${fp.sourceLocation}`)
         navigator.clipboard.writeText(lines.join('\n')).then(() => {
@@ -468,6 +483,23 @@ function copyAgentToClipboard(): void {
   })
 }
 
+interface TransitionOpts {
+  actor?: Actor
+  actorName?: string
+  reason?: string
+}
+
+function applyTransition(id: string, action: LifecycleAction, opts: TransitionOpts = {}): void {
+  if (!storage) return
+  const ann = storage.getById(id)
+  if (!ann) return
+  const { status, event } = transition(ann, action, opts)
+  const lifecycle = [...ann.lifecycle, event]
+  storage.update(id, { status, lifecycle })
+  markers?.updateStatus(id, status)
+  refreshMarkers()
+}
+
 function setupMutationObserver(): void {
   mutationObserver = new MutationObserver((mutations) => {
     let hasExternalMutation = false
@@ -533,6 +565,7 @@ export const WebRemarq = {
         },
         onThemeToggle: () => themeManager.toggle(),
         onHelp: () => showShortcutsModal(themeManager.container),
+        onVerificationBadgeClick: jumpToFirstUnverified,
       }, position)
 
       routeObserver = new RouteObserver()
@@ -639,5 +672,34 @@ export const WebRemarq = {
     elementCache.clear()
     storage?.clearAll()
     if (initialized) refreshMarkers()
+  },
+
+  acknowledge(id: string, opts?: TransitionOpts): void {
+    applyTransition(id, 'acknowledge', opts)
+  },
+
+  claimFix(id: string, opts?: TransitionOpts): void {
+    applyTransition(id, 'claimFix', opts)
+  },
+
+  verify(id: string, opts?: TransitionOpts): void {
+    applyTransition(id, 'verify', opts)
+  },
+
+  reject(id: string, opts?: TransitionOpts): void {
+    applyTransition(id, 'reject', opts)
+  },
+
+  dismiss(id: string, opts?: TransitionOpts): void {
+    applyTransition(id, 'dismiss', opts)
+  },
+
+  reopen(id: string, opts?: TransitionOpts): void {
+    applyTransition(id, 'reopen', opts)
+  },
+
+  /** @deprecated Use verify() instead. */
+  markResolved(id: string): void {
+    applyTransition(id, 'verify')
   },
 }

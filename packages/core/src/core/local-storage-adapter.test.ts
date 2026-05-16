@@ -13,6 +13,7 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
     viewportBucket: 1200,
     timestamp: 1_700_000_000_000,
     status: 'pending',
+    lifecycle: [{ type: 'created', actor: 'designer', timestamp: 1_700_000_000_000 }],
     fingerprint: {
       dataAnnotate: null,
       dataTestId: null,

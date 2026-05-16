@@ -6,6 +6,23 @@ exports[`generateAgentExport — full snapshot > matches full snapshot for repre
     {
       "comment": "Increase padding",
       "id": "a1",
+      "lifecycle": [
+        {
+          "actor": "designer",
+          "timestamp": 1700000000000,
+          "type": "created",
+        },
+        {
+          "actor": "developer",
+          "timestamp": 1700000010000,
+          "type": "acknowledged",
+        },
+        {
+          "actor": "agent",
+          "timestamp": 1700000020000,
+          "type": "fix_claimed",
+        },
+      ],
       "route": "/checkout",
       "searchHints": {
         "classes": [
@@ -43,7 +60,7 @@ exports[`generateAgentExport — full snapshot > matches full snapshot for repre
         "file": "src/components/Cta.tsx",
         "line": 42,
       },
-      "status": "pending",
+      "status": "fixed_unverified",
       "timestamp": 1700000000000,
     },
   ],

@@ -8,6 +8,7 @@ export default defineConfig({
       'packages/babel-plugin/vitest.config.ts',
       'packages/next/vitest.config.ts',
       'packages/cloud/vitest.config.ts',
+      'packages/mcp/vitest.config.ts',
     ],
   },
 });

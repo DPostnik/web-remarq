@@ -1,0 +1,61 @@
+{
+  "name": "@web-remarq/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for web-remarq — AI agents read annotations and drive lifecycle via Supabase cloud backend",
+  "type": "module",
+  "main": "dist/server.js",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "bin": {
+    "web-remarq-mcp": "./bin/web-remarq-mcp.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DPostnik/web-remarq.git"
+  },
+  "homepage": "https://github.com/DPostnik/web-remarq",
+  "bugs": {
+    "url": "https://github.com/DPostnik/web-remarq/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "annotation",
+    "web-remarq",
+    "claude-code",
+    "cursor"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0",
+    "@web-remarq/cloud": "^0.2.0"
+  },
+  "peerDependencies": {
+    "web-remarq": ">=0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0",
+    "web-remarq": "*"
+  }
+}

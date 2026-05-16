@@ -267,6 +267,94 @@ describe('CloudStorageAdapter.save', () => {
 
     await expect(adapter.save(ANNOTATION)).rejects.toThrow('insert failed')
   })
+
+  it('writes lifecycle array in the upserted row', async () => {
+    const { client, spies } = buildChain({ data: null, error: null })
+    mockCreateClient.mockReturnValue(client as never)
+    const adapter = new CloudStorageAdapter(OPTS)
+
+    await adapter.save(ANNOTATION)
+
+    const [row] = spies.upsert.mock.calls[0]
+    expect(row.lifecycle).toEqual([
+      { type: 'created', actor: 'designer', timestamp: 1711814400000 },
+    ])
+  })
+})
+
+describe('CloudStorageAdapter lifecycle round-trip', () => {
+  it('preserves multi-event lifecycle through save → load', async () => {
+    const annotationWithHistory: Annotation = {
+      ...ANNOTATION,
+      status: 'fixed_unverified',
+      lifecycle: [
+        { type: 'created', actor: 'designer', timestamp: 100 },
+        { type: 'acknowledged', actor: 'agent', timestamp: 200 },
+        { type: 'fix_claimed', actor: 'agent', timestamp: 300 },
+      ],
+    }
+
+    // Capture what gets upserted, then feed it back to load
+    let capturedRow: Record<string, unknown> | null = null
+    const captureChain = buildChain({ data: null, error: null })
+    captureChain.spies.upsert.mockImplementation((row: Record<string, unknown>) => {
+      capturedRow = row
+      return (captureChain.client as { from: () => unknown }).from()
+    })
+    mockCreateClient.mockReturnValue(captureChain.client as never)
+    const writer = new CloudStorageAdapter(OPTS)
+    await writer.save(annotationWithHistory)
+
+    expect(capturedRow).not.toBeNull()
+    const readChain = buildChain({ data: [capturedRow], error: null })
+    mockCreateClient.mockReturnValue(readChain.client as never)
+    const reader = new CloudStorageAdapter(OPTS)
+    const store = await reader.load()
+
+    expect(store.annotations[0].lifecycle).toEqual(annotationWithHistory.lifecycle)
+  })
+
+  it('defaults lifecycle to [] when row has no lifecycle field (pre-migration row)', async () => {
+    const legacyRow = {
+      id: 'a-legacy',
+      route: '/r',
+      viewport: '1920x1080',
+      viewport_bucket: 1900,
+      fingerprint: FP,
+      comment: 'old',
+      status: 'pending',
+      timestamp_ms: 1,
+      // no lifecycle field
+    }
+    const { client } = buildChain({ data: [legacyRow], error: null })
+    mockCreateClient.mockReturnValue(client as never)
+    const adapter = new CloudStorageAdapter(OPTS)
+
+    const store = await adapter.load()
+
+    expect(store.annotations[0].lifecycle).toEqual([])
+  })
+
+  it('defaults lifecycle to [] when row has lifecycle: null', async () => {
+    const nullRow = {
+      id: 'a-null',
+      route: '/r',
+      viewport: '1920x1080',
+      viewport_bucket: 1900,
+      fingerprint: FP,
+      comment: 'null lifecycle',
+      status: 'pending',
+      timestamp_ms: 1,
+      lifecycle: null,
+    }
+    const { client } = buildChain({ data: [nullRow], error: null })
+    mockCreateClient.mockReturnValue(client as never)
+    const adapter = new CloudStorageAdapter(OPTS)
+
+    const store = await adapter.load()
+
+    expect(store.annotations[0].lifecycle).toEqual([])
+  })
 })
 
 describe('CloudStorageAdapter.remove', () => {

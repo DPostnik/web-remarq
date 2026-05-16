@@ -19,7 +19,7 @@ interface AnnotationRow {
   comment: string
   status: AnnotationStatus
   timestamp_ms: number
-  lifecycle?: AnnotationEvent[]
+  lifecycle: AnnotationEvent[]
   created_at?: string
   updated_at?: string
 }
@@ -41,10 +41,6 @@ function rowToAnnotation(row: AnnotationRow): Annotation {
 }
 
 function annotationToRow(a: Annotation): AnnotationWriteRow {
-  // lifecycle is intentionally NOT written here — cloud-0.1.0 schema doesn't
-  // have a lifecycle column. Will be added in cloud-0.1.1 alongside SQL migration.
-  // Until then, lifecycle history doesn't survive across browser sessions for
-  // cloud users; migrateAnnotation synthesizes a created event on load.
   return {
     id: a.id,
     route: a.route,
@@ -54,6 +50,7 @@ function annotationToRow(a: Annotation): AnnotationWriteRow {
     comment: a.comment,
     status: a.status,
     timestamp_ms: a.timestamp,
+    lifecycle: a.lifecycle,
     updated_at: new Date().toISOString(),
   }
 }

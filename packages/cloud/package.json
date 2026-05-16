@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/cloud",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cloud storage adapter for web-remarq — Supabase-backed sync",
   "type": "module",
   "main": "dist/index.cjs",
@@ -36,7 +36,7 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "web-remarq": ">=0.6.0",
+    "web-remarq": ">=0.7.0",
     "@supabase/supabase-js": ">=2.0.0"
   },
   "devDependencies": {

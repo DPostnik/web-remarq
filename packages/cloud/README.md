@@ -84,6 +84,22 @@ SHA-256 hex (64 chars) of the key. This is what the database stores.
 - No web dashboard — manage annotations via Supabase Studio for now
 - Two tabs editing the same annotation: last write wins
 
+## Upgrading from 0.1.x
+
+`@web-remarq/cloud@0.2.0` adds a `lifecycle` column to the `annotations` table
+for full audit-trail persistence (core v0.7.0 feature). Run the additive
+migration in your Supabase SQL Editor **before** installing the new version:
+
+```sql
+-- packages/cloud/sql/002_lifecycle.sql
+alter table annotations
+  add column lifecycle jsonb not null default '[]'::jsonb;
+```
+
+The migration is safe to run on production data. Existing rows get an empty
+array; the core's `migrateAnnotation` synthesizes a `created` event on load
+when lifecycle is empty.
+
 ## License
 
 MIT

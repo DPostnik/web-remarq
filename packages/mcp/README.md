@@ -25,8 +25,9 @@ browser widget, by design (core v0.7.0 verification gate).
 
 ## Configuration
 
-Add to your editor's MCP config (Claude Code: `~/.claude/config.json`; Cursor:
-`~/.cursor/mcp.json` — paths vary by editor version):
+Add to your editor's MCP config. For Claude Code: use `claude mcp add` CLI or
+edit `~/.claude.json` directly. For Cursor: `~/.cursor/mcp.json`. Other editors:
+consult their MCP setup docs. The JSON shape is the same across editors:
 
 ```json
 {

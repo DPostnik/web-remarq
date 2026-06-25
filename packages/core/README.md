@@ -37,6 +37,8 @@ WebRemarq.init({ theme: 'light' })
 <script>WebRemarq.init({ theme: 'dark' })</script>
 ```
 
+Works in `<head>` or `<body>` — if `init()` runs before `document.body` exists, it defers itself to `DOMContentLoaded` automatically.
+
 ## API
 
 ### `WebRemarq.init(options?)`

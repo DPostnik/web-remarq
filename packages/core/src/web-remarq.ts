@@ -522,6 +522,10 @@ function setupMutationObserver(): void {
 export const WebRemarq = {
   init(opts?: WebRemarqOptions): void {
     if (initialized) return
+    if (!document.body) {
+      document.addEventListener('DOMContentLoaded', () => WebRemarq.init(opts), { once: true })
+      return
+    }
     options = opts ?? {}
 
     try {

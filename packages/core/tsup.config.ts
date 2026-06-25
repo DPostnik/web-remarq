@@ -10,10 +10,9 @@ export default defineConfig([
     clean: true,
   },
   {
-    entry: { 'web-remarq.global': 'src/index.ts' },
+    entry: { 'web-remarq': 'src/global.ts' },
     format: ['iife'],
     target: 'es2017',
-    globalName: 'WebRemarq',
     sourcemap: true,
   },
   {

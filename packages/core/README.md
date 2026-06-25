@@ -33,7 +33,7 @@ WebRemarq.init({ theme: 'light' })
 ### Script tag
 
 ```html
-<script src="https://unpkg.com/web-remarq/dist/web-remarq.global.global.js"></script>
+<script src="https://unpkg.com/web-remarq/dist/web-remarq.global.js"></script>
 <script>WebRemarq.init({ theme: 'dark' })</script>
 ```
 

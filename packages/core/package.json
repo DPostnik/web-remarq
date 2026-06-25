@@ -1,11 +1,13 @@
 {
   "name": "web-remarq",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Visual annotation tool for design review workflows",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "unpkg": "dist/web-remarq.global.js",
+  "jsdelivr": "dist/web-remarq.global.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

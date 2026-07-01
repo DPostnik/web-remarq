@@ -1,0 +1,187 @@
+import type { Annotation } from 'web-remarq/core'
+
+/**
+ * The core `QualityCheck` type. It is not re-exported by name from the
+ * `web-remarq/core` barrel, so we derive it from the exported `Annotation`
+ * type rather than redefining the shape here.
+ */
+export type QualityCheck = NonNullable<Annotation['qualityCheck']>
+
+export interface PreflightInput {
+  text: string
+  fingerprint: string
+  viewport: { width: number; height: number }
+}
+
+export interface PreflightConfig {
+  apiKey: string
+  provider: 'anthropic' | 'openai'
+  model?: string
+}
+
+/**
+ * Injectable LLM client. Tests pass a mock implementation so no network
+ * request is ever made. The default client is built from `PreflightConfig`.
+ */
+export interface LLMClient {
+  complete(prompt: string): Promise<string>
+}
+
+const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini'
+
+function resolveModel(config: PreflightConfig): string {
+  if (config.model) return config.model
+  return config.provider === 'anthropic'
+    ? DEFAULT_ANTHROPIC_MODEL
+    : DEFAULT_OPENAI_MODEL
+}
+
+function buildPrompt(input: PreflightInput): string {
+  return [
+    'You are a review assistant that judges whether a design/QA comment is',
+    'specific and actionable for a developer who has to implement the fix.',
+    '',
+    'Evaluate the comment below. Decide if it is:',
+    '- "clear": specific and actionable, a developer can act on it directly.',
+    '- "ambiguous": understandable but missing detail; needs clarification.',
+    '- "unactionable": too vague or subjective to act on at all.',
+    '',
+    'Respond with ONLY a JSON object, no prose, no code fences, of the form:',
+    '{',
+    '  "score": "clear" | "ambiguous" | "unactionable",',
+    '  "issues": string[],',
+    '  "clarifyingQuestions": string[],',
+    '  "suggestedRewrite": string (optional)',
+    '}',
+    '',
+    `Comment: ${JSON.stringify(input.text)}`,
+    `Element fingerprint: ${JSON.stringify(input.fingerprint)}`,
+    `Viewport: ${input.viewport.width}x${input.viewport.height}`,
+  ].join('\n')
+}
+
+const VALID_SCORES: ReadonlySet<QualityCheck['score']> = new Set([
+  'clear',
+  'ambiguous',
+  'unactionable',
+])
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string')
+}
+
+function fallbackCheck(reason: string): QualityCheck {
+  return {
+    score: 'ambiguous',
+    issues: [reason],
+    clarifyingQuestions: [],
+    refinedBy: 'auto',
+    timestamp: Date.now(),
+  }
+}
+
+/**
+ * Parse a raw LLM response into a `QualityCheck`. Never throws: any malformed
+ * or non-JSON response yields a safe `ambiguous` fallback with an explanatory
+ * entry in `issues`.
+ */
+function parseResponse(raw: string): QualityCheck {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return fallbackCheck('Could not parse LLM response as JSON.')
+  }
+
+  if (parsed === null || typeof parsed !== 'object') {
+    return fallbackCheck('LLM response was not a JSON object.')
+  }
+
+  const obj = parsed as Record<string, unknown>
+  const score = obj.score
+  if (typeof score !== 'string' || !VALID_SCORES.has(score as QualityCheck['score'])) {
+    return fallbackCheck('LLM response had an invalid or missing score.')
+  }
+
+  const check: QualityCheck = {
+    score: score as QualityCheck['score'],
+    issues: toStringArray(obj.issues),
+    clarifyingQuestions: toStringArray(obj.clarifyingQuestions),
+    refinedBy: 'auto',
+    timestamp: Date.now(),
+  }
+
+  if (typeof obj.suggestedRewrite === 'string' && obj.suggestedRewrite.length > 0) {
+    check.suggestedRewrite = obj.suggestedRewrite
+  }
+
+  return check
+}
+
+/**
+ * Build a real BYOK client from the config. This is only used when no client
+ * is injected; tests always inject a mock and never reach this path.
+ */
+function createDefaultClient(config: PreflightConfig): LLMClient {
+  const model = resolveModel(config)
+
+  return {
+    async complete(prompt: string): Promise<string> {
+      if (config.provider === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': config.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        })
+        const data = (await res.json()) as {
+          content?: Array<{ text?: string }>
+        }
+        return data.content?.[0]?.text ?? ''
+      }
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      })
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>
+      }
+      return data.choices?.[0]?.message?.content ?? ''
+    },
+  }
+}
+
+/**
+ * Run a text-only pre-flight quality check on an annotation comment.
+ *
+ * Builds a prompt from `input`, asks the LLM to judge whether the comment is
+ * specific/actionable, and parses the response into a core `QualityCheck`.
+ * A malformed or non-JSON LLM response is handled without throwing and returns
+ * a safe `ambiguous` fallback. No screenshot is sent or required.
+ */
+export async function preflightCheck(
+  input: PreflightInput,
+  config: PreflightConfig,
+  client: LLMClient = createDefaultClient(config),
+): Promise<QualityCheck> {
+  const prompt = buildPrompt(input)
+  const raw = await client.complete(prompt)
+  return parseResponse(raw)
+}

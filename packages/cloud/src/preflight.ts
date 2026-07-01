@@ -143,6 +143,12 @@ function createDefaultClient(config: PreflightConfig): LLMClient {
             messages: [{ role: 'user', content: prompt }],
           }),
         })
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          throw new Error(
+            `LLM provider error ${res.status}: ${body.slice(0, 200)}`,
+          )
+        }
         const data = (await res.json()) as {
           content?: Array<{ text?: string }>
         }
@@ -160,6 +166,12 @@ function createDefaultClient(config: PreflightConfig): LLMClient {
           messages: [{ role: 'user', content: prompt }],
         }),
       })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new Error(
+          `LLM provider error ${res.status}: ${body.slice(0, 200)}`,
+        )
+      }
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>
       }
@@ -182,6 +194,17 @@ export async function preflightCheck(
   client: LLMClient = createDefaultClient(config),
 ): Promise<QualityCheck> {
   const prompt = buildPrompt(input)
-  const raw = await client.complete(prompt)
+  let raw: string
+  try {
+    raw = await client.complete(prompt)
+  } catch (err) {
+    return {
+      score: 'ambiguous',
+      issues: ['pre-flight check failed: ' + String(err)],
+      clarifyingQuestions: [],
+      refinedBy: 'auto',
+      timestamp: Date.now(),
+    }
+  }
   return parseResponse(raw)
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   preflightCheck,
   type LLMClient,
@@ -84,17 +84,96 @@ describe('preflightCheck', () => {
   it('returns a safe fallback without throwing on a malformed response', async () => {
     const client = mockClient('this is not JSON at all }{')
 
-    let result: Awaited<ReturnType<typeof preflightCheck>>
-    await expect(
-      (async () => {
-        result = await preflightCheck(input, config, client)
-      })(),
-    ).resolves.not.toThrow()
-
-    result = await preflightCheck(input, config, client)
+    const result = await preflightCheck(input, config, client)
     expect(result.score).toBe('ambiguous')
     expect(result.issues.length).toBeGreaterThan(0)
     expect(result.refinedBy).toBe('auto')
     expect(typeof result.timestamp).toBe('number')
+  })
+})
+
+describe('preflightCheck default client (network path)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('calls the Anthropic endpoint with x-api-key and extracts content text', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        content: [{ text: JSON.stringify({ score: 'clear', issues: [] }) }],
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await preflightCheck(input, {
+      apiKey: 'anthropic-secret',
+      provider: 'anthropic',
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe('https://api.anthropic.com/v1/messages')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-api-key']).toBe('anthropic-secret')
+    expect(headers.authorization).toBeUndefined()
+    expect(init.body as string).toContain('The submit button is off.')
+    expect(result.score).toBe('clear')
+  })
+
+  it('calls the OpenAI endpoint with a Bearer token and extracts message content', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ score: 'unactionable', issues: [] }),
+            },
+          },
+        ],
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await preflightCheck(input, {
+      apiKey: 'openai-secret',
+      provider: 'openai',
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe('https://api.openai.com/v1/chat/completions')
+    const headers = init.headers as Record<string, string>
+    expect(headers.authorization).toBe('Bearer openai-secret')
+    expect(headers['x-api-key']).toBeUndefined()
+    expect(init.body as string).toContain('The submit button is off.')
+    expect(result.score).toBe('unactionable')
+  })
+
+  it('surfaces a non-ok provider response as a distinguishable fallback', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      text: async () => 'invalid api key',
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await preflightCheck(input, {
+      apiKey: 'bad-key',
+      provider: 'anthropic',
+    })
+
+    expect(result.score).toBe('ambiguous')
+    expect(result.refinedBy).toBe('auto')
+    expect(result.issues.join(' ')).toContain('401')
+    expect(result.issues.join(' ')).toContain('pre-flight check failed')
+    expect(result.issues.join(' ')).not.toContain('bad-key')
   })
 })

@@ -67,6 +67,15 @@ export interface AnnotationEvent {
   reason?: string
 }
 
+export interface QualityCheck {
+  score: 'clear' | 'ambiguous' | 'unactionable'
+  issues: string[]
+  clarifyingQuestions: string[]
+  suggestedRewrite?: string
+  refinedBy: 'designer' | 'auto'
+  timestamp: number
+}
+
 export interface Annotation {
   id: string
   comment: string
@@ -77,6 +86,7 @@ export interface Annotation {
   timestamp: number
   status: AnnotationStatus
   lifecycle: AnnotationEvent[]
+  qualityCheck?: QualityCheck
 }
 
 export interface AnnotationStore {

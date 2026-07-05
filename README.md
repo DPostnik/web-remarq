@@ -2,6 +2,8 @@
 
 Visual annotation tool for design review workflows. Framework-agnostic, zero dependencies.
 
+![web-remarq demo](.github/assets/demo.gif)
+
 Designer annotates UI elements on staging/dev, exports a report. Developer imports the report and sees markers on the exact elements. Export as agent-friendly JSON with source locations and search hints for AI coding agents.
 
 ## Packages

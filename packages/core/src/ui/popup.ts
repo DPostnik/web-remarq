@@ -6,7 +6,8 @@ interface ElementInfo {
 import type { AnnotationEvent, AnnotationStatus } from '../core/types'
 import type { LifecycleAction } from '../core/lifecycle'
 
-interface DetailInfo extends ElementInfo {
+export interface DetailInfo extends ElementInfo {
+  id: string
   comment: string
   status: AnnotationStatus
   lifecycle: AnnotationEvent[]
@@ -82,6 +83,7 @@ const POPUP_MARGIN = 8
 
 export class Popup {
   private popupEl: HTMLElement | null = null
+  private openId: string | null = null
   private keyHandler: ((e: KeyboardEvent) => void) | null = null
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null
   private pendingEditFlush: (() => void) | null = null
@@ -228,6 +230,7 @@ export class Popup {
 
     this.container.appendChild(popup)
     this.popupEl = popup
+    this.openId = info.id
 
     // Measure after layout, then position
     requestAnimationFrame(() => {
@@ -245,13 +248,23 @@ export class Popup {
     setTimeout(() => {
       this.outsideClickHandler = (e: MouseEvent) => {
         const target = e.target as HTMLElement
-        if (target && !target.closest('.remarq-popup')) {
-          this.hide()
-          callbacks.onClose()
-        }
+        if (!target) return
+        if (target.closest('.remarq-popup')) return
+        // The marker this popup belongs to is not "outside": mousedown must
+        // leave the popup standing so the marker's own click handler can
+        // toggle it shut. Otherwise the popup closes here and immediately
+        // reopens on click.
+        if (target.closest(`.remarq-marker[data-annotation-id="${info.id}"]`))
+          return
+        this.hide()
+        callbacks.onClose()
       }
       document.addEventListener('mousedown', this.outsideClickHandler)
     }, 0)
+  }
+
+  isOpenFor(id: string): boolean {
+    return this.popupEl !== null && this.openId === id
   }
 
   private buildLifecycleViewer(lifecycle: AnnotationEvent[]): HTMLElement {
@@ -382,6 +395,7 @@ export class Popup {
       this.popupEl.remove()
       this.popupEl = null
     }
+    this.openId = null
     if (this.keyHandler) {
       document.removeEventListener('keydown', this.keyHandler)
       this.keyHandler = null

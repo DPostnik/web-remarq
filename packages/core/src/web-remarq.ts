@@ -290,6 +290,11 @@ function setInspecting(value: boolean): void {
 }
 
 function handleMarkerClick(annotationId: string): void {
+  if (popup.isOpenFor(annotationId)) {
+    popup.hide()
+    return
+  }
+
   const ann = storage.getAll().find((a) => a.id === annotationId)
   if (!ann) return
 
@@ -300,6 +305,7 @@ function handleMarkerClick(annotationId: string): void {
 
   popup.showDetail(
     {
+      id: ann.id,
       tag: ann.fingerprint.tagName,
       text: ann.fingerprint.textContent ?? '',
       comment: ann.comment,

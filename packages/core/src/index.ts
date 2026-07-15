@@ -7,6 +7,8 @@ export type {
   AnnotationEventType,
   Actor,
   QualityCheck,
+  QualityCheckInput,
+  QualityGateOptions,
   AnnotationStore,
   ElementFingerprint,
   CSSModuleClass,

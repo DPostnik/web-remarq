@@ -76,6 +76,19 @@ export interface QualityCheck {
   timestamp: number
 }
 
+export interface QualityCheckInput {
+  comment: string
+  fingerprint: ElementFingerprint
+  route: string
+  viewport: { width: number; height: number }
+}
+
+/** Pluggable AI pre-flight check. Core never calls a provider itself. */
+export interface QualityGateOptions {
+  mode?: 'off' | 'suggest'  // default 'suggest'
+  check: (input: QualityCheckInput) => Promise<QualityCheck>
+}
+
 export interface Annotation {
   id: string
   comment: string
@@ -103,6 +116,7 @@ export interface WebRemarqOptions {
   position?: ToolbarPosition
   shortcuts?: boolean
   storage?: StorageAdapter
+  qualityGate?: QualityGateOptions
 }
 
 export interface ImportResult {

@@ -402,3 +402,68 @@ describe('CloudStorageAdapter.clear', () => {
     await expect(adapter.clear()).rejects.toThrow('clear failed')
   })
 })
+
+describe('CloudStorageAdapter quality_check round-trip', () => {
+  const qualityCheck = {
+    score: 'ambiguous' as const,
+    issues: ['No target size given'],
+    clarifyingQuestions: [],
+    suggestedRewrite: 'Increase the button height to 48px',
+    refinedBy: 'auto' as const,
+    timestamp: 1,
+  }
+
+  it('writes quality_check in the upserted row', async () => {
+    const { client, spies } = buildChain({ data: null, error: null })
+    mockCreateClient.mockReturnValue(client as never)
+    const adapter = new CloudStorageAdapter(OPTS)
+
+    await adapter.save({ ...ANNOTATION, qualityCheck })
+
+    const [row] = spies.upsert.mock.calls[0]
+    expect(row.quality_check).toEqual(qualityCheck)
+  })
+
+  it('maps quality_check back to qualityCheck on load', async () => {
+    const row = {
+      id: 'a1',
+      route: '/r',
+      viewport: '1920x1080',
+      viewport_bucket: 1900,
+      fingerprint: FP,
+      comment: 'one',
+      status: 'pending',
+      timestamp_ms: 100,
+      lifecycle: [],
+      quality_check: qualityCheck,
+    }
+    const { client } = buildChain({ data: [row], error: null })
+    mockCreateClient.mockReturnValue(client as never)
+    const adapter = new CloudStorageAdapter(OPTS)
+
+    const store = await adapter.load()
+
+    expect(store.annotations[0].qualityCheck).toEqual(qualityCheck)
+  })
+
+  it('leaves qualityCheck undefined when the row has no quality_check', async () => {
+    const row = {
+      id: 'a1',
+      route: '/r',
+      viewport: '1920x1080',
+      viewport_bucket: 1900,
+      fingerprint: FP,
+      comment: 'one',
+      status: 'pending',
+      timestamp_ms: 100,
+      lifecycle: [],
+    }
+    const { client } = buildChain({ data: [row], error: null })
+    mockCreateClient.mockReturnValue(client as never)
+    const adapter = new CloudStorageAdapter(OPTS)
+
+    const store = await adapter.load()
+
+    expect(store.annotations[0].qualityCheck).toBeUndefined()
+  })
+})

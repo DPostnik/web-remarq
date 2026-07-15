@@ -5,6 +5,7 @@ import type {
   AnnotationStatus,
   AnnotationStore,
   ElementFingerprint,
+  QualityCheck,
   StorageAdapter,
 } from 'web-remarq'
 import type { CloudStorageOptions } from './types'
@@ -20,6 +21,7 @@ interface AnnotationRow {
   status: AnnotationStatus
   timestamp_ms: number
   lifecycle: AnnotationEvent[]
+  quality_check?: QualityCheck | null
   created_at?: string
   updated_at?: string
 }
@@ -37,6 +39,7 @@ function rowToAnnotation(row: AnnotationRow): Annotation {
     timestamp: row.timestamp_ms,
     status: row.status,
     lifecycle: row.lifecycle ?? [],
+    qualityCheck: row.quality_check ?? undefined,
   }
 }
 
@@ -51,6 +54,7 @@ function annotationToRow(a: Annotation): AnnotationWriteRow {
     status: a.status,
     timestamp_ms: a.timestamp,
     lifecycle: a.lifecycle,
+    quality_check: a.qualityCheck ?? null,
     updated_at: new Date().toISOString(),
   }
 }

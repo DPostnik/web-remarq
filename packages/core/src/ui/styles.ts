@@ -165,6 +165,22 @@ const CSS = `
 .remarq-marker--verified { background: var(--remarq-status-verified); opacity: 0.7; }
 .remarq-marker--dismissed { background: var(--remarq-status-dismissed); opacity: 0.5; }
 
+.remarq-quality-bubble {
+  position: absolute;
+  transform: translateX(-100%);
+  z-index: 2147483645;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--remarq-bg);
+  color: var(--remarq-text);
+  border: 1px solid var(--remarq-border);
+  font: 11px/1.4 system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.remarq-quality-bubble[data-state='unactionable'] { border-color: var(--remarq-status-pending); }
+
 .remarq-popup {
   position: absolute;
   z-index: 2147483647;

@@ -36,6 +36,7 @@ export class MarkerManager {
   constructor(
     private container: HTMLElement,
     private onClick?: (annotationId: string) => void,
+    private onMarkerPosition?: (annotationId: string, top: number, left: number) => void,
   ) {
     this.startPositionLoop()
   }
@@ -165,8 +166,10 @@ export class MarkerManager {
         left = Math.max(minLeft, Math.min(left, maxLeft))
       }
 
-      entry.markerEl.style.top = `${window.scrollY + rect.top - MARKER_OFFSET}px`
+      const top = window.scrollY + rect.top - MARKER_OFFSET
+      entry.markerEl.style.top = `${top}px`
       entry.markerEl.style.left = `${left}px`
+      this.onMarkerPosition?.(id, top, left)
 
       // Mimic `outline` + `outline-offset` geometry: the box's inner border
       // edge sits `gap` outside the element, so the whole box is the element

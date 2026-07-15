@@ -1,6 +1,7 @@
-import { beforeEach, afterEach, describe, expect, it } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { Popup } from './popup'
 import type { DetailInfo } from './popup'
+import type { QualityCheck } from '../core/types'
 
 function makeInfo(overrides: Partial<DetailInfo> = {}): DetailInfo {
   return {
@@ -176,5 +177,81 @@ describe('Popup detail view', () => {
     clickOn(inside)
 
     expect(isOpen()).toBe(true)
+  })
+})
+
+describe('Popup quality verdict block', () => {
+  let container: HTMLElement
+  let popup: Popup
+
+  const check = (over: Partial<QualityCheck> = {}): QualityCheck => ({
+    score: 'ambiguous',
+    issues: ['No target size given'],
+    clarifyingQuestions: [],
+    suggestedRewrite: 'Increase the button height to 48px',
+    refinedBy: 'auto',
+    timestamp: 1,
+    ...over,
+  })
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    popup = new Popup(container)
+  })
+
+  afterEach(() => {
+    popup.destroy()
+    document.body.innerHTML = ''
+  })
+
+  it('renders no quality section without a verdict or pending state', () => {
+    popup.showDetail(makeInfo(), POSITION, NOOP_CALLBACKS)
+    expect(container.querySelector('.remarq-popup-quality')).toBeNull()
+  })
+
+  it('renders a pending state', () => {
+    popup.showDetail(makeInfo({ qualityPending: true }), POSITION, NOOP_CALLBACKS)
+    expect(container.querySelector('.remarq-popup-quality')!.textContent).toContain('Checking')
+  })
+
+  it('renders badge, issues and rewrite', () => {
+    popup.showDetail(makeInfo({ qualityCheck: check() }), POSITION, NOOP_CALLBACKS)
+    const section = container.querySelector('.remarq-popup-quality')!
+    expect(section.querySelector('.remarq-popup-quality-badge')!.textContent).toContain('ambiguous')
+    expect(section.textContent).toContain('No target size given')
+    expect(section.textContent).toContain('Increase the button height to 48px')
+  })
+
+  it('omits action buttons when callbacks are not provided', () => {
+    popup.showDetail(makeInfo({ qualityCheck: check() }), POSITION, NOOP_CALLBACKS)
+    expect(container.querySelector('.remarq-popup-quality-use')).toBeNull()
+    expect(container.querySelector('.remarq-popup-quality-recheck')).toBeNull()
+  })
+
+  it('Use rewrite passes the text and closes the popup', () => {
+    const onUseRewrite = vi.fn()
+    popup.showDetail(
+      makeInfo({ qualityCheck: check() }),
+      POSITION,
+      { ...NOOP_CALLBACKS, onUseRewrite, onRecheck: vi.fn() },
+    )
+    container.querySelector<HTMLButtonElement>('.remarq-popup-quality-use')!.click()
+    expect(onUseRewrite).toHaveBeenCalledWith('Increase the button height to 48px')
+    expect(container.querySelector('.remarq-popup')).toBeNull()
+  })
+
+  it('omits Use rewrite without a suggestedRewrite, keeps Re-check', () => {
+    const onRecheck = vi.fn()
+    popup.showDetail(
+      makeInfo({ qualityCheck: check({ suggestedRewrite: undefined }) }),
+      POSITION,
+      { ...NOOP_CALLBACKS, onUseRewrite: vi.fn(), onRecheck },
+    )
+    expect(container.querySelector('.remarq-popup-quality-use')).toBeNull()
+    container.querySelector<HTMLButtonElement>('.remarq-popup-quality-recheck')!.click()
+    expect(onRecheck).toHaveBeenCalledOnce()
+    expect(container.querySelector('.remarq-popup')).toBeNull()
   })
 })

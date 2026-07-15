@@ -3,7 +3,7 @@ interface ElementInfo {
   text: string
 }
 
-import type { AnnotationEvent, AnnotationStatus } from '../core/types'
+import type { AnnotationEvent, AnnotationStatus, QualityCheck } from '../core/types'
 import type { LifecycleAction } from '../core/lifecycle'
 
 export interface DetailInfo extends ElementInfo {
@@ -11,6 +11,8 @@ export interface DetailInfo extends ElementInfo {
   comment: string
   status: AnnotationStatus
   lifecycle: AnnotationEvent[]
+  qualityCheck?: QualityCheck
+  qualityPending?: boolean
 }
 
 interface DetailCallbacks {
@@ -19,6 +21,8 @@ interface DetailCallbacks {
   onClose: () => void
   onEdit: (newComment: string) => void
   onCopy: () => void
+  onUseRewrite?: (rewrite: string) => void
+  onRecheck?: () => void
 }
 
 const STATUS_LABEL: Record<AnnotationStatus, string> = {
@@ -218,6 +222,8 @@ export class Popup {
       return el
     }
     body.appendChild(makeCommentEl())
+    const quality = this.buildQualitySection(info, callbacks)
+    if (quality) body.appendChild(quality)
     body.appendChild(this.buildLifecycleViewer(info.lifecycle))
 
     const actions = document.createElement('div')
@@ -265,6 +271,74 @@ export class Popup {
 
   isOpenFor(id: string): boolean {
     return this.popupEl !== null && this.openId === id
+  }
+
+  private buildQualitySection(
+    info: DetailInfo,
+    callbacks: DetailCallbacks,
+  ): HTMLElement | null {
+    if (!info.qualityCheck && !info.qualityPending) return null
+
+    const section = document.createElement('div')
+    section.className = 'remarq-popup-quality'
+
+    if (info.qualityPending) {
+      section.textContent = '🤖 Checking comment quality…'
+      return section
+    }
+
+    const check = info.qualityCheck!
+
+    const badge = document.createElement('span')
+    badge.className = `remarq-popup-quality-badge remarq-popup-quality-badge--${check.score}`
+    badge.textContent = `🤖 ${check.score}`
+    section.appendChild(badge)
+
+    if (check.issues.length) {
+      const list = document.createElement('ul')
+      list.className = 'remarq-popup-quality-issues'
+      for (const issue of check.issues) {
+        const li = document.createElement('li')
+        li.textContent = issue
+        list.appendChild(li)
+      }
+      section.appendChild(list)
+    }
+
+    if (check.suggestedRewrite) {
+      const rewrite = document.createElement('div')
+      rewrite.className = 'remarq-popup-quality-rewrite'
+      rewrite.textContent = check.suggestedRewrite
+      section.appendChild(rewrite)
+    }
+
+    const actions = document.createElement('div')
+    actions.className = 'remarq-popup-quality-actions'
+
+    if (check.suggestedRewrite && callbacks.onUseRewrite) {
+      const useBtn = document.createElement('button')
+      useBtn.className = 'remarq-popup-utility-btn remarq-popup-quality-use'
+      useBtn.textContent = 'Use rewrite'
+      useBtn.addEventListener('click', () => {
+        this.hide()
+        callbacks.onUseRewrite!(check.suggestedRewrite!)
+      })
+      actions.appendChild(useBtn)
+    }
+
+    if (callbacks.onRecheck) {
+      const recheckBtn = document.createElement('button')
+      recheckBtn.className = 'remarq-popup-utility-btn remarq-popup-quality-recheck'
+      recheckBtn.textContent = 'Re-check'
+      recheckBtn.addEventListener('click', () => {
+        this.hide()
+        callbacks.onRecheck!()
+      })
+      actions.appendChild(recheckBtn)
+    }
+
+    if (actions.childElementCount) section.appendChild(actions)
+    return section
   }
 
   private buildLifecycleViewer(lifecycle: AnnotationEvent[]): HTMLElement {

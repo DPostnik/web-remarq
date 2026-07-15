@@ -578,6 +578,27 @@ const CSS = `
   justify-content: flex-end;
   gap: 8px;
 }
+
+.remarq-popup-quality {
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px dashed var(--remarq-border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.remarq-popup-quality-badge { font-weight: 600; }
+.remarq-popup-quality-badge--ambiguous { color: var(--remarq-status-in-progress); }
+.remarq-popup-quality-badge--unactionable { color: var(--remarq-status-pending); }
+.remarq-popup-quality-badge--clear { color: var(--remarq-status-verified); }
+.remarq-popup-quality-issues { margin: 6px 0; padding-left: 16px; }
+.remarq-popup-quality-rewrite {
+  background: var(--remarq-bg-secondary);
+  border-radius: 4px;
+  padding: 6px;
+  margin: 6px 0;
+  font-style: italic;
+}
+.remarq-popup-quality-actions { display: flex; gap: 6px; justify-content: flex-end; }
 `
 
 export function injectStyles(): void {

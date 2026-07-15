@@ -103,3 +103,95 @@ describe('MarkerManager positioning', () => {
     expect(markers.getMarkerRect('missing')).toBeNull()
   })
 })
+
+describe('MarkerManager selection', () => {
+  let container: HTMLElement
+  let markers: MarkerManager
+
+  beforeEach(() => {
+    setViewport(1440, 900)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    markers = new MarkerManager(container)
+  })
+
+  afterEach(() => {
+    markers.destroy()
+    container.remove()
+    document.body.innerHTML = ''
+  })
+
+  it('thickens the outline of the selected element', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+
+    expect(target.style.outline).toBe('2px solid #f97316')
+
+    markers.setSelected('a1')
+
+    expect(target.style.outline).toBe('4px solid #f97316')
+    expect(target.style.outlineOffset).toBe('3px')
+  })
+
+  it('moves the highlight and unlights the previous element', () => {
+    const first = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    const second = makeTarget({ top: 400, left: 200, right: 300, bottom: 440 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), first)
+    markers.addMarker(makeAnnotation({ id: 'a2' }), second)
+
+    markers.setSelected('a1')
+    markers.setSelected('a2')
+
+    expect(first.style.outline).toBe('2px solid #f97316')
+    expect(first.style.outlineOffset).toBe('2px')
+    expect(second.style.outline).toBe('4px solid #f97316')
+  })
+
+  it('drops the highlight on setSelected(null)', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+
+    markers.setSelected('a1')
+    markers.setSelected(null)
+
+    expect(target.style.outline).toBe('2px solid #f97316')
+    expect(target.style.outlineOffset).toBe('2px')
+  })
+
+  it('keeps the element highlighted when its status changes', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+
+    markers.setSelected('a1')
+    markers.updateStatus('a1', 'verified')
+
+    // Colour follows the new status, thickness still marks it as selected.
+    expect(target.style.outline).toBe('4px solid #22c55e')
+  })
+
+  it('survives a refresh that rebuilds every marker', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+    markers.setSelected('a1')
+
+    // What refreshMarkers() does: wipe, then re-add from storage.
+    markers.clear()
+    const rebuilt = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), rebuilt)
+
+    expect(rebuilt.style.outline).toBe('4px solid #f97316')
+  })
+
+  it('leaves an unselected element at the normal outline after a refresh', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+    markers.setSelected('a1')
+    markers.setSelected(null)
+
+    markers.clear()
+    const rebuilt = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), rebuilt)
+
+    expect(rebuilt.style.outline).toBe('2px solid #f97316')
+  })
+})

@@ -292,6 +292,9 @@ function setInspecting(value: boolean): void {
 function handleMarkerClick(annotationId: string): void {
   if (popup.isOpenFor(annotationId)) {
     popup.hide()
+    // This toggle path calls hide() directly, bypassing onClose — drop the
+    // highlight here or it stays lit with no popup to explain it.
+    markers.setSelected(null)
     return
   }
 
@@ -325,11 +328,14 @@ function handleMarkerClick(annotationId: string): void {
         applyTransition(ann.id, action, reason ? { reason } : undefined)
       },
       onDelete: () => {
+        markers.setSelected(null)
         elementCache.delete(ann.id)
         storage.remove(ann.id)
         refreshMarkers()
       },
-      onClose: () => {},
+      onClose: () => {
+        markers.setSelected(null)
+      },
       onEdit: (newComment: string) => {
         storage.update(ann.id, { comment: newComment })
         refreshMarkers()
@@ -352,6 +358,8 @@ function handleMarkerClick(annotationId: string): void {
       },
     },
   )
+
+  markers.setSelected(annotationId)
 }
 
 function generateMarkdown(): string {
@@ -576,7 +584,10 @@ export const WebRemarq = {
           refreshMarkers()
           showToast(themeManager.container, 'All annotations cleared')
         },
-        onThemeToggle: () => themeManager.toggle(),
+        onThemeToggle: () => {
+          themeManager.toggle()
+          markers.refreshOutlines()
+        },
         onHelp: () => showShortcutsModal(themeManager.container),
         onVerificationBadgeClick: jumpToFirstUnverified,
       }, position)
@@ -640,6 +651,7 @@ export const WebRemarq = {
 
   setTheme(theme: 'light' | 'dark'): void {
     themeManager?.setTheme(theme)
+    markers?.refreshOutlines()
   },
 
   export(format: 'md' | 'json' | 'agent'): void {

@@ -78,6 +78,20 @@ function fallbackCheck(reason: string): QualityCheck {
 }
 
 /**
+ * Models occasionally ignore the "no code fences, no prose" instruction and
+ * wrap the JSON in ```json fences or surround it with text. Extract the JSON
+ * object before parsing.
+ */
+function extractJSON(raw: string): string {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const body = fenced ? fenced[1] : raw
+  const start = body.indexOf('{')
+  const end = body.lastIndexOf('}')
+  if (start !== -1 && end > start) return body.slice(start, end + 1)
+  return body.trim()
+}
+
+/**
  * Parse a raw LLM response into a `QualityCheck`. Never throws: any malformed
  * or non-JSON response yields a safe `ambiguous` fallback with an explanatory
  * entry in `issues`.
@@ -85,7 +99,7 @@ function fallbackCheck(reason: string): QualityCheck {
 function parseResponse(raw: string): QualityCheck {
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(extractJSON(raw))
   } catch {
     return fallbackCheck('Could not parse LLM response as JSON.')
   }
@@ -159,6 +173,7 @@ function createDefaultClient(config: PreflightConfig): LLMClient {
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
         }),
       })
       if (!res.ok) {

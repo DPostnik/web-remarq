@@ -90,6 +90,25 @@ describe('preflightCheck', () => {
     expect(result.refinedBy).toBe('auto')
     expect(typeof result.timestamp).toBe('number')
   })
+
+  it('parses a response wrapped in markdown code fences', async () => {
+    const client = mockClient(
+      '```json\n{"score": "clear", "issues": [], "clarifyingQuestions": []}\n```',
+    )
+
+    const result = await preflightCheck(input, config, client)
+    expect(result.score).toBe('clear')
+  })
+
+  it('parses a response surrounded by prose', async () => {
+    const client = mockClient(
+      'Here is my assessment:\n{"score": "unactionable", "issues": ["Too vague."], "clarifyingQuestions": []}\nLet me know if you need more.',
+    )
+
+    const result = await preflightCheck(input, config, client)
+    expect(result.score).toBe('unactionable')
+    expect(result.issues).toContain('Too vague.')
+  })
 })
 
 describe('preflightCheck default client (network path)', () => {
@@ -154,6 +173,7 @@ describe('preflightCheck default client (network path)', () => {
     expect(headers.authorization).toBe('Bearer openai-secret')
     expect(headers['x-api-key']).toBeUndefined()
     expect(init.body as string).toContain('The submit button is off.')
+    expect(JSON.parse(init.body as string).response_format).toEqual({ type: 'json_object' })
     expect(result.score).toBe('unactionable')
   })
 

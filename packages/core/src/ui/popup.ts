@@ -484,30 +484,39 @@ export class Popup {
 
   private adjustPosition(popup: HTMLElement, position: Position): void {
     const popupHeight = popup.offsetHeight
-    const viewportBottom = window.scrollY + window.innerHeight
-    const viewportRight = window.scrollX + window.innerWidth
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const viewportBottom = window.scrollY + viewportHeight
+    const viewportRight = window.scrollX + viewportWidth
 
     let top = position.top
     let left = position.left
 
-    // Flip above element if overflows viewport bottom
-    if (top + popupHeight > viewportBottom - POPUP_MARGIN) {
-      top = position.anchorBottom - popupHeight
+    // Embedded panes report a 0x0 viewport for a frame. Clamping against it
+    // would fling the popup into the top-left corner, so keep the anchored
+    // position until the viewport reports real dimensions.
+    if (viewportHeight > 0) {
+      // Flip above anchor if overflows viewport bottom
+      if (top + popupHeight > viewportBottom - POPUP_MARGIN) {
+        top = position.anchorBottom - popupHeight
+      }
+
+      // Clamp: don't go above visible area
+      if (top < window.scrollY + POPUP_MARGIN) {
+        top = window.scrollY + POPUP_MARGIN
+      }
     }
 
-    // Clamp: don't go above visible area
-    if (top < window.scrollY + POPUP_MARGIN) {
-      top = window.scrollY + POPUP_MARGIN
-    }
+    if (viewportWidth > 0) {
+      // Clamp right edge
+      if (left + POPUP_WIDTH > viewportRight - POPUP_MARGIN) {
+        left = viewportRight - POPUP_WIDTH - POPUP_MARGIN
+      }
 
-    // Clamp right edge
-    if (left + POPUP_WIDTH > viewportRight - POPUP_MARGIN) {
-      left = viewportRight - POPUP_WIDTH - POPUP_MARGIN
-    }
-
-    // Clamp left edge
-    if (left < window.scrollX + POPUP_MARGIN) {
-      left = window.scrollX + POPUP_MARGIN
+      // Clamp left edge
+      if (left < window.scrollX + POPUP_MARGIN) {
+        left = window.scrollX + POPUP_MARGIN
+      }
     }
 
     popup.style.top = `${top}px`

@@ -43,6 +43,63 @@ function flushTimers(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function setViewport(width: number, height: number): void {
+  Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
+  Object.defineProperty(window, 'innerHeight', { value: height, configurable: true })
+}
+
+// adjustPosition runs inside a rAF so it can measure after layout.
+function flushFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+describe('Popup positioning', () => {
+  let container: HTMLElement
+  let popup: Popup
+
+  beforeEach(() => {
+    setViewport(1280, 720)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    popup = new Popup(container)
+  })
+
+  afterEach(() => {
+    popup.destroy()
+    document.body.innerHTML = ''
+  })
+
+  const popupEl = () => container.querySelector('.remarq-popup') as HTMLElement
+
+  it('keeps the anchored position when it fits on screen', async () => {
+    popup.showDetail(makeInfo(), { top: 200, left: 300, anchorBottom: 160 }, NOOP_CALLBACKS)
+    await flushFrame()
+
+    expect(popupEl().style.left).toBe('300px')
+    expect(popupEl().style.top).toBe('200px')
+  })
+
+  it('slides a right-edge anchor back inside the viewport', async () => {
+    // A marker pinned at the right edge anchors the popup at left: 1248, which
+    // would overflow by 276px.
+    popup.showDetail(makeInfo(), { top: 20, left: 1248, anchorBottom: -20 }, NOOP_CALLBACKS)
+    await flushFrame()
+
+    // 1280 - 300 (width) - 8 (margin)
+    expect(popupEl().style.left).toBe('972px')
+  })
+
+  it('leaves the anchored position alone while the viewport reports 0x0', async () => {
+    setViewport(0, 0)
+    popup.showDetail(makeInfo(), { top: 20, left: 1248, anchorBottom: -20 }, NOOP_CALLBACKS)
+    await flushFrame()
+
+    // Clamping against a 0x0 viewport would fling the popup to the top-left.
+    expect(popupEl().style.left).toBe('1248px')
+    expect(popupEl().style.top).toBe('20px')
+  })
+})
+
 describe('Popup detail view', () => {
   let container: HTMLElement
   let popup: Popup

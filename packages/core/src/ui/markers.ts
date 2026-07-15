@@ -18,6 +18,10 @@ function statusClass(status: AnnotationStatus): string {
   return `remarq-marker--${status.replace('_', '-')}`
 }
 
+const MARKER_SIZE = 24
+const MARKER_OFFSET = 12
+const MARKER_MARGIN = 8
+
 export class MarkerManager {
   private markers = new Map<string, MarkerEntry>()
   private rafId: number | null = null
@@ -106,13 +110,37 @@ export class MarkerManager {
     target.style.outlineOffset = ''
   }
 
+  /** Viewport rect of the marker itself, or null if it has no marker. */
+  getMarkerRect(id: string): DOMRect | null {
+    const entry = this.markers.get(id)
+    if (!entry) return null
+    try {
+      return entry.markerEl.getBoundingClientRect()
+    } catch {
+      return null
+    }
+  }
+
   private updatePosition(id: string): void {
     const entry = this.markers.get(id)
     if (!entry) return
     try {
       const rect = entry.target.getBoundingClientRect()
-      entry.markerEl.style.top = `${window.scrollY + rect.top - 12}px`
-      entry.markerEl.style.left = `${window.scrollX + rect.right - 12}px`
+      let left = window.scrollX + rect.right - MARKER_OFFSET
+
+      // An element flush with the right edge would push the marker half
+      // off-screen, so pin it inside the viewport. Embedded panes report a
+      // zero-width viewport for a frame — leave the position alone rather than
+      // pin every marker to the left edge.
+      const viewportWidth = window.innerWidth
+      if (viewportWidth > MARKER_SIZE) {
+        const minLeft = window.scrollX + MARKER_MARGIN
+        const maxLeft = window.scrollX + viewportWidth - MARKER_SIZE - MARKER_MARGIN
+        left = Math.max(minLeft, Math.min(left, maxLeft))
+      }
+
+      entry.markerEl.style.top = `${window.scrollY + rect.top - MARKER_OFFSET}px`
+      entry.markerEl.style.left = `${left}px`
     } catch {
       // element may have been removed
     }

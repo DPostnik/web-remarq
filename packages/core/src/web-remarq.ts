@@ -301,7 +301,10 @@ function handleMarkerClick(annotationId: string): void {
   const el = resolveElement(ann)
   if (!el) return
 
-  const rect = el.getBoundingClientRect()
+  // Anchor to the marker, not the element: on a full-height section the marker
+  // sits in the top-right corner while the element's bottom-left is a screen
+  // away, which detaches the comment from the marker it belongs to.
+  const rect = markers.getMarkerRect(annotationId) ?? el.getBoundingClientRect()
 
   popup.showDetail(
     {

@@ -54,9 +54,19 @@ WebRemarq.init({
   dataAttribute: 'data-annotate',    // which data-attr to use as stable anchor
   position: 'bottom-right',          // toolbar anchor
   shortcuts: true,                   // enable keyboard shortcuts (default true)
-  storage: new LocalStorageAdapter() // pluggable storage backend (default)
+  storage: new LocalStorageAdapter(), // pluggable storage backend (default)
+  qualityGate: {                     // optional AI pre-flight check on comments
+    mode: 'suggest',                 // 'off' | 'suggest' (default 'suggest')
+    check: async (input) => ({ /* QualityCheck */ }),
+  },
 })
 ```
+
+#### `qualityGate`
+
+An optional AI pre-flight check that scores each comment right after submit (and after edits): `clear`, `ambiguous`, or `unactionable`. Verdicts show up as a `🤖` chip next to the marker and as a block in the annotation popup, with an optional suggested rewrite ([Use rewrite] applies it in one click) and a [Re-check] action.
+
+Core never calls an LLM itself — you supply the async `check(input)` function. It receives `{ comment, fingerprint, route, viewport }` and returns a `QualityCheck`. A rejected promise is a silent no-op: the designer is never blocked by a failing checker. Wire it to `@web-remarq/cloud`'s `createPreflightChecker` for a ready-made BYOK checker, or point it at your own server route (recommended — keeps the API key off the client).
 
 ### `WebRemarq.destroy()`
 

@@ -62,6 +62,31 @@ Options:
 - `projectKey` (required) — `pk_...` key you generated in step 3
 - `onError` (`'throw' | 'memory-fallback'`, default `'throw'`) — what to do when a Supabase call fails
 
+### `createPreflightChecker(config, client?)`
+
+Adapts the AI comment pre-flight check to core's `qualityGate.check` signature — one line of wiring:
+
+```ts
+import { WebRemarq } from 'web-remarq'
+import { createPreflightChecker } from '@web-remarq/cloud'
+
+WebRemarq.init({
+  qualityGate: {
+    check: createPreflightChecker({ provider: 'openai', apiKey: import.meta.env.VITE_OPENAI_KEY }),
+  },
+})
+```
+
+Config:
+
+- `provider` (required) — `'anthropic' | 'openai'`
+- `apiKey` (required) — your provider API key (BYOK)
+- `model` (optional) — defaults to `claude-haiku-4-5` (Anthropic) / `gpt-5-nano` (OpenAI)
+
+> **BYOK warning:** the key is visible in the browser. Fine for local dev and dogfooding; for anything shared, put the LLM call behind a server-side proxy route and pass a custom `check` function that hits your route instead.
+
+Persisting verdicts to Supabase requires the `003_quality.sql` migration (see Upgrading below).
+
 ### `generateProjectKey(): string`
 
 Generates a `pk_<32 random chars>` key. Browser-safe (uses Web Crypto).
@@ -83,6 +108,18 @@ SHA-256 hex (64 chars) of the key. This is what the database stores.
 - No realtime sync — refresh the page to pick up other people's changes (coming in cloud-0.2.0 with MCP server + team UX)
 - No web dashboard — manage annotations via Supabase Studio for now
 - Two tabs editing the same annotation: last write wins
+
+## Upgrading to 0.3.0
+
+`@web-remarq/cloud@0.3.0` persists the AI quality verdict (`qualityCheck`, core ≥0.7.13)
+in a new `quality_check` column. Run the additive migration in your Supabase SQL Editor:
+
+```sql
+-- packages/cloud/sql/003_quality.sql
+alter table annotations add column if not exists quality_check jsonb;
+```
+
+Safe on production data — existing rows just read back with no verdict.
 
 ## Upgrading from 0.1.x
 

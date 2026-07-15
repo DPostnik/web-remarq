@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   preflightCheck,
+  createPreflightChecker,
+  DEFAULT_ANTHROPIC_MODEL,
+  DEFAULT_OPENAI_MODEL,
   type LLMClient,
   type PreflightConfig,
   type PreflightInput,
 } from './preflight'
+import type { QualityCheckInput } from 'web-remarq/core'
 
 const input: PreflightInput = {
   text: 'The submit button is off.',
@@ -195,5 +199,44 @@ describe('preflightCheck default client (network path)', () => {
     expect(result.issues.join(' ')).toContain('401')
     expect(result.issues.join(' ')).toContain('pre-flight check failed')
     expect(result.issues.join(' ')).not.toContain('bad-key')
+  })
+})
+
+describe('model defaults', () => {
+  it('defaults to the Haiku alias for anthropic and gpt-5-nano for openai', () => {
+    expect(DEFAULT_ANTHROPIC_MODEL).toBe('claude-haiku-4-5')
+    expect(DEFAULT_OPENAI_MODEL).toBe('gpt-5-nano')
+  })
+})
+
+describe('createPreflightChecker', () => {
+  const checkerInput: QualityCheckInput = {
+    comment: 'make it bigger',
+    route: '/checkout',
+    viewport: { width: 1440, height: 900 },
+    fingerprint: {
+      dataAnnotate: null, dataTestId: null, id: null,
+      tagName: 'button', textContent: 'Pay now', role: null, ariaLabel: null,
+      stableClasses: [], domPath: 'body>button', siblingIndex: 0, parentAnchor: null,
+      rawClasses: [], cssModules: [],
+      sourceLocation: null, componentName: null, detectedSource: null, detectedComponent: null,
+    },
+  }
+
+  it('maps QualityCheckInput to the preflight prompt', async () => {
+    const prompts: string[] = []
+    const client: LLMClient = {
+      complete: async (prompt) => {
+        prompts.push(prompt)
+        return '{"score":"clear","issues":[],"clarifyingQuestions":[]}'
+      },
+    }
+    const check = createPreflightChecker({ provider: 'openai', apiKey: 'k' }, client)
+    const result = await check(checkerInput)
+
+    expect(result.score).toBe('clear')
+    expect(prompts[0]).toContain('make it bigger')
+    expect(prompts[0]).toContain('Pay now')          // fingerprint serialized into the prompt
+    expect(prompts[0]).toContain('1440x900')
   })
 })

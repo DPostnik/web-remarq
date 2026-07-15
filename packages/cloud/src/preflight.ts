@@ -1,4 +1,4 @@
-import type { QualityCheck } from 'web-remarq/core'
+import type { QualityCheck, QualityCheckInput } from 'web-remarq/core'
 
 export type { QualityCheck }
 
@@ -22,8 +22,8 @@ export interface LLMClient {
   complete(prompt: string): Promise<string>
 }
 
-const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
-const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini'
+export const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5'  // alias — tracks the latest Haiku 4.5 snapshot
+export const DEFAULT_OPENAI_MODEL = 'gpt-5-nano'           // per spec; cheapest current OpenAI tier
 
 function resolveModel(config: PreflightConfig): string {
   if (config.model) return config.model
@@ -217,4 +217,27 @@ export async function preflightCheck(
     }
   }
   return parseResponse(raw)
+}
+
+/**
+ * Adapts `preflightCheck` to core's `qualityGate.check` signature:
+ *
+ *   WebRemarq.init({
+ *     qualityGate: { check: createPreflightChecker({ provider: 'openai', apiKey }) },
+ *   })
+ */
+export function createPreflightChecker(
+  config: PreflightConfig,
+  client?: LLMClient,
+): (input: QualityCheckInput) => Promise<QualityCheck> {
+  return (input) =>
+    preflightCheck(
+      {
+        text: input.comment,
+        fingerprint: JSON.stringify(input.fingerprint),
+        viewport: input.viewport,
+      },
+      config,
+      client,
+    )
 }

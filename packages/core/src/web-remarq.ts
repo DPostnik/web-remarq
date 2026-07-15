@@ -1,5 +1,6 @@
-import type { Actor, Annotation, ImportResult, WebRemarqOptions } from './core/types'
+import type { Actor, Annotation, ImportResult, QualityCheckInput, WebRemarqOptions } from './core/types'
 import { AnnotationStorage } from './core/storage'
+import { QualityRunner } from './core/quality-runner'
 import { LocalStorageAdapter } from './core/local-storage-adapter'
 import { createFingerprint } from './core/fingerprint'
 import { matchElement } from './core/matcher'
@@ -12,6 +13,7 @@ import { Overlay } from './ui/overlay'
 import { SpacingOverlay } from './ui/spacing-overlay'
 import { Popup } from './ui/popup'
 import { MarkerManager } from './ui/markers'
+import { QualityBubbleManager } from './ui/quality-bubble'
 import { DetachedPanel } from './ui/detached-panel'
 import { showToast, hideToast } from './ui/toast'
 import { showShortcutsModal, hideShortcutsModal } from './ui/shortcuts-modal'
@@ -26,6 +28,8 @@ let toolbar: Toolbar
 let overlay: Overlay
 let popup: Popup
 let markers: MarkerManager
+let qualityRunner: QualityRunner
+let qualityBubbles: QualityBubbleManager
 let detachedPanel: DetachedPanel
 let routeObserver: RouteObserver
 let inspecting = false
@@ -75,6 +79,15 @@ function currentRoute(): string {
 
 function generateId(): string {
   return `ann-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function qualityInput(ann: Annotation): QualityCheckInput {
+  return {
+    comment: ann.comment,
+    fingerprint: ann.fingerprint,
+    route: ann.route,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+  }
 }
 
 function cacheElement(annotationId: string, el: HTMLElement): void {
@@ -131,6 +144,8 @@ function refreshMarkers(): void {
   for (const { ann, el } of attached) {
     markers.addMarker(ann, el)
   }
+
+  qualityBubbles?.syncVisible(new Set(attached.map(({ ann }) => ann.id)))
 
   detachedPanel.update(otherBreakpoint, detached)
 
@@ -203,6 +218,7 @@ function handleInspectClick(e: MouseEvent): void {
       storage.add(ann)
       refreshMarkers()
       showToast(themeManager.container, 'Annotation added')
+      qualityRunner.run(ann.id, qualityInput(ann))
     },
     () => {
       // cancel
@@ -261,6 +277,8 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     e.preventDefault()
     elementCache.clear()
     storage.clearAll()
+    qualityRunner.clear()
+    qualityBubbles.clear()
     refreshMarkers()
     showToast(themeManager.container, 'All annotations cleared')
   }
@@ -295,6 +313,7 @@ function handleMarkerClick(annotationId: string): void {
     // This toggle path calls hide() directly, bypassing onClose — drop the
     // highlight here or it stays lit with no popup to explain it.
     markers.setSelected(null)
+    qualityBubbles.suppress(null)
     return
   }
 
@@ -309,6 +328,69 @@ function handleMarkerClick(annotationId: string): void {
   // away, which detaches the comment from the marker it belongs to.
   const rect = markers.getMarkerRect(annotationId) ?? el.getBoundingClientRect()
 
+  const detailCallbacks: Parameters<typeof popup.showDetail>[2] = {
+    onTransition: (action, reason) => {
+      applyTransition(ann.id, action, reason ? { reason } : undefined)
+    },
+    onDelete: () => {
+      markers.setSelected(null)
+      qualityRunner.forget(ann.id)
+      qualityBubbles.remove(ann.id)
+      qualityBubbles.suppress(null)
+      elementCache.delete(ann.id)
+      storage.remove(ann.id)
+      refreshMarkers()
+    },
+    onClose: () => {
+      markers.setSelected(null)
+      qualityBubbles.suppress(null)
+    },
+    onEdit: (newComment: string) => {
+      storage.update(ann.id, { comment: newComment })
+      refreshMarkers()
+      const fresh = storage.getById(ann.id) ?? ann
+      qualityRunner.run(ann.id, { ...qualityInput(fresh), comment: newComment })
+    },
+    onCopy: () => {
+      const fresh = storage.getById(ann.id) ?? ann
+      const fp = fresh.fingerprint
+      const lines = [
+        `[${fresh.status}] "${fresh.comment}"`,
+        `Element: <${fp.tagName}>${fp.textContent ? ` "${fp.textContent}"` : ''}`,
+        `Route: ${fresh.route}`,
+        `Viewport: ${fresh.viewportBucket}px`,
+      ]
+      if (fp.sourceLocation) lines.push(`Source: ${fp.sourceLocation}`)
+      navigator.clipboard.writeText(lines.join('\n')).then(() => {
+        showToast(themeManager.container, 'Annotation copied')
+      }).catch(() => {
+        console.warn('[web-remarq] Clipboard write failed')
+      })
+    },
+  }
+
+  if (qualityRunner.enabled) {
+    // Deliberately NOT the onEdit path: the rewrite came out of the checker a
+    // moment ago, so its verdict is already fresh — no auto re-check.
+    detailCallbacks.onUseRewrite = (rewrite: string) => {
+      const fresh = storage.getById(ann.id)
+      const qc = fresh?.qualityCheck
+      storage.update(ann.id, {
+        comment: rewrite,
+        ...(qc ? { qualityCheck: { ...qc, refinedBy: 'designer' as const } } : {}),
+      })
+      markers.setSelected(null)
+      qualityBubbles.suppress(null)
+      refreshMarkers()
+    }
+    detailCallbacks.onRecheck = () => {
+      markers.setSelected(null)
+      qualityBubbles.suppress(null)
+      const fresh = storage.getById(ann.id) ?? ann
+      qualityRunner.run(ann.id, qualityInput(fresh))
+    }
+  }
+
   popup.showDetail(
     {
       id: ann.id,
@@ -317,49 +399,19 @@ function handleMarkerClick(annotationId: string): void {
       comment: ann.comment,
       status: ann.status,
       lifecycle: ann.lifecycle,
+      qualityCheck: ann.qualityCheck,
+      qualityPending: qualityRunner.isPending(ann.id),
     },
     {
       top: window.scrollY + rect.bottom + 8,
       left: window.scrollX + rect.left,
       anchorBottom: window.scrollY + rect.top - 8,
     },
-    {
-      onTransition: (action, reason) => {
-        applyTransition(ann.id, action, reason ? { reason } : undefined)
-      },
-      onDelete: () => {
-        markers.setSelected(null)
-        elementCache.delete(ann.id)
-        storage.remove(ann.id)
-        refreshMarkers()
-      },
-      onClose: () => {
-        markers.setSelected(null)
-      },
-      onEdit: (newComment: string) => {
-        storage.update(ann.id, { comment: newComment })
-        refreshMarkers()
-      },
-      onCopy: () => {
-        const fresh = storage.getById(ann.id) ?? ann
-        const fp = fresh.fingerprint
-        const lines = [
-          `[${fresh.status}] "${fresh.comment}"`,
-          `Element: <${fp.tagName}>${fp.textContent ? ` "${fp.textContent}"` : ''}`,
-          `Route: ${fresh.route}`,
-          `Viewport: ${fresh.viewportBucket}px`,
-        ]
-        if (fp.sourceLocation) lines.push(`Source: ${fp.sourceLocation}`)
-        navigator.clipboard.writeText(lines.join('\n')).then(() => {
-          showToast(themeManager.container, 'Annotation copied')
-        }).catch(() => {
-          console.warn('[web-remarq] Clipboard write failed')
-        })
-      },
-    },
+    detailCallbacks,
   )
 
   markers.setSelected(annotationId)
+  qualityBubbles.suppress(annotationId)
 }
 
 function generateMarkdown(): string {
@@ -552,11 +604,22 @@ export const WebRemarq = {
       overlay = new Overlay(themeManager.container)
       spacingOverlay = new SpacingOverlay(themeManager.container)
       popup = new Popup(themeManager.container)
-      markers = new MarkerManager(themeManager.container, handleMarkerClick)
+      markers = new MarkerManager(themeManager.container, handleMarkerClick, (id, top, left) =>
+        qualityBubbles?.updatePosition(id, top, left),
+      )
+      qualityBubbles = new QualityBubbleManager(themeManager.container, handleMarkerClick)
+      qualityRunner = new QualityRunner(options.qualityGate, {
+        persist: (id, check) => {
+          storage.update(id, { qualityCheck: check })
+        },
+        onPending: (id) => qualityBubbles.setPending(id),
+        onSettled: (id, check) => qualityBubbles.setVerdict(id, check),
+      })
       const position = options.position ?? 'bottom-right'
 
       detachedPanel = new DetachedPanel(themeManager.container, (id) => {
         elementCache.delete(id)
+        qualityRunner.forget(id)
         storage.remove(id)
         refreshMarkers()
       }, position)
@@ -581,6 +644,8 @@ export const WebRemarq = {
         onClear: () => {
           elementCache.clear()
           storage.clearAll()
+          qualityRunner.clear()
+          qualityBubbles.clear()
           refreshMarkers()
           showToast(themeManager.container, 'All annotations cleared')
         },
@@ -630,6 +695,8 @@ export const WebRemarq = {
       unsubRoute?.()
       routeObserver?.destroy()
       markers?.destroy()
+      qualityBubbles?.destroy()
+      qualityRunner?.clear()
       detachedPanel?.destroy()
       popup?.destroy()
       overlay?.destroy()

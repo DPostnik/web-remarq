@@ -4,6 +4,7 @@ interface MarkerEntry {
   annotation: Annotation
   target: HTMLElement
   markerEl: HTMLElement
+  outlineEl: HTMLElement
 }
 
 const STATUS_VAR: Record<AnnotationStatus, string> = {
@@ -14,15 +15,6 @@ const STATUS_VAR: Record<AnnotationStatus, string> = {
   dismissed: '--remarq-status-dismissed',
 }
 
-/** Light-theme values, mirroring ui/styles.ts. Used when the var won't resolve. */
-const STATUS_FALLBACK: Record<AnnotationStatus, string> = {
-  pending: '#f97316',
-  in_progress: '#eab308',
-  fixed_unverified: '#3b82f6',
-  verified: '#22c55e',
-  dismissed: '#6b7280',
-}
-
 function statusClass(status: AnnotationStatus): string {
   return `remarq-marker--${status.replace('_', '-')}`
 }
@@ -30,6 +22,10 @@ function statusClass(status: AnnotationStatus): string {
 const MARKER_SIZE = 24
 const MARKER_OFFSET = 12
 const MARKER_MARGIN = 8
+const OUTLINE_WIDTH = 2
+const OUTLINE_GAP = 2
+const SELECTED_OUTLINE_WIDTH = 4
+const SELECTED_OUTLINE_GAP = 3
 
 export class MarkerManager {
   private markers = new Map<string, MarkerEntry>()
@@ -57,9 +53,20 @@ export class MarkerManager {
       this.onClick?.(annotation.id)
     })
 
+    // The status outline is a box in the remarq container, NOT an inline
+    // outline on the target. An outline (or box-shadow) on the target itself
+    // gets cut by any `overflow: clip|hidden` ancestor in the host page —
+    // confirmed on real layouts. Boxes here escape the host's clipping the
+    // same way the markers do, and `var(--remarq-status-*)` resolves because
+    // the box lives inside the themed container.
+    const outlineEl = document.createElement('div')
+    outlineEl.className = 'remarq-status-outline'
+    outlineEl.setAttribute('data-annotation-id', annotation.id)
+    outlineEl.style.borderColor = `var(${STATUS_VAR[annotation.status]})`
+
+    this.container.appendChild(outlineEl)
     this.container.appendChild(markerEl)
-    this.markers.set(annotation.id, { annotation, target, markerEl })
-    this.applyOutline(target, annotation.status, annotation.id === this.selectedId)
+    this.markers.set(annotation.id, { annotation, target, markerEl, outlineEl })
     this.updatePosition(annotation.id)
   }
 
@@ -67,7 +74,7 @@ export class MarkerManager {
     const entry = this.markers.get(id)
     if (entry) {
       entry.markerEl.remove()
-      this.removeOutline(entry.target)
+      entry.outlineEl.remove()
       this.markers.delete(id)
     }
   }
@@ -78,37 +85,22 @@ export class MarkerManager {
       entry.annotation.status = status
       entry.markerEl.className = `remarq-marker ${statusClass(status)}`
       entry.markerEl.setAttribute('data-status', status)
-      this.applyOutline(entry.target, status, id === this.selectedId)
+      entry.outlineEl.style.borderColor = `var(${STATUS_VAR[status]})`
     }
   }
 
   /**
-   * Thickens the outline of the selected annotation's element. Every annotated
-   * element already carries a permanent status outline, so selection reads as a
-   * heavier version of it rather than a separate highlight layer — which also
-   * means it needs no positioning of its own and survives the rAF freeze that
-   * hits embedded panes.
+   * Thickens the outline box of the selected annotation's element. Every
+   * annotated element already carries a permanent status outline box, so
+   * selection reads as a heavier version of it rather than a separate
+   * highlight treatment.
    */
   setSelected(id: string | null): void {
     if (this.selectedId === id) return
     const previous = this.selectedId
     this.selectedId = id
-
-    if (previous !== null) {
-      const entry = this.markers.get(previous)
-      if (entry) this.applyOutline(entry.target, entry.annotation.status, false)
-    }
-    if (id !== null) {
-      const entry = this.markers.get(id)
-      if (entry) this.applyOutline(entry.target, entry.annotation.status, true)
-    }
-  }
-
-  /** Outlines hold resolved literals, so a theme switch has to repaint them. */
-  refreshOutlines(): void {
-    for (const [id, entry] of this.markers) {
-      this.applyOutline(entry.target, entry.annotation.status, id === this.selectedId)
-    }
+    if (previous !== null) this.updatePosition(previous)
+    if (id !== null) this.updatePosition(id)
   }
 
   scrollToMarker(id: string): void {
@@ -129,7 +121,7 @@ export class MarkerManager {
   clear(): void {
     for (const entry of this.markers.values()) {
       entry.markerEl.remove()
-      this.removeOutline(entry.target)
+      entry.outlineEl.remove()
     }
     this.markers.clear()
     this.counter = 0
@@ -142,36 +134,6 @@ export class MarkerManager {
     }
     this.clear()
     this.selectedId = null
-  }
-
-  /**
-   * Resolves the status colour to a literal here rather than handing the page
-   * element a `var(--remarq-status-*)`. Those custom properties are declared on
-   * the themed container, and an annotated element is never inside it — the var
-   * would not resolve, which invalidates the whole `outline` declaration at
-   * computed-value time and renders no outline at all. The container carries the
-   * theme attribute, so reading through it keeps the colour theme-correct.
-   */
-  private statusColor(status: AnnotationStatus): string {
-    try {
-      const resolved = getComputedStyle(this.container)
-        .getPropertyValue(STATUS_VAR[status])
-        .trim()
-      if (resolved) return resolved
-    } catch {
-      // fall through to the literal
-    }
-    return STATUS_FALLBACK[status]
-  }
-
-  private applyOutline(target: HTMLElement, status: AnnotationStatus, selected: boolean): void {
-    target.style.outline = `${selected ? 4 : 2}px solid ${this.statusColor(status)}`
-    target.style.outlineOffset = selected ? '3px' : '2px'
-  }
-
-  private removeOutline(target: HTMLElement): void {
-    target.style.outline = ''
-    target.style.outlineOffset = ''
   }
 
   /** Viewport rect of the marker itself, or null if it has no marker. */
@@ -205,6 +167,18 @@ export class MarkerManager {
 
       entry.markerEl.style.top = `${window.scrollY + rect.top - MARKER_OFFSET}px`
       entry.markerEl.style.left = `${left}px`
+
+      // Mimic `outline` + `outline-offset` geometry: the box's inner border
+      // edge sits `gap` outside the element, so the whole box is the element
+      // rect expanded by gap + border width (border-box sizing).
+      const selected = id === this.selectedId
+      const borderWidth = selected ? SELECTED_OUTLINE_WIDTH : OUTLINE_WIDTH
+      const pad = borderWidth + (selected ? SELECTED_OUTLINE_GAP : OUTLINE_GAP)
+      entry.outlineEl.style.borderWidth = `${borderWidth}px`
+      entry.outlineEl.style.top = `${window.scrollY + rect.top - pad}px`
+      entry.outlineEl.style.left = `${window.scrollX + rect.left - pad}px`
+      entry.outlineEl.style.width = `${rect.right - rect.left + pad * 2}px`
+      entry.outlineEl.style.height = `${rect.bottom - rect.top + pad * 2}px`
     } catch {
       // element may have been removed
     }

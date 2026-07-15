@@ -131,6 +131,15 @@ const CSS = `
   text-overflow: ellipsis;
 }
 
+.remarq-status-outline {
+  position: absolute;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-radius: 2px;
+  z-index: 2147483644;
+}
+
 .remarq-marker {
   position: absolute;
   z-index: 2147483645;

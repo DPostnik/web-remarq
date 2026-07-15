@@ -104,7 +104,7 @@ describe('MarkerManager positioning', () => {
   })
 })
 
-describe('MarkerManager selection', () => {
+describe('MarkerManager status outline boxes', () => {
   let container: HTMLElement
   let markers: MarkerManager
 
@@ -121,77 +121,110 @@ describe('MarkerManager selection', () => {
     document.body.innerHTML = ''
   })
 
-  it('thickens the outline of the selected element', () => {
+  function outlineBox(id: string): HTMLElement {
+    const box = container.querySelector(`.remarq-status-outline[data-annotation-id="${id}"]`)
+    if (!box) throw new Error(`no outline box for ${id}`)
+    return box as HTMLElement
+  }
+
+  it('renders the outline as a box in the container, not on the target', () => {
     const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
     markers.addMarker(makeAnnotation({ id: 'a1' }), target)
 
-    expect(target.style.outline).toBe('2px solid #f97316')
+    // The whole point of the box: an outline on the target itself gets cut by
+    // overflow:clip ancestors in the host page.
+    expect(target.style.outline).toBe('')
+    const box = outlineBox('a1')
+    expect(box.style.borderColor).toBe('var(--remarq-status-pending)')
+    expect(box.style.borderWidth).toBe('2px')
+    // rect expanded by border (2) + gap (2) on each side
+    expect(box.style.top).toBe('196px')
+    expect(box.style.left).toBe('196px')
+    expect(box.style.width).toBe('108px')
+    expect(box.style.height).toBe('48px')
+  })
+
+  it('thickens the box of the selected annotation', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
 
     markers.setSelected('a1')
 
-    expect(target.style.outline).toBe('4px solid #f97316')
-    expect(target.style.outlineOffset).toBe('3px')
+    const box = outlineBox('a1')
+    expect(box.style.borderWidth).toBe('4px')
+    // border (4) + gap (3) on each side
+    expect(box.style.top).toBe('193px')
+    expect(box.style.width).toBe('114px')
   })
 
-  it('moves the highlight and unlights the previous element', () => {
-    const first = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    const second = makeTarget({ top: 400, left: 200, right: 300, bottom: 440 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), first)
-    markers.addMarker(makeAnnotation({ id: 'a2' }), second)
+  it('moves the highlight and unlights the previous box', () => {
+    markers.addMarker(
+      makeAnnotation({ id: 'a1' }),
+      makeTarget({ top: 200, left: 200, right: 300, bottom: 240 }),
+    )
+    markers.addMarker(
+      makeAnnotation({ id: 'a2' }),
+      makeTarget({ top: 400, left: 200, right: 300, bottom: 440 }),
+    )
 
     markers.setSelected('a1')
     markers.setSelected('a2')
 
-    expect(first.style.outline).toBe('2px solid #f97316')
-    expect(first.style.outlineOffset).toBe('2px')
-    expect(second.style.outline).toBe('4px solid #f97316')
+    expect(outlineBox('a1').style.borderWidth).toBe('2px')
+    expect(outlineBox('a2').style.borderWidth).toBe('4px')
   })
 
   it('drops the highlight on setSelected(null)', () => {
-    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+    markers.addMarker(
+      makeAnnotation({ id: 'a1' }),
+      makeTarget({ top: 200, left: 200, right: 300, bottom: 240 }),
+    )
 
     markers.setSelected('a1')
     markers.setSelected(null)
 
-    expect(target.style.outline).toBe('2px solid #f97316')
-    expect(target.style.outlineOffset).toBe('2px')
+    expect(outlineBox('a1').style.borderWidth).toBe('2px')
   })
 
-  it('keeps the element highlighted when its status changes', () => {
-    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+  it('keeps the highlight when the status changes, colour follows', () => {
+    markers.addMarker(
+      makeAnnotation({ id: 'a1' }),
+      makeTarget({ top: 200, left: 200, right: 300, bottom: 240 }),
+    )
 
     markers.setSelected('a1')
     markers.updateStatus('a1', 'verified')
 
-    // Colour follows the new status, thickness still marks it as selected.
-    expect(target.style.outline).toBe('4px solid #22c55e')
+    const box = outlineBox('a1')
+    expect(box.style.borderColor).toBe('var(--remarq-status-verified)')
+    expect(box.style.borderWidth).toBe('4px')
   })
 
   it('survives a refresh that rebuilds every marker', () => {
-    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+    markers.addMarker(
+      makeAnnotation({ id: 'a1' }),
+      makeTarget({ top: 200, left: 200, right: 300, bottom: 240 }),
+    )
     markers.setSelected('a1')
 
     // What refreshMarkers() does: wipe, then re-add from storage.
     markers.clear()
-    const rebuilt = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), rebuilt)
+    markers.addMarker(
+      makeAnnotation({ id: 'a1' }),
+      makeTarget({ top: 200, left: 200, right: 300, bottom: 240 }),
+    )
 
-    expect(rebuilt.style.outline).toBe('4px solid #f97316')
+    expect(outlineBox('a1').style.borderWidth).toBe('4px')
   })
 
-  it('leaves an unselected element at the normal outline after a refresh', () => {
-    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
-    markers.setSelected('a1')
-    markers.setSelected(null)
+  it('removes the box together with its marker', () => {
+    markers.addMarker(
+      makeAnnotation({ id: 'a1' }),
+      makeTarget({ top: 200, left: 200, right: 300, bottom: 240 }),
+    )
 
-    markers.clear()
-    const rebuilt = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
-    markers.addMarker(makeAnnotation({ id: 'a1' }), rebuilt)
+    markers.removeMarker('a1')
 
-    expect(rebuilt.style.outline).toBe('2px solid #f97316')
+    expect(container.querySelector('.remarq-status-outline')).toBeNull()
   })
 })

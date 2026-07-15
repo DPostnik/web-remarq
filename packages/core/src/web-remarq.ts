@@ -584,10 +584,7 @@ export const WebRemarq = {
           refreshMarkers()
           showToast(themeManager.container, 'All annotations cleared')
         },
-        onThemeToggle: () => {
-          themeManager.toggle()
-          markers.refreshOutlines()
-        },
+        onThemeToggle: () => themeManager.toggle(),
         onHelp: () => showShortcutsModal(themeManager.container),
         onVerificationBadgeClick: jumpToFirstUnverified,
       }, position)
@@ -651,7 +648,6 @@ export const WebRemarq = {
 
   setTheme(theme: 'light' | 'dark'): void {
     themeManager?.setTheme(theme)
-    markers?.refreshOutlines()
   },
 
   export(format: 'md' | 'json' | 'agent'): void {

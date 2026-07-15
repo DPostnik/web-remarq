@@ -5,6 +5,13 @@ import type { CloudStorageOptions } from './types'
 export { generateProjectKey, hashProjectKey } from './project-key'
 export { CloudStorageAdapter } from './cloud-storage-adapter'
 export type { CloudStorageOptions } from './types'
+export { preflightCheck } from './preflight'
+export type {
+  PreflightInput,
+  PreflightConfig,
+  LLMClient,
+  QualityCheck,
+} from './preflight'
 
 export function createCloudStorage(opts: CloudStorageOptions): StorageAdapter {
   return new CloudStorageAdapter(opts)

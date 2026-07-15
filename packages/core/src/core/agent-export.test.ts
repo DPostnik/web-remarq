@@ -203,6 +203,26 @@ describe('generateAgentExport — full snapshot', () => {
   });
 });
 
+describe('generateAgentExport — qualityCheck pass-through', () => {
+  it('includes qualityCheck when present on the annotation', () => {
+    const qualityCheck = {
+      score: 'ambiguous' as const,
+      issues: ['No target size specified'],
+      clarifyingQuestions: ['How much bigger?'],
+      suggestedRewrite: 'Increase button padding to 12px',
+      refinedBy: 'auto' as const,
+      timestamp: 1_700_000_005_000,
+    };
+    const result = generateAgentExport([ann('a1', {}, { qualityCheck })], 1200);
+    expect(result.annotations[0].qualityCheck).toEqual(qualityCheck);
+  });
+
+  it('omits the qualityCheck key when the annotation has none', () => {
+    const result = generateAgentExport([ann('a1', {})], 1200);
+    expect('qualityCheck' in result.annotations[0]).toBe(false);
+  });
+});
+
 describe('generateAgentExport — lifecycle pass-through', () => {
   it('includes lifecycle events with type, actor, timestamp, reason', () => {
     const result = generateAgentExport(

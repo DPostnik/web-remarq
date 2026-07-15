@@ -164,6 +164,7 @@ export interface AgentAnnotation {
   source: AgentAnnotationSource | null
   searchHints: AgentSearchHints
   lifecycle: AgentLifecycleEvent[]
+  qualityCheck?: QualityCheck
 }
 
 export interface AgentExport {

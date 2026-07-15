@@ -94,6 +94,7 @@ export function generateAgentExport(annotations: Annotation[], viewportBucket: n
     timestamp: ann.timestamp,
     source: resolveSource(ann.fingerprint),
     searchHints: buildSearchHints(ann.fingerprint),
+    ...(ann.qualityCheck ? { qualityCheck: ann.qualityCheck } : {}),
     lifecycle: ann.lifecycle.map((ev) => {
       const out: { type: typeof ev.type; actor: typeof ev.actor; timestamp: number; reason?: string } = {
         type: ev.type,

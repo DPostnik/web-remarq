@@ -146,6 +146,28 @@ describe('list_annotations', () => {
     })
   })
 
+  it('surfaces the quality score when a qualityCheck is present', async () => {
+    const storage = mockStorage([
+      ann({
+        id: 'a',
+        qualityCheck: {
+          score: 'ambiguous',
+          issues: ['vague'],
+          clarifyingQuestions: ['where?'],
+          refinedBy: 'auto',
+          timestamp: 2,
+        },
+      }),
+      ann({ id: 'b' }),
+    ])
+
+    const result = await handleListAnnotations({}, storage)
+    const payload = JSON.parse(result.content[0].text)
+
+    expect(payload.annotations[0].quality).toBe('ambiguous')
+    expect('quality' in payload.annotations[1]).toBe(false)
+  })
+
   it('respects limit (default 50, max 200)', async () => {
     const many = Array.from({ length: 75 }, (_, i) => ann({ id: `a${i}` }))
     const storage = mockStorage(many)

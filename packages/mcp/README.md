@@ -52,11 +52,13 @@ stderr message if any are missing or malformed.
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `list_annotations` | `{ route?, status?, viewportBucket?, file?, limit? }` | `{ annotations[], total }` |
-| `get_annotation` | `{ id }` | Full `AgentAnnotation` shape (source + searchHints + lifecycle) |
+| `list_annotations` | `{ route?, status?, viewportBucket?, file?, limit? }` | `{ annotations[], total }` — each item carries `quality` (`clear` \| `ambiguous` \| `unactionable`) when an AI pre-flight check ran |
+| `get_annotation` | `{ id }` | Full `AgentAnnotation` shape (source + searchHints + lifecycle + `qualityCheck` when present) |
 | `acknowledge` | `{ id }` | `{ ok, status }` after `pending → in_progress` |
 | `claim_fix` | `{ id }` | `{ ok, status }` after `pending\|in_progress → fixed_unverified` |
 | `dismiss` | `{ id, reason? }` | `{ ok, status }` after non-terminal → `dismissed` |
+
+When `qualityCheck.score` is `ambiguous` or `unactionable`, the comment likely needs designer clarification — prefer `dismiss` with a reason over guessing at intent.
 
 ### Error codes
 

@@ -1,7 +1,7 @@
 {
   "name": "@web-remarq/mcp",
-  "version": "0.1.0",
-  "description": "MCP server for web-remarq — AI agents read annotations and drive lifecycle via Supabase cloud backend",
+  "version": "0.1.1",
+  "description": "MCP server for web-remarq \u2014 AI agents read annotations and drive lifecycle via Supabase cloud backend",
   "type": "module",
   "main": "dist/server.js",
   "exports": {
@@ -46,10 +46,10 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0",
-    "@web-remarq/cloud": "^0.2.0"
+    "@web-remarq/cloud": "^0.3.0"
   },
   "peerDependencies": {
-    "web-remarq": ">=0.7.0"
+    "web-remarq": ">=0.7.14"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

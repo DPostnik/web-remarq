@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Annotation, AnnotationStatus, StorageAdapter } from 'web-remarq'
+import type { Annotation, AnnotationStatus, QualityCheck, StorageAdapter } from 'web-remarq'
 import { toolError, toolSuccess } from '../errors'
 
 const STATUS_VALUES = ['pending', 'in_progress', 'fixed_unverified', 'verified', 'dismissed'] as const
@@ -22,6 +22,7 @@ interface ThinAnnotation {
   viewport: number
   timestamp: number
   source: { file: string; line: number; column: number; component?: string } | null
+  quality?: QualityCheck['score']
 }
 
 function parseSource(annotation: Annotation): ThinAnnotation['source'] {
@@ -47,6 +48,7 @@ function toThin(a: Annotation): ThinAnnotation {
     viewport: a.viewportBucket,
     timestamp: a.timestamp,
     source: parseSource(a),
+    ...(a.qualityCheck ? { quality: a.qualityCheck.score } : {}),
   }
 }
 

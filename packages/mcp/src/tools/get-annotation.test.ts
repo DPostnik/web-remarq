@@ -62,6 +62,24 @@ describe('get_annotation', () => {
     expect(payload.lifecycle).toEqual([{ type: 'created', actor: 'designer', timestamp: 100 }])
   })
 
+  it('includes qualityCheck when present and omits it otherwise', async () => {
+    const qualityCheck = {
+      score: 'unactionable' as const,
+      issues: ['No concrete change requested'],
+      clarifyingQuestions: ['What should change?'],
+      suggestedRewrite: 'Align the save button with the input row',
+      refinedBy: 'auto' as const,
+      timestamp: 200,
+    }
+    const storage = mockStorage([ann({ qualityCheck }), ann({ id: 'plain' })])
+
+    const withQuality = JSON.parse((await handleGetAnnotation({ id: 'target' }, storage)).content[0].text)
+    const withoutQuality = JSON.parse((await handleGetAnnotation({ id: 'plain' }, storage)).content[0].text)
+
+    expect(withQuality.qualityCheck).toEqual(qualityCheck)
+    expect('qualityCheck' in withoutQuality).toBe(false)
+  })
+
   it('returns annotation_not_found when id missing', async () => {
     const storage = mockStorage([ann({ id: 'other' })])
 

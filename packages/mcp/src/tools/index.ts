@@ -18,7 +18,7 @@ export function registerTools(server: McpServer, storage: StorageAdapter): void 
   server.registerTool(
     'list_annotations',
     {
-      description: 'List annotations in the project with optional filters (route, status, viewport, file).',
+      description: 'List annotations in the project with optional filters (route, status, viewport, file). Each item carries a `quality` score (clear | ambiguous | unactionable) when an AI pre-flight check ran.',
       inputSchema: listAnnotationsInputSchema.shape,
     },
     (input) => cast(handleListAnnotations(input, storage)),
@@ -27,7 +27,7 @@ export function registerTools(server: McpServer, storage: StorageAdapter): void 
   server.registerTool(
     'get_annotation',
     {
-      description: 'Get full annotation details including source file:line:col and grep search hints.',
+      description: 'Get full annotation details including source file:line:col, grep search hints, and the AI quality verdict (`qualityCheck`). If qualityCheck.score is "ambiguous" or "unactionable", the comment may need designer clarification before fixing — consider dismissing with a reason instead of guessing.',
       inputSchema: getAnnotationInputSchema.shape,
     },
     (input) => cast(handleGetAnnotation(input, storage)),

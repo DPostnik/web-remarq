@@ -4,6 +4,7 @@ export type {
   AnnotationEvent,
   AnnotationEventType,
   Actor,
+  QualityCheck,
   AnnotationStore,
   ElementFingerprint,
   CSSModuleClass,

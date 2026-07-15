@@ -1,11 +1,6 @@
-import type { Annotation } from 'web-remarq/core'
+import type { QualityCheck } from 'web-remarq/core'
 
-/**
- * The core `QualityCheck` type. It is not re-exported by name from the
- * `web-remarq/core` barrel, so we derive it from the exported `Annotation`
- * type rather than redefining the shape here.
- */
-export type QualityCheck = NonNullable<Annotation['qualityCheck']>
+export type { QualityCheck }
 
 export interface PreflightInput {
   text: string

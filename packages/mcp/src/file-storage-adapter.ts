@@ -12,6 +12,8 @@ export class FileStorageAdapter implements StorageAdapter {
   /** Monotonic revision — bumps on every mutation. Exposed via GET /store. */
   rev = 0
   private emitter = new EventEmitter()
+  /** Serializes mutations (save/remove/clear) so concurrent read-modify-write ops don't clobber each other. */
+  private queue: Promise<void> = Promise.resolve()
 
   constructor(private filePath: string) {
     this.emitter.setMaxListeners(0)
@@ -19,29 +21,51 @@ export class FileStorageAdapter implements StorageAdapter {
 
   async load(): Promise<AnnotationStore | null> {
     if (!existsSync(this.filePath)) return null
-    const parsed = JSON.parse(readFileSync(this.filePath, 'utf8'))
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(readFileSync(this.filePath, 'utf8'))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new Error(`annotations store corrupted at ${this.filePath}: ${message}`)
+    }
+    const store = parsed as { annotations?: unknown }
     return {
       version: 1,
-      annotations: Array.isArray(parsed.annotations) ? parsed.annotations : [],
+      annotations: Array.isArray(store.annotations) ? (store.annotations as Annotation[]) : [],
     }
   }
 
   async save(annotation: Annotation): Promise<void> {
-    const store = (await this.load()) ?? { version: 1 as const, annotations: [] }
-    const idx = store.annotations.findIndex((a) => a.id === annotation.id)
-    if (idx === -1) store.annotations.push(annotation)
-    else store.annotations[idx] = annotation
-    this.persist(store)
+    return this.enqueue(async () => {
+      const store = (await this.load()) ?? { version: 1 as const, annotations: [] }
+      const idx = store.annotations.findIndex((a) => a.id === annotation.id)
+      if (idx === -1) store.annotations.push(annotation)
+      else store.annotations[idx] = annotation
+      this.persist(store)
+    })
   }
 
   async remove(id: string): Promise<void> {
-    const store = (await this.load()) ?? { version: 1 as const, annotations: [] }
-    store.annotations = store.annotations.filter((a) => a.id !== id)
-    this.persist(store)
+    return this.enqueue(async () => {
+      const store = (await this.load()) ?? { version: 1 as const, annotations: [] }
+      store.annotations = store.annotations.filter((a) => a.id !== id)
+      this.persist(store)
+    })
   }
 
   async clear(): Promise<void> {
-    this.persist({ version: 1, annotations: [] })
+    return this.enqueue(async () => {
+      this.persist({ version: 1, annotations: [] })
+    })
+  }
+
+  /** Chains `op` onto the mutation queue; a rejected op doesn't poison later ops. */
+  private enqueue(op: () => Promise<void>): Promise<void> {
+    const result = this.queue.then(op)
+    // Swallow the rejection on the shared chain so the next enqueued op still runs;
+    // the caller's own `result` promise still rejects with the original error.
+    this.queue = result.catch(() => undefined)
+    return result
   }
 
   /** Resolves true on the next mutation, false after timeoutMs. */

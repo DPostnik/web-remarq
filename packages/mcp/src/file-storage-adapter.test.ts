@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileStorageAdapter } from './file-storage-adapter'
@@ -77,5 +77,27 @@ describe('FileStorageAdapter', () => {
     expect(await waiting).toBe(true)
 
     expect(await adapter.waitForChange(20)).toBe(false)
+  })
+
+  it('load() rejects with a descriptive error on a corrupted store, and save() does not silently wipe it', async () => {
+    const storePath = join(dir, '.remarq', 'annotations.json')
+    mkdirSync(join(dir, '.remarq'), { recursive: true })
+    writeFileSync(storePath, '{"annotations": [')
+    const adapter = new FileStorageAdapter(storePath)
+
+    await expect(adapter.load()).rejects.toThrow(/corrupted/)
+    await expect(adapter.load()).rejects.toThrow(storePath)
+
+    // A subsequent save() loads first, so it must reject too (not silently wipe the corrupted store).
+    await expect(adapter.save(ann('a1'))).rejects.toThrow(/corrupted/)
+    expect(readFileSync(storePath, 'utf8')).toBe('{"annotations": [')
+  })
+
+  it('serializes concurrent save() calls so neither write is lost', async () => {
+    const adapter = new FileStorageAdapter(join(dir, '.remarq', 'annotations.json'))
+    await Promise.all([adapter.save(ann('c1')), adapter.save(ann('c2'))])
+    const store = await adapter.load()
+    expect(store?.annotations.map((a) => a.id).sort()).toEqual(['c1', 'c2'])
+    expect(adapter.rev).toBe(2)
   })
 })

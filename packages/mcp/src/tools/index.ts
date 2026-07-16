@@ -7,6 +7,9 @@ import { getAnnotationInputSchema, handleGetAnnotation } from './get-annotation.
 import { acknowledgeInputSchema, handleAcknowledge } from './acknowledge.js'
 import { claimFixInputSchema, handleClaimFix } from './claim-fix.js'
 import { dismissInputSchema, handleDismiss } from './dismiss.js'
+import { watchAnnotationsInputSchema, handleWatchAnnotations, type WaitForChange } from './watch-annotations.js'
+
+export type { WaitForChange } from './watch-annotations.js'
 
 // Cast helper: our tool results satisfy CallToolResult at runtime; the SDK's
 // inferred type carries an index signature that our narrower types lack.
@@ -14,7 +17,11 @@ function cast(p: Promise<{ isError?: boolean; content: Array<{ type: 'text'; tex
   return p as Promise<CallToolResult>
 }
 
-export function registerTools(server: McpServer, storage: StorageAdapter): void {
+export function registerTools(
+  server: McpServer,
+  storage: StorageAdapter,
+  opts: { waitForChange: WaitForChange },
+): void {
   server.registerTool(
     'list_annotations',
     {
@@ -58,5 +65,15 @@ export function registerTools(server: McpServer, storage: StorageAdapter): void 
       inputSchema: dismissInputSchema.shape,
     },
     (input) => cast(handleDismiss(input, storage)),
+  )
+
+  server.registerTool(
+    'watch_annotations',
+    {
+      description:
+        'Wait for pending annotations (long-poll). Returns immediately if pending annotations exist; otherwise blocks until one appears or timeoutSeconds (default 25) elapses, then returns {"annotations": [], "timedOut": true}. Call this in a loop to continuously pick up designer feedback. Acknowledge each annotation you start working on so it stops being delivered.',
+      inputSchema: watchAnnotationsInputSchema.shape,
+    },
+    (input) => cast(handleWatchAnnotations(input, storage, opts.waitForChange)),
   )
 }

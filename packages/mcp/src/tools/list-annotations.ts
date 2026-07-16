@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { Annotation, AnnotationStatus, QualityCheck, StorageAdapter } from 'web-remarq'
 import { toolError, toolSuccess } from '../errors'
 
-const STATUS_VALUES = ['pending', 'in_progress', 'fixed_unverified', 'verified', 'dismissed'] as const
+const STATUS_VALUES = ['draft', 'pending', 'in_progress', 'fixed_unverified', 'verified', 'dismissed'] as const
 
 export const listAnnotationsInputSchema = z.object({
   route: z.string().optional(),
@@ -14,7 +14,7 @@ export const listAnnotationsInputSchema = z.object({
 
 export type ListAnnotationsInput = z.infer<typeof listAnnotationsInputSchema>
 
-interface ThinAnnotation {
+export interface ThinAnnotation {
   id: string
   route: string
   comment: string
@@ -39,7 +39,7 @@ function parseSource(annotation: Annotation): ThinAnnotation['source'] {
   return { file, line, column: isNaN(column) ? 0 : column, ...(component ? { component } : {}) }
 }
 
-function toThin(a: Annotation): ThinAnnotation {
+export function toThin(a: Annotation): ThinAnnotation {
   return {
     id: a.id,
     route: a.route,

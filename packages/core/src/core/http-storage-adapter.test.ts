@@ -111,6 +111,28 @@ describe('HttpStorageAdapter offline', () => {
     expect(buffer.ops[0].annotation.comment).toBe('edited');
   });
 
+  it('flush() keeps ops buffered mid-flush instead of dropping them', async () => {
+    const adapter = new HttpStorageAdapter();
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    await adapter.load(); // flips offline
+    await adapter.save(ann('f1'));
+
+    fetchMock.mockReset();
+    fetchMock.mockImplementationOnce(async () => {
+      // Still offline at this instant - this buffers f2 rather than sending it,
+      // simulating a save() that lands while the flush's PUT is in flight.
+      await adapter.save(ann('f2'));
+      return okJson({ rev: 10 });
+    });
+
+    // @ts-expect-error — private, tested directly
+    await adapter.flush();
+
+    const buffer = JSON.parse(localStorage.getItem('remarq:http-buffer')!);
+    expect(buffer.ops).toHaveLength(1);
+    expect(buffer.ops[0]).toMatchObject({ op: 'save', annotation: { id: 'f2' } });
+  });
+
   it('flush() replays clear-then-ops in order and empties the buffer', async () => {
     const adapter = new HttpStorageAdapter();
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
@@ -153,7 +175,7 @@ describe('HttpStorageAdapter subscribe', () => {
     await vi.advanceTimersByTimeAsync(2000);
   }
 
-  it('emits add/update/remove diffs when rev changes, nothing when rev is same', async () => {
+  it('emits add/update/remove diffs when content changes, nothing when content is unchanged', async () => {
     const adapter = new HttpStorageAdapter();
     fetchMock.mockResolvedValueOnce(okJson({ rev: 1, store: { version: 1, annotations: [ann('a1')] } }));
     await adapter.load();
@@ -161,7 +183,7 @@ describe('HttpStorageAdapter subscribe', () => {
     const events: unknown[] = [];
     const unsub = adapter.subscribe((e) => events.push(e));
 
-    // same rev → no events
+    // same rev, same content → no events (content-diffed via `known`, not rev)
     fetchMock.mockResolvedValueOnce(okJson({ rev: 1, store: { version: 1, annotations: [ann('a1')] } }));
     await tick();
     expect(events).toHaveLength(0);
@@ -178,6 +200,27 @@ describe('HttpStorageAdapter subscribe', () => {
     fetchMock.mockResolvedValueOnce(okJson({ rev: 3, store: { version: 1, annotations: [a1v2] } }));
     await tick();
     expect(events).toEqual([expect.objectContaining({ type: 'remove', id: 'a2' })]);
+
+    unsub();
+  });
+
+  it('diffs on content change even when rev collides (server restarted, rev re-seeded)', async () => {
+    const adapter = new HttpStorageAdapter();
+    fetchMock.mockResolvedValueOnce(okJson({ rev: 1, store: { version: 1, annotations: [ann('a1')] } }));
+    await adapter.load();
+
+    const events: unknown[] = [];
+    const unsub = adapter.subscribe((e) => events.push(e));
+
+    // Server restarted: its rev counter re-seeded at 0 and climbed back to 1 -
+    // the same rev the client already stored - but the content differs. A
+    // client-side `rev === this.rev` skip would hide this change forever.
+    const a1v2 = { ...ann('a1'), comment: 'restarted-edit' };
+    fetchMock.mockResolvedValueOnce(okJson({ rev: 1, store: { version: 1, annotations: [a1v2, ann('a2')] } }));
+    await tick();
+
+    expect(events).toContainEqual(expect.objectContaining({ type: 'update', annotation: expect.objectContaining({ id: 'a1' }) }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'add', annotation: expect.objectContaining({ id: 'a2' }) }));
 
     unsub();
   });

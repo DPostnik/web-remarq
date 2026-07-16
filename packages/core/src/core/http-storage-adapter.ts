@@ -138,7 +138,6 @@ export class HttpStorageAdapter implements StorageAdapter {
       const res = await fetch(`${this.url}/store`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { rev, store } = (await res.json()) as { rev: number; store: AnnotationStore };
-      if (rev === this.rev) return;
       this.rev = rev;
       this.diffAndEmit(store);
       this.writeCache(store);
@@ -171,12 +170,12 @@ export class HttpStorageAdapter implements StorageAdapter {
 
   /** Replay buffered offline ops. Throws if the server is still unreachable. */
   private async flush(): Promise<void> {
-    const buffer = this.readBuffer();
-    if (buffer.clear) {
+    const snapshot = this.readBuffer();
+    if (snapshot.clear) {
       const res = await fetch(`${this.url}/annotations`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }
-    for (const op of buffer.ops) {
+    for (const op of snapshot.ops) {
       if (op.op === 'save') {
         const res = await fetch(`${this.url}/annotations/${encodeURIComponent(op.annotation.id)}`, {
           method: 'PUT',
@@ -189,11 +188,24 @@ export class HttpStorageAdapter implements StorageAdapter {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       }
     }
-    try {
-      localStorage.removeItem(BUFFER_KEY);
-    } catch {
-      // ignore
+
+    // Ops may have been buffered by a concurrent save()/remove()/clear() while
+    // still offline during the awaited replay above - re-read rather than
+    // blindly clearing, so those don't get silently dropped.
+    const current = this.readBuffer();
+    if (JSON.stringify(current) === JSON.stringify(snapshot)) {
+      try {
+        localStorage.removeItem(BUFFER_KEY);
+      } catch {
+        // ignore
+      }
+      return;
     }
+    const replayed = new Set(snapshot.ops.map((op) => JSON.stringify(op)));
+    this.writeBuffer({
+      clear: snapshot.clear ? false : current.clear,
+      ops: current.ops.filter((op) => !replayed.has(JSON.stringify(op))),
+    });
   }
 
   // ---- known-state helpers ----

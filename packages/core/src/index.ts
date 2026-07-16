@@ -1,5 +1,7 @@
 export { WebRemarq } from './web-remarq'
 export { LocalStorageAdapter } from './core/local-storage-adapter'
+export { HttpStorageAdapter } from './core/http-storage-adapter'
+export type { HttpStorageAdapterOptions } from './core/http-storage-adapter'
 export type {
   Annotation,
   AnnotationStatus,

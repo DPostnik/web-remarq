@@ -55,12 +55,23 @@ WebRemarq.init({
   position: 'bottom-right',          // toolbar anchor
   shortcuts: true,                   // enable keyboard shortcuts (default true)
   storage: new LocalStorageAdapter(), // pluggable storage backend (default)
+  submitFlow: false,                 // opt-in draft mode (default false)
   qualityGate: {                     // optional AI pre-flight check on comments
     mode: 'suggest',                 // 'off' | 'suggest' (default 'suggest')
     check: async (input) => ({ /* QualityCheck */ }),
   },
 })
 ```
+
+#### `submitFlow`
+
+When `true`, new annotations start as `draft` (gray outlined markers) instead of `pending`. Drafts are private review notes until the designer explicitly submits them: the toolbar shows a paper-plane Submit button that moves every draft on the current route to `pending` in one click. The same action is available programmatically:
+
+```ts
+WebRemarq.submitDrafts() // number of drafts submitted for the current route
+```
+
+Pairs naturally with `HttpStorageAdapter` and `npx @web-remarq/mcp` in local mode, so an agent only sees feedback once a designer has actually submitted it.
 
 #### `qualityGate`
 
@@ -111,6 +122,17 @@ Remove all annotations.
 
 Annotations persist via a pluggable `StorageAdapter` interface. Default = `LocalStorageAdapter` (localStorage, key `remarq:annotations`, automatic in-memory fallback on quota errors).
 
+### `HttpStorageAdapter`
+
+Talks to a local `npx @web-remarq/mcp` server (default `http://127.0.0.1:1817`) so an AI agent can read annotations and drive their lifecycle without any cloud account:
+
+```typescript
+import { WebRemarq, HttpStorageAdapter } from 'web-remarq'
+WebRemarq.init({ submitFlow: true, storage: new HttpStorageAdapter() }) // pairs with npx @web-remarq/mcp
+```
+
+Buffers writes to localStorage (`remarq:http-buffer`) and caches reads (`remarq:http-cache`) while the server is unreachable, polls every 2s for external changes, and flushes the buffer on reconnect.
+
 ### Custom adapters
 
 ```ts
@@ -132,11 +154,12 @@ The interface is async by design — supports remote backends (Supabase, REST, I
 
 ## Lifecycle states
 
-Annotations follow a 5-state lifecycle with a verification gate between AI-claimed fixes and human confirmation. Every transition is recorded in `annotation.lifecycle: AnnotationEvent[]` (`{ type, actor, actorName?, timestamp, reason? }`).
+Annotations follow a 6-state lifecycle with a verification gate between AI-claimed fixes and human confirmation. Every transition is recorded in `annotation.lifecycle: AnnotationEvent[]` (`{ type, actor, actorName?, timestamp, reason? }`).
 
 | Status | Semantics |
 |---|---|
-| `pending` | Newly created — needs attention |
+| `draft` | Private review note, not yet submitted (opt-in via `submitFlow`) |
+| `pending` | Newly created (or submitted from draft) - needs attention |
 | `in_progress` | Acknowledged, work started |
 | `fixed_unverified` | Agent claims it's fixed, awaiting human verification |
 | `verified` | Human confirmed the fix |
@@ -145,6 +168,7 @@ Annotations follow a 5-state lifecycle with a verification gate between AI-claim
 ### Lifecycle API
 
 ```ts
+WebRemarq.submitDrafts()                      // draft → pending for all drafts on the current route
 WebRemarq.acknowledge(id, opts?)              // → in_progress
 WebRemarq.claimFix(id, opts?)                 // → fixed_unverified (agent-only — no UI button)
 WebRemarq.verify(id, opts?)                   // → verified (from in_progress or fixed_unverified)
@@ -157,7 +181,7 @@ WebRemarq.reopen(id, opts?)                   // verified | dismissed → pendin
 
 ## Agent Export Format
 
-The `export('agent')` format is optimized for AI coding agents:
+The `export('agent')` format is optimized for AI coding agents. `export('agent')` and `copy('agent')` emit only actionable annotations (`pending`, `in_progress`) - drafts, fixed-unverified, verified, and dismissed items are excluded.
 
 ```jsonc
 {
@@ -250,7 +274,7 @@ Works without any markup changes, but for guaranteed stable matching add `data-a
 - **Toolbar** — fixed bottom-right panel with inspect, spacing, copy, export, import, clear, theme, minimize
 - **Inspect mode** — hover to highlight, click to annotate
 - **Spacing inspector** — visualizes margin, padding, content, flex gap on hover
-- **Markers** — numbered circles, color per lifecycle state (orange = pending, yellow = in_progress, blue = fixed_unverified, green = verified, gray = dismissed)
+- **Markers** - numbered circles, color per lifecycle state (draft = gray outlined, orange = pending, yellow = in_progress, blue = fixed_unverified, green = verified, gray = dismissed)
 - **Popup** — comment input / detail view with dynamic lifecycle actions + history viewer
 
 ## License

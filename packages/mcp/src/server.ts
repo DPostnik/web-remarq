@@ -16,6 +16,11 @@ async function main(): Promise<void> {
     throw err
   }
 
+  if (config.mode !== 'cloud') {
+    console.error('[web-remarq-mcp] local mode not yet supported')
+    process.exit(1)
+  }
+
   const storage = createStorage(config)
   const server = new McpServer({
     name: 'web-remarq',

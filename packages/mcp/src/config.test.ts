@@ -1,68 +1,43 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { parseEnv, ConfigError } from './config'
 
-const ORIGINAL = { ...process.env }
-
-beforeEach(() => {
-  delete process.env.REMARQ_PROJECT_KEY
-  delete process.env.REMARQ_SUPABASE_URL
-  delete process.env.REMARQ_SUPABASE_ANON_KEY
-})
-
-afterEach(() => {
-  process.env = { ...ORIGINAL }
-})
-
 describe('parseEnv', () => {
-  it('returns typed config when all three env vars are set', () => {
-    process.env.REMARQ_PROJECT_KEY = 'pk_abcdef0123456789abcdef0123456789'
-    process.env.REMARQ_SUPABASE_URL = 'https://example.supabase.co'
-    process.env.REMARQ_SUPABASE_ANON_KEY = 'eyJanon'
+  it('returns local mode with defaults when no cloud vars are set', () => {
+    expect(parseEnv({})).toEqual({ mode: 'local', port: 1817, dataFile: '.remarq/annotations.json' })
+  })
 
-    const config = parseEnv(process.env)
+  it('respects REMARQ_PORT and REMARQ_DATA_FILE overrides', () => {
+    expect(parseEnv({ REMARQ_PORT: '4000', REMARQ_DATA_FILE: 'tmp/a.json' }))
+      .toEqual({ mode: 'local', port: 4000, dataFile: 'tmp/a.json' })
+  })
 
+  it('rejects a non-numeric or out-of-range port', () => {
+    expect(() => parseEnv({ REMARQ_PORT: 'abc' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_PORT: '70000' })).toThrow(ConfigError)
+  })
+
+  it('returns cloud mode when all three cloud vars are set', () => {
+    const config = parseEnv({
+      REMARQ_PROJECT_KEY: 'pk_abc',
+      REMARQ_SUPABASE_URL: 'https://x.supabase.co',
+      REMARQ_SUPABASE_ANON_KEY: 'anon',
+    })
     expect(config).toEqual({
-      projectKey: 'pk_abcdef0123456789abcdef0123456789',
-      supabaseUrl: 'https://example.supabase.co',
-      supabaseAnonKey: 'eyJanon',
+      mode: 'cloud',
+      projectKey: 'pk_abc',
+      supabaseUrl: 'https://x.supabase.co',
+      supabaseAnonKey: 'anon',
     })
   })
 
-  it('throws ConfigError when REMARQ_PROJECT_KEY missing', () => {
-    process.env.REMARQ_SUPABASE_URL = 'https://example.supabase.co'
-    process.env.REMARQ_SUPABASE_ANON_KEY = 'eyJanon'
-
-    expect(() => parseEnv(process.env)).toThrow(ConfigError)
-    expect(() => parseEnv(process.env)).toThrow(/REMARQ_PROJECT_KEY/)
+  it('errors when cloud vars are only partially set (no silent local fallback)', () => {
+    expect(() => parseEnv({ REMARQ_PROJECT_KEY: 'pk_abc' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_SUPABASE_URL: 'https://x.supabase.co' })).toThrow(ConfigError)
   })
 
-  it('throws ConfigError when REMARQ_SUPABASE_URL missing', () => {
-    process.env.REMARQ_PROJECT_KEY = 'pk_abcdef0123456789abcdef0123456789'
-    process.env.REMARQ_SUPABASE_ANON_KEY = 'eyJanon'
-
-    expect(() => parseEnv(process.env)).toThrow(/REMARQ_SUPABASE_URL/)
-  })
-
-  it('throws ConfigError when REMARQ_SUPABASE_ANON_KEY missing', () => {
-    process.env.REMARQ_PROJECT_KEY = 'pk_abcdef0123456789abcdef0123456789'
-    process.env.REMARQ_SUPABASE_URL = 'https://example.supabase.co'
-
-    expect(() => parseEnv(process.env)).toThrow(/REMARQ_SUPABASE_ANON_KEY/)
-  })
-
-  it('throws ConfigError when project key does not start with pk_', () => {
-    process.env.REMARQ_PROJECT_KEY = 'wrong_format_key'
-    process.env.REMARQ_SUPABASE_URL = 'https://example.supabase.co'
-    process.env.REMARQ_SUPABASE_ANON_KEY = 'eyJanon'
-
-    expect(() => parseEnv(process.env)).toThrow(/must start with `pk_`/)
-  })
-
-  it('throws ConfigError when supabase URL is not https://', () => {
-    process.env.REMARQ_PROJECT_KEY = 'pk_abcdef0123456789abcdef0123456789'
-    process.env.REMARQ_SUPABASE_URL = 'http://insecure.example.com'
-    process.env.REMARQ_SUPABASE_ANON_KEY = 'eyJanon'
-
-    expect(() => parseEnv(process.env)).toThrow(/https/)
+  it('keeps cloud validation: pk_ prefix and https URL', () => {
+    const base = { REMARQ_PROJECT_KEY: 'pk_abc', REMARQ_SUPABASE_URL: 'https://x.supabase.co', REMARQ_SUPABASE_ANON_KEY: 'anon' }
+    expect(() => parseEnv({ ...base, REMARQ_PROJECT_KEY: 'nope' })).toThrow(ConfigError)
+    expect(() => parseEnv({ ...base, REMARQ_SUPABASE_URL: 'http://x' })).toThrow(ConfigError)
   })
 })

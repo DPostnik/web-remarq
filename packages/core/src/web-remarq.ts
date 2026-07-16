@@ -155,6 +155,9 @@ function refreshMarkers(): void {
   const needsVerification = anns.filter((a) => a.status === 'fixed_unverified').length
   toolbar.setBadgeCount(needsAttention)
   toolbar.setVerificationBadgeCount(needsVerification)
+  if (options.submitFlow) {
+    toolbar.setSubmitCount(anns.filter((a) => a.status === 'draft').length)
+  }
 }
 
 function jumpToFirstUnverified(): void {
@@ -162,6 +165,18 @@ function jumpToFirstUnverified(): void {
   const ann = storage.getByRoute(currentRoute()).find((a) => a.status === 'fixed_unverified')
   if (!ann) return
   markers.scrollToMarker(ann.id)
+}
+
+function submitAllDrafts(): number {
+  if (!storage) return 0
+  const drafts = storage.getByRoute(currentRoute()).filter((a) => a.status === 'draft')
+  for (const ann of drafts) {
+    applyTransition(ann.id, 'submit')
+  }
+  if (drafts.length) {
+    showToast(themeManager.container, `Submitted ${drafts.length} annotation${drafts.length === 1 ? '' : 's'}`)
+  }
+  return drafts.length
 }
 
 // Debounced refresh — MutationObserver can fire rapidly
@@ -210,7 +225,7 @@ function handleInspectClick(e: MouseEvent): void {
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         viewportBucket: toBucket(window.innerWidth),
         timestamp: now,
-        status: 'pending',
+        status: options.submitFlow ? 'draft' : 'pending',
         lifecycle: [{ type: 'created', actor: 'designer', timestamp: now }],
       }
       // Cache the element immediately — no need to re-match
@@ -652,6 +667,7 @@ export const WebRemarq = {
         onThemeToggle: () => themeManager.toggle(),
         onHelp: () => showShortcutsModal(themeManager.container),
         onVerificationBadgeClick: jumpToFirstUnverified,
+        ...(options.submitFlow ? { onSubmit: () => submitAllDrafts() } : {}),
       }, position)
 
       routeObserver = new RouteObserver()
@@ -784,6 +800,11 @@ export const WebRemarq = {
 
   reopen(id: string, opts?: TransitionOpts): void {
     applyTransition(id, 'reopen', opts)
+  },
+
+  /** Submit all draft annotations of the current route (draft → pending). Returns the count. */
+  submitDrafts(): number {
+    return submitAllDrafts()
   },
 
   /** @deprecated Use verify() instead. */

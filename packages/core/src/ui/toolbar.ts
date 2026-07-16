@@ -11,6 +11,7 @@ export interface ToolbarCallbacks {
   onSpacingToggle: () => void
   onHelp: () => void
   onVerificationBadgeClick?: () => void
+  onSubmit?: () => void
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '')
@@ -26,6 +27,7 @@ const TOOLTIPS: Record<string, string> = {
   theme: 'Toggle theme',
   help: 'Keyboard shortcuts (?)',
   minimize: 'Minimize',
+  submit: 'Submit drafts to agent',
 }
 
 const ICONS = {
@@ -38,6 +40,7 @@ const ICONS = {
   theme: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/></svg>',
   help: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M6 6.5a2 2 0 0 1 3.5 1.5c0 1-1.5 1-1.5 2"/><circle cx="8" cy="12" r="0.5" fill="currentColor" stroke="none"/></svg>',
   minimize: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h8"/></svg>',
+  submit: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2 7 9M14 2 9.5 14 7 9 2 6.5 14 2z"/></svg>',
 }
 
 export class Toolbar {
@@ -46,6 +49,8 @@ export class Toolbar {
   private verificationBadgeEl: HTMLElement
   private inspectBtn: HTMLElement
   private spacingBtn: HTMLButtonElement
+  private submitBtn: HTMLButtonElement | null = null
+  private submitBadgeEl: HTMLElement | null = null
   private exportMenu: HTMLElement | null = null
   private fileInput: HTMLInputElement
   private minimized = false
@@ -79,6 +84,16 @@ export class Toolbar {
     this.spacingBtn = this.createButton('spacing', ICONS.spacing, () => callbacks.onSpacingToggle()) as HTMLButtonElement
     this.spacingBtn.disabled = true
 
+    if (callbacks.onSubmit) {
+      this.submitBtn = this.createButton('submit', ICONS.submit, () => callbacks.onSubmit!()) as HTMLButtonElement
+      this.submitBtn.disabled = true
+      this.submitBadgeEl = document.createElement('span')
+      this.submitBadgeEl.className = 'remarq-badge'
+      this.submitBadgeEl.title = 'Drafts to submit'
+      this.submitBadgeEl.style.display = 'none'
+      this.submitBtn.appendChild(this.submitBadgeEl)
+    }
+
     const copyBtn = this.createButton('copy', ICONS.copy, () => callbacks.onCopy())
     const exportBtn = this.createButton('export', ICONS.export, (e) => this.toggleExportMenu(e))
 
@@ -97,10 +112,11 @@ export class Toolbar {
     const helpBtn = this.createButton('help', ICONS.help, () => callbacks.onHelp())
     const minimizeBtn = this.createButton('minimize', ICONS.minimize, () => this.toggleMinimize())
 
-    this.buttons = [this.inspectBtn, this.spacingBtn, copyBtn, exportBtn, importBtn, clearBtn, themeBtn, helpBtn]
+    this.buttons = [this.inspectBtn, this.spacingBtn, ...(this.submitBtn ? [this.submitBtn] : []), copyBtn, exportBtn, importBtn, clearBtn, themeBtn, helpBtn]
 
     this.toolbarEl.appendChild(this.inspectBtn)
     this.toolbarEl.appendChild(this.spacingBtn)
+    if (this.submitBtn) this.toolbarEl.appendChild(this.submitBtn)
     this.toolbarEl.appendChild(copyBtn)
     this.toolbarEl.appendChild(exportBtn)
     this.toolbarEl.appendChild(importBtn)
@@ -136,6 +152,13 @@ export class Toolbar {
   setVerificationBadgeCount(count: number): void {
     this.verificationBadgeEl.textContent = String(count)
     this.verificationBadgeEl.style.display = count > 0 ? 'flex' : 'none'
+  }
+
+  setSubmitCount(count: number): void {
+    if (!this.submitBtn || !this.submitBadgeEl) return
+    this.submitBtn.disabled = count === 0
+    this.submitBadgeEl.textContent = String(count)
+    this.submitBadgeEl.style.display = count > 0 ? 'flex' : 'none'
   }
 
   getFileInput(): HTMLInputElement {

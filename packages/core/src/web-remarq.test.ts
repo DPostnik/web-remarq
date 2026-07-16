@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebRemarq } from './web-remarq'
-import type { Annotation, AnnotationStore, StorageAdapter } from './core/types'
+import type { Annotation, AnnotationStore, StorageAdapter, ElementFingerprint } from './core/types'
 
 function outlineWidth(id: string): string {
   const box = document.querySelector(`.remarq-status-outline[data-annotation-id="${id}"]`)
@@ -131,5 +131,58 @@ describe('marker selection highlight wiring', () => {
 
     expect(outlineWidth('a1')).toBe('2px')
     expect(outlineWidth('a2')).toBe('4px')
+  })
+})
+
+function makeSubmitFingerprint(): ElementFingerprint {
+  return {
+    dataAnnotate: null, dataTestId: null, id: null,
+    tagName: 'button', textContent: 'Save', role: null, ariaLabel: null,
+    stableClasses: [], domPath: 'body > button', siblingIndex: 0, parentAnchor: null,
+    sourceLocation: null, componentName: null, detectedSource: null, detectedComponent: null,
+  }
+}
+
+function makeDraft(id: string, route: string): Annotation {
+  return {
+    id, comment: `note ${id}`, fingerprint: makeSubmitFingerprint(),
+    route, viewport: '1024x768', viewportBucket: 1000, timestamp: Date.now(),
+    status: 'draft',
+    lifecycle: [{ type: 'created', actor: 'designer', timestamp: Date.now() }],
+  }
+}
+
+class MemoryAdapter implements StorageAdapter {
+  constructor(private annotations: Annotation[]) {}
+  saved: Annotation[] = []
+  async load(): Promise<AnnotationStore | null> {
+    return { version: 1, annotations: this.annotations }
+  }
+  async save(annotation: Annotation): Promise<void> { this.saved.push(annotation) }
+  async remove(): Promise<void> {}
+  async clear(): Promise<void> {}
+}
+
+describe('WebRemarq.submitDrafts', () => {
+  afterEach(() => WebRemarq.destroy())
+
+  it('submits all drafts of the current route and leaves other routes alone', async () => {
+    const adapter = new MemoryAdapter([
+      makeDraft('d1', '/'),
+      makeDraft('d2', '/'),
+      makeDraft('d3', '/other'),
+    ])
+    WebRemarq.init({ submitFlow: true, storage: adapter })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const submitted = WebRemarq.submitDrafts()
+    expect(submitted).toBe(2)
+
+    const anns = WebRemarq.getAnnotations()
+    expect(anns.find((a) => a.id === 'd1')?.status).toBe('pending')
+    expect(anns.find((a) => a.id === 'd2')?.status).toBe('pending')
+    expect(anns.find((a) => a.id === 'd3')?.status).toBe('draft')
+    const d1 = anns.find((a) => a.id === 'd1')!
+    expect(d1.lifecycle[d1.lifecycle.length - 1]).toMatchObject({ type: 'submitted', actor: 'designer' })
   })
 })

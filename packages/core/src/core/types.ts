@@ -119,6 +119,7 @@ export interface WebRemarqOptions {
   shortcuts?: boolean
   storage?: StorageAdapter
   qualityGate?: QualityGateOptions
+  submitFlow?: boolean
 }
 
 export interface ImportResult {

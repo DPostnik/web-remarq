@@ -109,6 +109,33 @@ export class HttpStorageAdapter implements StorageAdapter {
     this.writeCache({ version: 1, annotations: [] });
   }
 
+  /** Replay buffered offline ops. Throws if the server is still unreachable. */
+  private async flush(): Promise<void> {
+    const buffer = this.readBuffer();
+    if (buffer.clear) {
+      const res = await fetch(`${this.url}/annotations`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }
+    for (const op of buffer.ops) {
+      if (op.op === 'save') {
+        const res = await fetch(`${this.url}/annotations/${encodeURIComponent(op.annotation.id)}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(op.annotation),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } else {
+        const res = await fetch(`${this.url}/annotations/${encodeURIComponent(op.id)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      }
+    }
+    try {
+      localStorage.removeItem(BUFFER_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
   // ---- known-state helpers ----
 
   private remember(store: AnnotationStore): void {

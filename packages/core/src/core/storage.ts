@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationEvent, AnnotationStatus, AnnotationStore, StorageAdapter } from './types'
+import type { Annotation, AnnotationEvent, AnnotationStatus, AnnotationStore, StorageAdapter, StorageChangeEvent } from './types'
 import { toBucket } from './viewport'
 
 export function migrateAnnotation(legacy: any): Annotation {
@@ -23,10 +23,15 @@ export function migrateAnnotation(legacy: any): Annotation {
 
 export class AnnotationStorage {
   private cache: Annotation[] = []
+  private changeListener: ((event: StorageChangeEvent) => void) | null = null
+  private unsubscribe: (() => void) | null = null
   readonly ready: Promise<void>
 
   constructor(private adapter: StorageAdapter) {
     this.ready = this.init()
+    if (adapter.subscribe) {
+      this.unsubscribe = adapter.subscribe((event) => this.applyExternal(event))
+    }
   }
 
   get isMemoryOnly(): boolean {
@@ -82,6 +87,39 @@ export class AnnotationStorage {
     for (const ann of this.cache) {
       await this.adapter.save(ann)
     }
+  }
+
+  /** Notified after an EXTERNAL adapter change (another client / the agent)
+   *  has been applied to the cache. Own mutations don't fire this. */
+  onChange(callback: (event: StorageChangeEvent) => void): void {
+    this.changeListener = callback
+  }
+
+  destroy(): void {
+    this.unsubscribe?.()
+    this.unsubscribe = null
+    this.changeListener = null
+  }
+
+  private applyExternal(event: StorageChangeEvent): void {
+    switch (event.type) {
+      case 'add':
+      case 'update': {
+        if (!event.annotation) break
+        const ann = migrateAnnotation(event.annotation)
+        const idx = this.cache.findIndex((a) => a.id === ann.id)
+        if (idx === -1) this.cache.push(ann)
+        else this.cache[idx] = ann
+        break
+      }
+      case 'remove':
+        if (event.id) this.cache = this.cache.filter((a) => a.id !== event.id)
+        break
+      case 'clear':
+        this.cache = []
+        break
+    }
+    this.changeListener?.(event)
   }
 
   private async init(): Promise<void> {

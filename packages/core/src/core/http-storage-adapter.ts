@@ -109,6 +109,66 @@ export class HttpStorageAdapter implements StorageAdapter {
     this.writeCache({ version: 1, annotations: [] });
   }
 
+  subscribe(callback: (event: StorageChangeEvent) => void): () => void {
+    this.callbacks.add(callback);
+    if (!this.pollTimer) {
+      this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL);
+    }
+    return () => {
+      this.callbacks.delete(callback);
+      if (this.callbacks.size === 0 && this.pollTimer) {
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
+      }
+    };
+  }
+
+  private async poll(): Promise<void> {
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      if (!this.online) {
+        // Reconnect probe: replay buffered writes FIRST so they win over the
+        // server copy (last-write-wins), then read fresh state below. Flush
+        // succeeding is what flips `online` back to true — that's the
+        // reconnect signal for the rest of the adapter (save/remove/clear).
+        await this.flush();
+        this.online = true;
+      }
+      const res = await fetch(`${this.url}/store`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { rev, store } = (await res.json()) as { rev: number; store: AnnotationStore };
+      if (rev === this.rev) return;
+      this.rev = rev;
+      this.diffAndEmit(store);
+      this.writeCache(store);
+    } catch {
+      this.online = false;
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private diffAndEmit(store: AnnotationStore): void {
+    const next = new Map<string, string>();
+    for (const annotation of store.annotations) {
+      next.set(annotation.id, JSON.stringify(annotation));
+    }
+    for (const [id, json] of next) {
+      const prev = this.known.get(id);
+      if (prev === undefined) this.emit({ type: 'add', annotation: JSON.parse(json) });
+      else if (prev !== json) this.emit({ type: 'update', annotation: JSON.parse(json) });
+    }
+    for (const id of this.known.keys()) {
+      if (!next.has(id)) this.emit({ type: 'remove', id });
+    }
+    this.known = next;
+  }
+
+  private emit(event: StorageChangeEvent): void {
+    for (const cb of this.callbacks) cb(event);
+  }
+
   /** Replay buffered offline ops. Throws if the server is still unreachable. */
   private async flush(): Promise<void> {
     const buffer = this.readBuffer();

@@ -615,6 +615,7 @@ export const WebRemarq = {
     try {
       injectStyles()
       storage = new AnnotationStorage(options.storage ?? new LocalStorageAdapter())
+      storage.onChange(() => scheduleRefresh())
       themeManager = new ThemeManager(document.body, options.theme)
       overlay = new Overlay(themeManager.container)
       spacingOverlay = new SpacingOverlay(themeManager.container)
@@ -713,6 +714,7 @@ export const WebRemarq = {
       markers?.destroy()
       qualityBubbles?.destroy()
       qualityRunner?.clear()
+      storage?.destroy()
       detachedPanel?.destroy()
       popup?.destroy()
       overlay?.destroy()

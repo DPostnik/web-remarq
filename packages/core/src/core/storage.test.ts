@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Annotation } from './types';
+import type { Annotation, StorageAdapter, StorageChangeEvent } from './types';
 import { AnnotationStorage, migrateAnnotation } from './storage';
 import { LocalStorageAdapter } from './local-storage-adapter';
 
@@ -285,6 +285,41 @@ describe('AnnotationStorage with custom adapter', () => {
     const store = new AnnotationStorage(adapter);
     await store.ready;
     expect(store.getAll().map((a) => a.id)).toEqual(['seeded']);
+  });
+});
+
+describe('AnnotationStorage external change sync', () => {
+  it('applies adapter subscribe events to the cache and notifies onChange', async () => {
+    let emit: ((e: StorageChangeEvent) => void) | null = null;
+    const adapter: StorageAdapter = {
+      async load() { return { version: 1, annotations: [] }; },
+      async save() {},
+      async remove() {},
+      async clear() {},
+      subscribe(cb) { emit = cb; return () => { emit = null; }; },
+    };
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    const seen: StorageChangeEvent[] = [];
+    store.onChange((e) => seen.push(e));
+
+    const a1 = makeAnnotation({ id: 'x1' });
+    emit!({ type: 'add', annotation: a1 });
+    expect(store.getById('x1')).toBeDefined();
+
+    emit!({ type: 'update', annotation: { ...a1, comment: 'edited' } });
+    expect(store.getById('x1')?.comment).toBe('edited');
+
+    emit!({ type: 'remove', id: 'x1' });
+    expect(store.getById('x1')).toBeUndefined();
+
+    emit!({ type: 'clear' });
+    expect(store.getAll()).toEqual([]);
+
+    expect(seen.map((e) => e.type)).toEqual(['add', 'update', 'remove', 'clear']);
+
+    store.destroy();
+    expect(emit).toBeNull();
   });
 });
 

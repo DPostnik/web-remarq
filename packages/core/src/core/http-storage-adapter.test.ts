@@ -133,3 +133,71 @@ describe('HttpStorageAdapter offline', () => {
     expect(localStorage.getItem('remarq:http-buffer')).toBeNull();
   });
 });
+
+describe('HttpStorageAdapter subscribe', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  async function tick(): Promise<void> {
+    await vi.advanceTimersByTimeAsync(2000);
+  }
+
+  it('emits add/update/remove diffs when rev changes, nothing when rev is same', async () => {
+    const adapter = new HttpStorageAdapter();
+    fetchMock.mockResolvedValueOnce(okJson({ rev: 1, store: { version: 1, annotations: [ann('a1')] } }));
+    await adapter.load();
+
+    const events: unknown[] = [];
+    const unsub = adapter.subscribe((e) => events.push(e));
+
+    // same rev → no events
+    fetchMock.mockResolvedValueOnce(okJson({ rev: 1, store: { version: 1, annotations: [ann('a1')] } }));
+    await tick();
+    expect(events).toHaveLength(0);
+
+    // new rev: a1 updated, a2 added
+    const a1v2 = { ...ann('a1'), comment: 'edited' };
+    fetchMock.mockResolvedValueOnce(okJson({ rev: 2, store: { version: 1, annotations: [a1v2, ann('a2')] } }));
+    await tick();
+    expect(events).toContainEqual(expect.objectContaining({ type: 'update', annotation: expect.objectContaining({ id: 'a1' }) }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'add', annotation: expect.objectContaining({ id: 'a2' }) }));
+
+    // a2 removed
+    events.length = 0;
+    fetchMock.mockResolvedValueOnce(okJson({ rev: 3, store: { version: 1, annotations: [a1v2] } }));
+    await tick();
+    expect(events).toEqual([expect.objectContaining({ type: 'remove', id: 'a2' })]);
+
+    unsub();
+  });
+
+  it('flushes the offline buffer before diffing when the server comes back', async () => {
+    const adapter = new HttpStorageAdapter();
+    fetchMock.mockRejectedValue(new TypeError('down'));
+    await adapter.load();
+    await adapter.save(ann('a9'));
+
+    const unsub = adapter.subscribe(() => {});
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(okJson({ rev: 5, store: { version: 1, annotations: [ann('a9')] } }));
+    // flush PUT replies also match mockResolvedValue({rev:5}) shape — fine
+    await tick();
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => `${(init as RequestInit | undefined)?.method ?? 'GET'} ${url}`);
+    expect(calls[0]).toBe('PUT http://127.0.0.1:1817/annotations/a9');
+    expect(calls).toContain('GET http://127.0.0.1:1817/store');
+    expect(localStorage.getItem('remarq:http-buffer')).toBeNull();
+    unsub();
+  });
+});

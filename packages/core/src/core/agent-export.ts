@@ -8,6 +8,14 @@ import type {
   ElementFingerprint,
 } from './types'
 
+/** Statuses an agent can act on. Everything else is either not yet
+ *  submitted (draft) or already through the verification gate. */
+export const ACTIONABLE_STATUSES: readonly Annotation['status'][] = ['pending', 'in_progress']
+
+export function actionableOnly(annotations: Annotation[]): Annotation[] {
+  return annotations.filter((a) => ACTIONABLE_STATUSES.includes(a.status))
+}
+
 function parseSourceLocation(raw: string): { file: string; line: number; column: number } | null {
   const parts = raw.split(':')
   if (parts.length < 2) return null

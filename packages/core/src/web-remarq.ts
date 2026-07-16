@@ -4,7 +4,7 @@ import { QualityRunner } from './core/quality-runner'
 import { LocalStorageAdapter } from './core/local-storage-adapter'
 import { createFingerprint } from './core/fingerprint'
 import { matchElement } from './core/matcher'
-import { generateAgentExport } from './core/agent-export'
+import { generateAgentExport, actionableOnly } from './core/agent-export'
 import { transition, type LifecycleAction } from './core/lifecycle'
 import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
@@ -550,7 +550,7 @@ function fallbackCopy(text: string): void {
 }
 
 function exportAgent(): void {
-  const anns = storage.getAll()
+  const anns = actionableOnly(storage.getAll())
   if (!anns.length) return
   const data = generateAgentExport(anns, toBucket(window.innerWidth))
   const json = JSON.stringify(data, null, 2)
@@ -558,7 +558,7 @@ function exportAgent(): void {
 }
 
 function copyAgentToClipboard(): void {
-  const anns = storage.getAll()
+  const anns = actionableOnly(storage.getAll())
   if (!anns.length) return
   const data = generateAgentExport(anns, toBucket(window.innerWidth))
   const json = JSON.stringify(data, null, 2)

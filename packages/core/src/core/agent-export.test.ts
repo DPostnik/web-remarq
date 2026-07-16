@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Annotation, ElementFingerprint } from './types';
-import { generateAgentExport } from './agent-export';
+import { generateAgentExport, actionableOnly, ACTIONABLE_STATUSES } from './agent-export';
 
 function ann(id: string, fp: Partial<ElementFingerprint>, overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -252,3 +252,13 @@ describe('generateAgentExport — lifecycle pass-through', () => {
     expect('actorName' in result.annotations[0].lifecycle[0]).toBe(false);
   });
 });
+
+describe('actionableOnly', () => {
+  it('keeps only pending and in_progress', () => {
+    const anns = (['draft', 'pending', 'in_progress', 'fixed_unverified', 'verified', 'dismissed'] as const)
+      .map((status, i) => ann(`a${i}`, {}, { status }))
+    const result = actionableOnly(anns)
+    expect(result.map((a) => a.status)).toEqual(['pending', 'in_progress'])
+    expect(ACTIONABLE_STATUSES).toEqual(['pending', 'in_progress'])
+  })
+})

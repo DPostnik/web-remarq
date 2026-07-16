@@ -128,7 +128,7 @@ When `qualityCheck.score` is `ambiguous` or `unactionable`, the comment likely n
 
 - `annotation_not_found` — id absent in project (also returned if RLS hides it)
 - `invalid_transition` — lifecycle action not allowed from current status; payload includes `currentStatus`
-- `storage_error` — Supabase / network failure in cloud mode, or a local
+- `storage_error` - Supabase / network failure in cloud mode, or a local
   file-store error (e.g. corrupted store) in local mode; payload includes root
   cause
 - `validation_error` — input failed zod schema (auto from MCP SDK)

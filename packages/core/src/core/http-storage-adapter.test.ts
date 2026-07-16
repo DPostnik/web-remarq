@@ -125,12 +125,48 @@ describe('HttpStorageAdapter offline', () => {
       return okJson({ rev: 10 });
     });
 
-    // @ts-expect-error — private, tested directly
+    // @ts-expect-error - private, tested directly
     await adapter.flush();
 
     const buffer = JSON.parse(localStorage.getItem('remarq:http-buffer')!);
     expect(buffer.ops).toHaveLength(1);
     expect(buffer.ops[0]).toMatchObject({ op: 'save', annotation: { id: 'f2' } });
+  });
+
+  it('flush() survives a clear() buffered mid-flush instead of dropping it', async () => {
+    const adapter = new HttpStorageAdapter();
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    await adapter.load(); // flips offline
+    await adapter.clear();
+    await adapter.save(ann('g1'));
+
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(okJson({})) // replay of the buffered clear (DELETE /annotations)
+      .mockImplementationOnce(async () => {
+        // Still offline at this instant - this buffers a new clear() rather
+        // than sending it, simulating clear() landing while the flush's PUT
+        // for g1 is in flight.
+        await adapter.clear();
+        return okJson({ rev: 11 });
+      });
+
+    // @ts-expect-error - private, tested directly
+    await adapter.flush();
+
+    const buffer = JSON.parse(localStorage.getItem('remarq:http-buffer')!);
+    expect(buffer.clear).toBe(true);
+    expect(buffer.ops).toHaveLength(0);
+
+    // The pending clear must actually replay on the next flush.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(okJson({ rev: 12 }));
+    // @ts-expect-error - private, tested directly
+    await adapter.flush();
+
+    const calls = fetchMock.mock.calls.map(([url, init]) => `${(init as RequestInit | undefined)?.method ?? 'GET'} ${url}`);
+    expect(calls).toContain('DELETE http://127.0.0.1:1817/annotations');
+    expect(localStorage.getItem('remarq:http-buffer')).toBeNull();
   });
 
   it('flush() replays clear-then-ops in order and empties the buffer', async () => {

@@ -9,6 +9,8 @@ type BufferedOp = { op: 'save'; annotation: Annotation } | { op: 'remove'; id: s
 
 interface OpBuffer {
   clear: boolean;
+  /** How many times clear() has been requested for this buffer lineage. */
+  clearSeq: number;
   ops: BufferedOp[];
 }
 
@@ -105,7 +107,8 @@ export class HttpStorageAdapter implements StorageAdapter {
         this.online = false;
       }
     }
-    this.writeBuffer({ clear: true, ops: [] });
+    const current = this.readBuffer();
+    this.writeBuffer({ clear: true, clearSeq: current.clearSeq + 1, ops: [] });
     this.writeCache({ version: 1, annotations: [] });
   }
 
@@ -203,7 +206,8 @@ export class HttpStorageAdapter implements StorageAdapter {
     }
     const replayed = new Set(snapshot.ops.map((op) => JSON.stringify(op)));
     this.writeBuffer({
-      clear: snapshot.clear ? false : current.clear,
+      clear: current.clearSeq !== snapshot.clearSeq,
+      clearSeq: current.clearSeq,
       ops: current.ops.filter((op) => !replayed.has(JSON.stringify(op))),
     });
   }
@@ -256,9 +260,11 @@ export class HttpStorageAdapter implements StorageAdapter {
   private readBuffer(): OpBuffer {
     try {
       const raw = localStorage.getItem(BUFFER_KEY);
-      return raw ? (JSON.parse(raw) as OpBuffer) : { clear: false, ops: [] };
+      if (!raw) return { clear: false, clearSeq: 0, ops: [] };
+      const parsed = JSON.parse(raw) as Partial<OpBuffer>;
+      return { clear: parsed.clear ?? false, clearSeq: parsed.clearSeq ?? 0, ops: parsed.ops ?? [] };
     } catch {
-      return { clear: false, ops: [] };
+      return { clear: false, clearSeq: 0, ops: [] };
     }
   }
 

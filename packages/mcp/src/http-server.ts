@@ -45,8 +45,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, storage: FileSt
 
   try {
     if (req.method === 'GET' && pathname === '/store') {
+      // Capture rev before the await, not after: a concurrent mutation between
+      // load() and reading storage.rev would pair a newer rev with the older
+      // content this response body carries. Under-reporting is safe (the
+      // client's next poll re-diffs); over-reporting is not.
+      const rev = storage.rev
       const store = (await storage.load()) ?? { version: 1 as const, annotations: [] }
-      json(res, 200, { rev: storage.rev, store })
+      json(res, 200, { rev, store })
       return
     }
 

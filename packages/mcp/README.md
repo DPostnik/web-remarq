@@ -39,6 +39,11 @@ automatically:
 Annotations are stored in a JSON file on disk and served to the widget over a
 small HTTP endpoint on `127.0.0.1`. No Supabase project, no project key.
 
+Trust model: the endpoint binds to `127.0.0.1` with permissive CORS, so any
+page open in the local browser can reach it for as long as the server runs -
+this is meant for dev-time use with low-sensitivity data, not a hardened
+local API.
+
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `REMARQ_PORT` | `1817` | Port for the widget-facing HTTP endpoint |
@@ -59,7 +64,9 @@ WebRemarq.init({ submitFlow: true, storage: new HttpStorageAdapter() })
 `watch_annotations` returns immediately if pending annotations already exist;
 otherwise it blocks (long-poll) until one appears or `timeoutSeconds` elapses
 (default 25, max 120), then returns `{ annotations: [], total: 0, timedOut: true }`.
-Drafts are never delivered - only annotations a designer has submitted.
+Drafts are never delivered by `watch_annotations` - only annotations a designer
+has submitted. `list_annotations` / `get_annotation` can still return drafts
+when queried directly.
 Typical agent loop:
 
 ```
@@ -121,7 +128,9 @@ When `qualityCheck.score` is `ambiguous` or `unactionable`, the comment likely n
 
 - `annotation_not_found` — id absent in project (also returned if RLS hides it)
 - `invalid_transition` — lifecycle action not allowed from current status; payload includes `currentStatus`
-- `storage_error` — Supabase / network failure; payload includes root cause
+- `storage_error` — Supabase / network failure in cloud mode, or a local
+  file-store error (e.g. corrupted store) in local mode; payload includes root
+  cause
 - `validation_error` — input failed zod schema (auto from MCP SDK)
 
 ## License

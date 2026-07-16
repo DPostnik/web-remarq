@@ -17,6 +17,7 @@ const CSS = `
   --remarq-status-fixed-unverified: #3b82f6;
   --remarq-status-verified: #22c55e;
   --remarq-status-dismissed: #6b7280;
+  --remarq-status-draft: #64748b;
 }
 
 [data-remarq-theme="dark"] {
@@ -35,6 +36,7 @@ const CSS = `
   --remarq-status-fixed-unverified: #60a5fa;
   --remarq-status-verified: #4ade80;
   --remarq-status-dismissed: #9ca3af;
+  --remarq-status-draft: #94a3b8;
 }
 
 .remarq-toolbar {
@@ -164,6 +166,11 @@ const CSS = `
 .remarq-marker--fixed-unverified { background: var(--remarq-status-fixed-unverified); }
 .remarq-marker--verified { background: var(--remarq-status-verified); opacity: 0.7; }
 .remarq-marker--dismissed { background: var(--remarq-status-dismissed); opacity: 0.5; }
+.remarq-marker--draft {
+  background: var(--remarq-bg);
+  color: var(--remarq-status-draft);
+  box-shadow: inset 0 0 0 2px var(--remarq-status-draft), 0 2px 4px rgba(0,0,0,0.2);
+}
 
 .remarq-quality-bubble {
   position: absolute;

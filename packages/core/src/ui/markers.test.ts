@@ -227,4 +227,16 @@ describe('MarkerManager status outline boxes', () => {
 
     expect(container.querySelector('.remarq-status-outline')).toBeNull()
   })
+
+  it('renders a draft marker with the draft status class and CSS var outline color', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    const ann = makeAnnotation({ status: 'draft' })
+    markers.addMarker(ann, target)
+
+    const markerEl = container.querySelector('.remarq-marker--draft') as HTMLElement
+    expect(markerEl).not.toBeNull()
+    expect(markerEl.getAttribute('data-status')).toBe('draft')
+    const outlineEl = container.querySelector('.remarq-status-outline') as HTMLElement
+    expect(outlineEl.style.borderColor).toBe('var(--remarq-status-draft)')
+  })
 })

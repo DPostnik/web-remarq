@@ -166,3 +166,25 @@ describe('transition — reopen', () => {
     expect(result.event.type).toBe('reopened');
   });
 });
+
+describe('submit (draft → pending)', () => {
+  it('transitions draft to pending with a submitted event by designer', () => {
+    const ann = makeAnnotation('draft')
+    const { status, event } = transition(ann, 'submit')
+    expect(status).toBe('pending')
+    expect(event.type).toBe('submitted')
+    expect(event.actor).toBe('designer')
+  })
+
+  it('rejects submit from every non-draft status', () => {
+    for (const from of ['pending', 'in_progress', 'fixed_unverified', 'verified', 'dismissed'] as const) {
+      expect(() => transition(makeAnnotation(from), 'submit')).toThrow(InvalidTransitionError)
+    }
+  })
+
+  it('rejects every other action from draft', () => {
+    for (const action of ['acknowledge', 'claimFix', 'verify', 'reject', 'dismiss', 'reopen'] as const) {
+      expect(() => transition(makeAnnotation('draft'), action)).toThrow(InvalidTransitionError)
+    }
+  })
+})

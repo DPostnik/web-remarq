@@ -7,6 +7,7 @@ import type {
 } from './types'
 
 export type LifecycleAction =
+  | 'submit'
   | 'acknowledge'
   | 'claimFix'
   | 'verify'
@@ -29,6 +30,7 @@ export interface EventOpts {
 }
 
 const ACTION_TO_EVENT: Record<LifecycleAction, AnnotationEventType> = {
+  submit: 'submitted',
   acknowledge: 'acknowledged',
   claimFix: 'fix_claimed',
   verify: 'verified',
@@ -39,6 +41,7 @@ const ACTION_TO_EVENT: Record<LifecycleAction, AnnotationEventType> = {
 
 const DEFAULT_ACTOR_BY_EVENT: Record<AnnotationEventType, Actor | null> = {
   created: 'designer',
+  submitted: 'designer',
   acknowledged: 'developer',
   fix_claimed: 'agent',
   verified: 'developer',
@@ -64,6 +67,8 @@ function nextStatus(
   action: LifecycleAction,
 ): AnnotationStatus | null {
   switch (action) {
+    case 'submit':
+      return from === 'draft' ? 'pending' : null
     case 'acknowledge':
       return from === 'pending' ? 'in_progress' : null
     case 'claimFix':

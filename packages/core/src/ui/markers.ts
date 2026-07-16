@@ -8,6 +8,7 @@ interface MarkerEntry {
 }
 
 const STATUS_VAR: Record<AnnotationStatus, string> = {
+  draft: '--remarq-status-draft',
   pending: '--remarq-status-pending',
   in_progress: '--remarq-status-in-progress',
   fixed_unverified: '--remarq-status-fixed-unverified',

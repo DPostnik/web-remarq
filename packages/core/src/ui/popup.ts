@@ -26,6 +26,7 @@ interface DetailCallbacks {
 }
 
 const STATUS_LABEL: Record<AnnotationStatus, string> = {
+  draft: 'Draft',
   pending: 'Pending',
   in_progress: 'In progress',
   fixed_unverified: 'Fix claimed',
@@ -35,6 +36,7 @@ const STATUS_LABEL: Record<AnnotationStatus, string> = {
 
 const EVENT_LABEL: Record<AnnotationEvent['type'], string> = {
   created: 'Created',
+  submitted: 'Submitted',
   acknowledged: 'In progress',
   fix_claimed: 'Fix claimed',
   verified: 'Verified',
@@ -53,6 +55,8 @@ interface ActionDef {
 
 function actionsForStatus(status: AnnotationStatus): ActionDef[] {
   switch (status) {
+    case 'draft':
+      return []
     case 'pending':
       return [
         { label: 'Acknowledge', action: 'acknowledge', primary: true },

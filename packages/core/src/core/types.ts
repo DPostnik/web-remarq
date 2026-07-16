@@ -41,6 +41,7 @@ export interface ElementFingerprint {
 }
 
 export type AnnotationStatus =
+  | 'draft'
   | 'pending'
   | 'in_progress'
   | 'fixed_unverified'
@@ -51,6 +52,7 @@ export type Actor = 'designer' | 'agent' | 'developer'
 
 export type AnnotationEventType =
   | 'created'
+  | 'submitted'
   | 'acknowledged'
   | 'fix_claimed'
   | 'verified'

@@ -5,6 +5,8 @@ interface MarkerEntry {
   target: HTMLElement
   markerEl: HTMLElement
   outlineEl: HTMLElement
+  /** Position among markers sharing the same target — fans them out so none is buried. */
+  stackIndex: number
 }
 
 const STATUS_VAR: Record<AnnotationStatus, string> = {
@@ -23,6 +25,7 @@ function statusClass(status: AnnotationStatus): string {
 const MARKER_SIZE = 24
 const MARKER_OFFSET = 12
 const MARKER_MARGIN = 8
+const MARKER_STACK_GAP = 4
 const OUTLINE_WIDTH = 2
 const OUTLINE_GAP = 2
 const SELECTED_OUTLINE_WIDTH = 4
@@ -66,9 +69,14 @@ export class MarkerManager {
     outlineEl.setAttribute('data-annotation-id', annotation.id)
     outlineEl.style.borderColor = `var(${STATUS_VAR[annotation.status]})`
 
+    let stackIndex = 0
+    for (const entry of this.markers.values()) {
+      if (entry.target === target) stackIndex++
+    }
+
     this.container.appendChild(outlineEl)
     this.container.appendChild(markerEl)
-    this.markers.set(annotation.id, { annotation, target, markerEl, outlineEl })
+    this.markers.set(annotation.id, { annotation, target, markerEl, outlineEl, stackIndex })
     this.updatePosition(annotation.id)
   }
 
@@ -154,7 +162,13 @@ export class MarkerManager {
     if (!entry) return
     try {
       const rect = entry.target.getBoundingClientRect()
-      let left = window.scrollX + rect.right - MARKER_OFFSET
+      // Markers sharing a target fan out leftwards from the corner — stacked
+      // in place they fully cover each other and only the top one is clickable.
+      let left =
+        window.scrollX +
+        rect.right -
+        MARKER_OFFSET -
+        entry.stackIndex * (MARKER_SIZE + MARKER_STACK_GAP)
 
       // An element flush with the right edge would push the marker half
       // off-screen, so pin it inside the viewport. Embedded panes report a

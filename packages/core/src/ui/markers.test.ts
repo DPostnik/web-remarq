@@ -95,6 +95,32 @@ describe('MarkerManager positioning', () => {
     expect(marker.style.left).toBe('1428px')
   })
 
+  it('fans out markers sharing one target so each stays clickable', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+    markers.addMarker(makeAnnotation({ id: 'a2' }), target)
+    markers.addMarker(makeAnnotation({ id: 'a3' }), target)
+
+    const els = container.querySelectorAll<HTMLElement>('.remarq-marker')
+    // First keeps the top-right corner, each next steps left by size + gap.
+    expect(els[0].style.left).toBe('288px')
+    expect(els[1].style.left).toBe('260px')
+    expect(els[2].style.left).toBe('232px')
+    expect(els[1].style.top).toBe('188px')
+  })
+
+  it('restacks from the corner when markers are rebuilt on refresh', () => {
+    const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
+    markers.addMarker(makeAnnotation({ id: 'a1' }), target)
+    markers.addMarker(makeAnnotation({ id: 'a2' }), target)
+
+    markers.clear()
+    markers.addMarker(makeAnnotation({ id: 'a2' }), target)
+
+    const marker = container.querySelector('.remarq-marker') as HTMLElement
+    expect(marker.style.left).toBe('288px')
+  })
+
   it('exposes the marker rect so the popup can anchor to it', () => {
     const target = makeTarget({ top: 200, left: 200, right: 300, bottom: 240 })
     markers.addMarker(makeAnnotation({ id: 'a1' }), target)

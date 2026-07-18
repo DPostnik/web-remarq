@@ -109,6 +109,29 @@ Copy-paste prompt to put an agent on duty in this mode:
 > `watch_annotations` so new feedback is never missed. If a comment is
 > ambiguous or unactionable, `dismiss` it with a reason instead of guessing.
 
+## Ticket folder: `.remarq/tasks/`
+
+In local mode the server also maintains `.remarq/tasks/` - a live projection of
+actionable annotations (`pending` / `in_progress`). Each one is a `<id>.md`
+ticket: YAML frontmatter (id, route, status), the designer's comment,
+source `file:line:col` + grep search hints, and instructions to report back
+via the MCP tools. Files appear when an annotation is submitted, update on
+status changes, and disappear once it is verified or dismissed. The folder is
+server-owned - never edit or commit it (`.remarq/` self-gitignores).
+
+There is no mode switch:
+
+- **Agent on duty** (watching via `watch_annotations`): the folder just mirrors
+  state while fixes flow through the live loop.
+- **No agent running**: the folder is your backlog. Later, tell any agent:
+
+  > Work through the tickets in .remarq/tasks/, one background subagent per
+  > file, in parallel. Follow the instructions inside each file.
+
+Duplicate work is prevented by the lifecycle machine, not by locks: the first
+thing any executor does is `acknowledge` - if that fails, someone else owns
+the task and the file should be skipped.
+
 ## Cloud mode prerequisites
 
 1. A Supabase project provisioned with `@web-remarq/cloud` (≥0.2.0). Run both

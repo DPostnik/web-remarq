@@ -83,6 +83,11 @@ export class FileStorageAdapter implements StorageAdapter {
     })
   }
 
+  /** Persistent listener for every mutation (save/remove/clear). */
+  onChange(listener: () => void): void {
+    this.emitter.on('change', listener)
+  }
+
   private persist(store: AnnotationStore): void {
     const dir = dirname(this.filePath)
     mkdirSync(dir, { recursive: true })

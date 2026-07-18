@@ -100,4 +100,14 @@ describe('FileStorageAdapter', () => {
     expect(store?.annotations.map((a) => a.id).sort()).toEqual(['c1', 'c2'])
     expect(adapter.rev).toBe(2)
   })
+
+  it('onChange() fires on every mutation', async () => {
+    const adapter = new FileStorageAdapter(join(dir, '.remarq', 'annotations.json'))
+    let calls = 0
+    adapter.onChange(() => calls++)
+    await adapter.save(ann('a1'))
+    await adapter.remove('a1')
+    await adapter.clear()
+    expect(calls).toBe(3)
+  })
 })

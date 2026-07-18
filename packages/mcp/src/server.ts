@@ -1,3 +1,4 @@
+import { dirname, join } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { StorageAdapter } from 'web-remarq'
@@ -5,6 +6,7 @@ import { parseEnv, ConfigError } from './config.js'
 import { createStorage } from './storage-factory.js'
 import { FileStorageAdapter } from './file-storage-adapter.js'
 import { startHttpServer } from './http-server.js'
+import { TaskFolder } from './task-folder.js'
 import { registerTools, type WaitForChange } from './tools/index.js'
 
 const CLOUD_POLL_MS = 3000
@@ -26,6 +28,9 @@ async function main(): Promise<void> {
 
   if (config.mode === 'local') {
     const adapter = new FileStorageAdapter(config.dataFile)
+    const taskFolder = new TaskFolder(adapter, join(dirname(config.dataFile), 'tasks'))
+    adapter.onChange(() => taskFolder.schedule())
+    taskFolder.schedule() // project existing annotations on startup
     await startHttpServer(adapter, config.port)
     console.error(
       `[web-remarq-mcp] local mode — widget endpoint http://127.0.0.1:${config.port}, store ${config.dataFile}`,

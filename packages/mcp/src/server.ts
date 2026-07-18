@@ -7,6 +7,7 @@ import { createStorage } from './storage-factory.js'
 import { FileStorageAdapter } from './file-storage-adapter.js'
 import { startHttpServer } from './http-server.js'
 import { TaskFolder } from './task-folder.js'
+import { registerPrompts } from './prompts.js'
 import { registerTools, type WaitForChange } from './tools/index.js'
 
 const CLOUD_POLL_MS = 3000
@@ -28,12 +29,13 @@ async function main(): Promise<void> {
 
   if (config.mode === 'local') {
     const adapter = new FileStorageAdapter(config.dataFile)
-    const taskFolder = new TaskFolder(adapter, join(dirname(config.dataFile), 'tasks'))
+    const tasksDir = join(dirname(config.dataFile), 'tasks')
+    const taskFolder = new TaskFolder(adapter, tasksDir)
     adapter.onChange(() => taskFolder.schedule())
     taskFolder.schedule() // project existing annotations on startup
     await startHttpServer(adapter, config.port)
     console.error(
-      `[web-remarq-mcp] local mode — widget endpoint http://127.0.0.1:${config.port}, store ${config.dataFile}`,
+      `[web-remarq-mcp] local mode — widget endpoint http://127.0.0.1:${config.port}, store ${config.dataFile}, tasks ${tasksDir}`,
     )
     storage = adapter
     waitForChange = (ms) => adapter.waitForChange(ms)
@@ -49,6 +51,7 @@ async function main(): Promise<void> {
   })
 
   registerTools(server, storage, { waitForChange })
+  registerPrompts(server)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

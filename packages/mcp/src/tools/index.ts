@@ -25,7 +25,7 @@ export function registerTools(
   server.registerTool(
     'list_annotations',
     {
-      description: 'List annotations in the project with optional filters (route, status, viewport, file). Each item carries a `quality` score (clear | ambiguous | unactionable) when an AI pre-flight check ran.',
+      description: 'List annotations in the project with optional filters (route, status, viewport, file). Each item carries a `quality` score (clear | ambiguous | unactionable) when an AI pre-flight check ran. In local mode, actionable annotations (pending / in_progress) are also mirrored as ticket files in .remarq/tasks/.',
       inputSchema: listAnnotationsInputSchema.shape,
     },
     (input) => cast(handleListAnnotations(input, storage)),

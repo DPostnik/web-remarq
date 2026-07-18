@@ -97,7 +97,10 @@ loop:
   # do not wait for subagents - go straight back to watch_annotations
 ```
 
-Copy-paste prompt to put an agent on duty in this mode:
+The server ships this recipe as an MCP prompt: in clients that support them
+(Claude Code renders it as the `/mcp__web-remarq__watch` slash command) one
+command puts the agent on duty - no copy-paste needed. For clients without
+MCP-prompt support, paste this instead:
 
 > You are on annotation duty for this project. Designers drop feedback via
 > the web-remarq MCP server. Run this loop until I tell you to stop: call
@@ -118,6 +121,10 @@ source `file:line:col` + grep search hints, and instructions to report back
 via the MCP tools. Files appear when an annotation is submitted, update on
 status changes, and disappear once it is verified or dismissed. The folder is
 server-owned - never edit or commit it (`.remarq/` self-gitignores).
+
+Caveat: with a custom `REMARQ_DATA_FILE` pointing outside `.remarq/`, the
+`tasks/` folder is created next to your data file and is NOT auto-gitignored -
+add it to your `.gitignore` yourself.
 
 There is no mode switch:
 

@@ -1,6 +1,7 @@
 import * as http from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { FileStorageAdapter } from './file-storage-adapter.js'
+import { isSafeAnnotationId } from './task-folder.js'
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +58,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, storage: FileSt
 
     if (req.method === 'PUT' && annMatch) {
       const id = decodeURIComponent(annMatch[1])
+      if (!isSafeAnnotationId(id)) {
+        json(res, 400, { error: 'invalid annotation id' })
+        return
+      }
       let annotation: { id?: unknown }
       try {
         annotation = JSON.parse(await readBody(req))
@@ -75,7 +80,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, storage: FileSt
     }
 
     if (req.method === 'DELETE' && annMatch) {
-      await storage.remove(decodeURIComponent(annMatch[1]))
+      const id = decodeURIComponent(annMatch[1])
+      if (!isSafeAnnotationId(id)) {
+        json(res, 400, { error: 'invalid annotation id' })
+        return
+      }
+      await storage.remove(id)
       json(res, 200, { rev: storage.rev })
       return
     }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,7 +38,7 @@ describe('renderTaskFile', () => {
     a.fingerprint.dataTestId = 'save-btn'
     const md = renderTaskFile(a)
     expect(md).toContain('src/components/Form.tsx:24:6')
-    expect(md).toContain('Form')
+    expect(md).toContain('component `Form`')
     expect(md).toContain('data-testid="save-btn"')
     expect(md).toContain('[high]')
   })
@@ -138,6 +138,37 @@ describe('TaskFolder', () => {
     await new Promise((r) => setTimeout(r, 20))
     await folder.sync()
     expect(statSync(join(tasksDir, 'p1.md')).mtimeMs).toBe(before)
+  })
+
+  it('sync() skips an annotation with a traversal id, writes only the safe sibling, warns, and keeps converging', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await adapter.save(ann('../evil', 'pending'))
+    await adapter.save(ann('p1', 'pending'))
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    expect(readdirSync(tasksDir)).toEqual(['p1.md'])
+    expect(existsSync(join(dir, '.remarq', 'evil.md'))).toBe(false)
+    expect(existsSync(join(dir, 'evil.md'))).toBe(false)
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('unsafe id'))
+
+    // subsequent syncs keep converging instead of stalling on the bad row
+    await adapter.save(ann('p1', 'verified'))
+    await folder.sync()
+    expect(readdirSync(tasksDir)).toEqual([])
+
+    errSpy.mockRestore()
+  })
+
+  it('sync() is not blocked by a directory named *.md in the tasks dir', async () => {
+    await adapter.save(ann('p1', 'pending'))
+    mkdirSync(join(tasksDir, 'zz.md'), { recursive: true })
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    expect(readdirSync(tasksDir).sort()).toEqual(['p1.md', 'zz.md'])
+
+    await adapter.save(ann('p1', 'verified'))
+    await folder.sync()
+    expect(readdirSync(tasksDir)).toEqual(['zz.md'])
   })
 
   it('schedule() coalesces a burst into finite syncs and settles on the final state', async () => {

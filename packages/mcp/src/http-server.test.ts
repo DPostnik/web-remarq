@@ -87,4 +87,28 @@ describe('local http server', () => {
     const missing = await fetch(`${base}/nope`)
     expect(missing.status).toBe(404)
   })
+
+  it('rejects a traversal id on PUT (400, no persist) and DELETE (400), while a normal id still round-trips', async () => {
+    const put = await fetch(`${base}/annotations/..%2Fevil`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ann('../evil')),
+    })
+    expect(put.status).toBe(400)
+    expect(await put.json()).toEqual({ error: 'invalid annotation id' })
+
+    const del = await fetch(`${base}/annotations/..%2Fevil`, { method: 'DELETE' })
+    expect(del.status).toBe(400)
+    expect(await del.json()).toEqual({ error: 'invalid annotation id' })
+
+    const store = (await (await fetch(`${base}/store`)).json()).store
+    expect(store.annotations).toEqual([])
+
+    const ok = await fetch(`${base}/annotations/a1`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ann('a1')),
+    })
+    expect(ok.status).toBe(200)
+    const storeAfter = (await (await fetch(`${base}/store`)).json()).store
+    expect(storeAfter.annotations.map((a: Annotation) => a.id)).toEqual(['a1'])
+  })
 })

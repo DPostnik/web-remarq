@@ -9,6 +9,17 @@ function yamlString(value: string): string {
 }
 
 /**
+ * Annotation ids become `<id>.md` filenames under a server-owned directory.
+ * Ids normally come from core (filename-safe by construction) but the widget
+ * HTTP endpoint accepts arbitrary strings, so both the file projection and
+ * the HTTP layer must reject anything that isn't a plain filename segment
+ * (no path separators, no leading dot, no traversal).
+ */
+export function isSafeAnnotationId(id: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)
+}
+
+/**
  * Renders one annotation as a ticket file for .remarq/tasks/.
  * Deterministic: TaskFolder diffs the output against the file on disk
  * to skip no-op rewrites.
@@ -88,16 +99,32 @@ export class TaskFolder {
   async sync(): Promise<void> {
     const store = await this.storage.load()
     const actionable = actionableOnly(store?.annotations ?? [])
-    const desired = new Map(actionable.map((a) => [`${a.id}.md`, renderTaskFile(a)]))
+    const desired = new Map<string, string>()
+    for (const a of actionable) {
+      if (!isSafeAnnotationId(a.id)) {
+        console.error(`[web-remarq-mcp] skipping annotation with unsafe id: ${JSON.stringify(a.id)}`)
+        continue
+      }
+      desired.set(`${a.id}.md`, renderTaskFile(a))
+    }
 
     mkdirSync(this.dir, { recursive: true })
-    for (const name of readdirSync(this.dir)) {
-      if (name.endsWith('.md') && !desired.has(name)) unlinkSync(join(this.dir, name))
+    for (const entry of readdirSync(this.dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.md') || desired.has(entry.name)) continue
+      try {
+        unlinkSync(join(this.dir, entry.name))
+      } catch (err) {
+        console.error(`[web-remarq-mcp] failed to remove stale task file ${entry.name}:`, err)
+      }
     }
     for (const [name, content] of desired) {
-      const path = join(this.dir, name)
-      if (existsSync(path) && readFileSync(path, 'utf8') === content) continue
-      writeFileSync(path, content)
+      try {
+        const path = join(this.dir, name)
+        if (existsSync(path) && readFileSync(path, 'utf8') === content) continue
+        writeFileSync(path, content)
+      } catch (err) {
+        console.error(`[web-remarq-mcp] failed to write task file ${name}:`, err)
+      }
     }
   }
 

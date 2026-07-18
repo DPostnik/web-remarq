@@ -1,5 +1,7 @@
-import type { Annotation } from 'web-remarq'
-import { generateAgentExport } from 'web-remarq/core'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { Annotation, StorageAdapter } from 'web-remarq'
+import { actionableOnly, generateAgentExport } from 'web-remarq/core'
 
 /** Double-quoted YAML scalar; JSON string escaping is valid YAML. */
 function yamlString(value: string): string {
@@ -66,4 +68,56 @@ export function renderTaskFile(annotation: Annotation): string {
   lines.push('')
 
   return lines.join('\n')
+}
+
+/**
+ * Live projection of actionable annotations (pending/in_progress) into a
+ * folder of <id>.md ticket files. The folder is server-owned: every *.md in
+ * it is managed - stale ones are deleted on sync. Non-md files are ignored.
+ */
+export class TaskFolder {
+  private syncing = false
+  private dirty = false
+
+  constructor(
+    private storage: Pick<StorageAdapter, 'load'>,
+    private dir: string,
+  ) {}
+
+  /** Full idempotent resync: folder contents converge to the actionable set. */
+  async sync(): Promise<void> {
+    const store = await this.storage.load()
+    const actionable = actionableOnly(store?.annotations ?? [])
+    const desired = new Map(actionable.map((a) => [`${a.id}.md`, renderTaskFile(a)]))
+
+    mkdirSync(this.dir, { recursive: true })
+    for (const name of readdirSync(this.dir)) {
+      if (name.endsWith('.md') && !desired.has(name)) unlinkSync(join(this.dir, name))
+    }
+    for (const [name, content] of desired) {
+      const path = join(this.dir, name)
+      if (existsSync(path) && readFileSync(path, 'utf8') === content) continue
+      writeFileSync(path, content)
+    }
+  }
+
+  /** Coalesces change bursts: at most one sync in flight, one more queued. Never throws. */
+  schedule(): void {
+    this.dirty = true
+    void this.run()
+  }
+
+  private async run(): Promise<void> {
+    if (this.syncing) return
+    this.syncing = true
+    while (this.dirty) {
+      this.dirty = false
+      try {
+        await this.sync()
+      } catch (err) {
+        console.error('[web-remarq-mcp] task folder sync failed:', err)
+      }
+    }
+    this.syncing = false
+  }
 }

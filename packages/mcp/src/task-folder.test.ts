@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Annotation } from 'web-remarq'
-import { renderTaskFile } from './task-folder'
+import { renderTaskFile, TaskFolder } from './task-folder'
+import { FileStorageAdapter } from './file-storage-adapter'
 
 export function ann(id: string, status: Annotation['status'] = 'pending', extra: Partial<Annotation> = {}): Annotation {
   return {
@@ -67,5 +71,97 @@ describe('renderTaskFile', () => {
 
   it('is deterministic for the same annotation', () => {
     expect(renderTaskFile(ann('a1'))).toBe(renderTaskFile(ann('a1')))
+  })
+})
+
+describe('TaskFolder', () => {
+  let dir: string
+  let tasksDir: string
+  let adapter: FileStorageAdapter
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'remarq-tasks-'))
+    tasksDir = join(dir, '.remarq', 'tasks')
+    adapter = new FileStorageAdapter(join(dir, '.remarq', 'annotations.json'))
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('sync() writes one <id>.md per actionable annotation only', async () => {
+    await adapter.save(ann('p1', 'pending'))
+    await adapter.save(ann('w2', 'in_progress'))
+    await adapter.save(ann('d3', 'draft'))
+    await adapter.save(ann('f4', 'fixed_unverified'))
+    await adapter.save(ann('v5', 'verified'))
+    await adapter.save(ann('x6', 'dismissed'))
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    expect(readdirSync(tasksDir).sort()).toEqual(['p1.md', 'w2.md'])
+    expect(readFileSync(join(tasksDir, 'p1.md'), 'utf8')).toBe(renderTaskFile(ann('p1', 'pending')))
+  })
+
+  it('sync() deletes files whose annotation left the actionable states', async () => {
+    await adapter.save(ann('p1', 'pending'))
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    expect(readdirSync(tasksDir)).toEqual(['p1.md'])
+    await adapter.save(ann('p1', 'verified'))
+    await folder.sync()
+    expect(readdirSync(tasksDir)).toEqual([])
+  })
+
+  it('sync() updates the file when the annotation changes (status pending -> in_progress)', async () => {
+    await adapter.save(ann('p1', 'pending'))
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    await adapter.save(ann('p1', 'in_progress'))
+    await folder.sync()
+    expect(readFileSync(join(tasksDir, 'p1.md'), 'utf8')).toContain('status: in_progress')
+  })
+
+  it('sync() removes stale .md files but leaves non-md files alone', async () => {
+    mkdirSync(tasksDir, { recursive: true })
+    writeFileSync(join(tasksDir, 'stale.md'), 'orphan')
+    writeFileSync(join(tasksDir, 'notes.txt'), 'keep me')
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    expect(readdirSync(tasksDir)).toEqual(['notes.txt'])
+  })
+
+  it('sync() does not rewrite an unchanged file (mtime stable)', async () => {
+    await adapter.save(ann('p1', 'pending'))
+    const folder = new TaskFolder(adapter, tasksDir)
+    await folder.sync()
+    const before = statSync(join(tasksDir, 'p1.md')).mtimeMs
+    await new Promise((r) => setTimeout(r, 20))
+    await folder.sync()
+    expect(statSync(join(tasksDir, 'p1.md')).mtimeMs).toBe(before)
+  })
+
+  it('schedule() coalesces a burst into finite syncs and settles on the final state', async () => {
+    const folder = new TaskFolder(adapter, tasksDir)
+    await adapter.save(ann('p1', 'pending'))
+    folder.schedule()
+    folder.schedule()
+    folder.schedule()
+    // let the coalescing loop drain
+    await vi.waitFor(() => {
+      expect(readdirSync(tasksDir)).toEqual(['p1.md'])
+    })
+  })
+
+  it('schedule() survives a storage error and logs to stderr', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const broken = new TaskFolder(
+      { load: () => Promise.reject(new Error('boom')), save: async () => {}, remove: async () => {}, clear: async () => {} } as unknown as FileStorageAdapter,
+      tasksDir,
+    )
+    broken.schedule()
+    await vi.waitFor(() => {
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('task folder'), expect.any(Error))
+    })
+    errSpy.mockRestore()
   })
 })

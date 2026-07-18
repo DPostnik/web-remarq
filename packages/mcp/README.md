@@ -78,6 +78,37 @@ loop:
     ... work the fix ...
 ```
 
+### Parallel mode (dispatcher + background subagents)
+
+The serial loop above blocks on each fix: feedback that arrives while the
+agent is editing waits its turn. If the client can run background subagents
+(Claude Code's Task tool, for example), run the main agent as a dispatcher
+instead - acknowledge, hand off, return to watching:
+
+```
+loop:
+  result = watch_annotations({ timeoutSeconds: 60 })
+  if result.timedOut: continue
+  for each annotation in result.annotations:
+    acknowledge({ id: annotation.id })   # BEFORE dispatch - closes the
+                                         # redelivery window while the
+                                         # subagent spins up
+    dispatch background subagent:        # fix the files, then claim_fix
+  # do not wait for subagents - go straight back to watch_annotations
+```
+
+Copy-paste prompt to put an agent on duty in this mode:
+
+> You are on annotation duty for this project. Designers drop feedback via
+> the web-remarq MCP server. Run this loop until I tell you to stop: call
+> `watch_annotations` (timeoutSeconds: 60); if it times out, call it again.
+> For EACH annotation it returns, call `acknowledge` with its id first, then
+> dispatch a background subagent that applies the fix to the project files
+> and calls `claim_fix` when done. Do not fix anything yourself in the main
+> loop and do not wait for subagents - go straight back to
+> `watch_annotations` so new feedback is never missed. If a comment is
+> ambiguous or unactionable, `dismiss` it with a reason instead of guessing.
+
 ## Cloud mode prerequisites
 
 1. A Supabase project provisioned with `@web-remarq/cloud` (≥0.2.0). Run both

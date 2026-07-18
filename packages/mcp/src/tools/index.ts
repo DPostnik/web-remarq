@@ -71,7 +71,7 @@ export function registerTools(
     'watch_annotations',
     {
       description:
-        'Wait for pending annotations (long-poll). Returns immediately if pending annotations exist; otherwise blocks until one appears or timeoutSeconds (default 25) elapses, then returns {"annotations": [], "timedOut": true}. Call this in a loop to continuously pick up designer feedback. Acknowledge each annotation you start working on so it stops being delivered.',
+        'Wait for pending annotations (long-poll). Returns immediately if pending annotations exist; otherwise blocks until one appears or timeoutSeconds (default 25) elapses, then returns {"annotations": [], "timedOut": true}. Call this in a loop to continuously pick up designer feedback. If your environment can run background subagents (e.g. a Task tool), act as a dispatcher: for each returned annotation call acknowledge first (so it stops being redelivered), hand the fix to a background subagent that will claim_fix when done, and return to watch_annotations immediately instead of fixing inline - new feedback must never wait on a fix in progress. Without subagents, acknowledge each annotation before you start fixing it.',
       inputSchema: watchAnnotationsInputSchema.shape,
     },
     (input) => cast(handleWatchAnnotations(input, storage, opts.waitForChange)),

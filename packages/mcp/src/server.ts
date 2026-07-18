@@ -47,7 +47,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: 'web-remarq',
-    version: '0.2.0',
+    version: '0.4.0',
   })
 
   registerTools(server, storage, { waitForChange })

@@ -1,0 +1,79 @@
+import { describe, it, expect, afterEach } from 'vitest'
+import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { detect } from './detect'
+
+const source = (name: string) => resolve(__dirname, '../fixtures', name)
+
+const temps: string[] = []
+afterEach(() => {
+  while (temps.length) rmSync(temps.pop()!, { recursive: true, force: true })
+})
+
+/**
+ * Copy a fixture out of the repository before detecting.
+ * Fixtures live inside web-remarq, which has a .git directory - detecting them
+ * in place would make findRepoRoot walk up to our own repo root and read our
+ * lockfile instead of the fixture's.
+ */
+function fixture(name: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'remarq-fx-'))
+  temps.push(dir)
+  cpSync(source(name), dir, { recursive: true })
+  return dir
+}
+
+describe('detect - single repo', () => {
+  it('detects vue + vite with npm', () => {
+    const r = detect(fixture('vue-vite'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('vue')
+    expect(r.detection.bundler).toBe('vite')
+    expect(r.detection.packageManager).toBe('npm')
+    expect(r.detection.configFile).toBe('vite.config.ts')
+    expect(r.detection.entry).toBe('src/main.ts')
+    expect(r.detection.plugin).toBe('@web-remarq/unplugin')
+    expect(r.detection.includeGlob).toEqual(['src/**/*.vue'])
+  })
+
+  it('detects react + vite with pnpm', () => {
+    const r = detect(fixture('react-vite'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('react')
+    expect(r.detection.packageManager).toBe('pnpm')
+    expect(r.detection.entry).toBe('src/main.tsx')
+    expect(r.detection.includeGlob).toEqual(['src/**/*.{jsx,tsx}'])
+  })
+
+  it('detects next with yarn', () => {
+    const r = detect(fixture('next-app'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('next')
+    expect(r.detection.bundler).toBe('next')
+    expect(r.detection.packageManager).toBe('yarn')
+    expect(r.detection.configFile).toBe('next.config.ts')
+    expect(r.detection.plugin).toBe('@web-remarq/next')
+  })
+
+  it('detects plain html with no bundler', () => {
+    const r = detect(fixture('plain-html'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('plain-html')
+    expect(r.detection.bundler).toBe(null)
+    expect(r.detection.plugin).toBe(null)
+    expect(r.detection.entry).toBe('index.html')
+  })
+
+  it('stops on an unknown stack instead of guessing', () => {
+    const r = detect(fixture('unknown'))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain('No supported stack')
+    expect(r.hint.length).toBeGreaterThan(0)
+  })
+})

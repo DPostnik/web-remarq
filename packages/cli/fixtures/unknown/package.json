@@ -1,0 +1,1 @@
+{ "name": "some-lib", "private": true, "devDependencies": { "rollup": "^4.0.0" } }

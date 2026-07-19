@@ -9,6 +9,7 @@ export default defineConfig({
       'packages/next/vitest.config.ts',
       'packages/cloud/vitest.config.ts',
       'packages/mcp/vitest.config.ts',
+      'packages/cli/vitest.config.ts',
     ],
   },
 });

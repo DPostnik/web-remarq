@@ -1,0 +1,52 @@
+{
+  "name": "@web-remarq/cli",
+  "version": "0.1.0",
+  "description": "Installer and doctor for web-remarq - sets up the widget, build plugin and MCP server in your project",
+  "type": "module",
+  "main": "dist/cli.js",
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "bin": {
+    "web-remarq-cli": "./bin/web-remarq-cli.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DPostnik/web-remarq.git"
+  },
+  "homepage": "https://github.com/DPostnik/web-remarq",
+  "bugs": {
+    "url": "https://github.com/DPostnik/web-remarq/issues"
+  },
+  "keywords": [
+    "web-remarq",
+    "installer",
+    "cli",
+    "doctor",
+    "claude-code",
+    "mcp"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
+  }
+}

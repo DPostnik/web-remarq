@@ -77,3 +77,40 @@ describe('detect - single repo', () => {
     expect(r.hint.length).toBeGreaterThan(0)
   })
 })
+
+describe('detect - monorepo', () => {
+  it('picks the only app silently and keeps repoRoot separate from appDir', () => {
+    // One fixture() call - each call creates its own temp copy.
+    const root = fixture('mono-npm-single')
+    const r = detect(root)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('vue')
+    expect(r.detection.appDir).toBe(join(root, 'packages/web'))
+    expect(r.detection.repoRoot).toBe(root)
+    expect(r.detection.packageManager).toBe('npm')
+  })
+
+  it('refuses to guess between several apps and lists candidates', () => {
+    const r = detect(fixture('mono-pnpm-multi'))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.candidates).toEqual(['apps/admin', 'apps/web'])
+    expect(r.hint).toContain('--app')
+  })
+
+  it('honours --app to disambiguate', () => {
+    const r = detect(fixture('mono-pnpm-multi'), { app: 'apps/admin' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('react')
+    expect(r.detection.packageManager).toBe('pnpm')
+  })
+
+  it('stops when no workspace package has a bundler', () => {
+    const r = detect(fixture('mono-no-app'))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain('No supported stack')
+  })
+})

@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
 import { findRepoRoot, firstExisting, readJson } from './fs-utils'
 import type { Bundler, Detection, DetectResult, Framework, PackageManager, PluginName } from './types'
 
@@ -92,26 +92,88 @@ function classify(appDir: string): Omit<Detection, 'repoRoot' | 'appDir' | 'pack
   return null
 }
 
-export function detect(cwd: string, _opts?: { app?: string }): DetectResult {
+/** Read workspace globs from package.json workspaces or pnpm-workspace.yaml. */
+export function readWorkspaceGlobs(repoRoot: string): string[] {
+  const pkg = readJson<PackageJson>(join(repoRoot, 'package.json'))
+  const ws = pkg?.workspaces
+  if (Array.isArray(ws)) return ws
+  if (ws && Array.isArray(ws.packages)) return ws.packages
+
+  const yamlPath = join(repoRoot, 'pnpm-workspace.yaml')
+  if (!existsSync(yamlPath)) return []
+  // Minimal parse: collect `- 'glob'` list items. Avoids a YAML dependency.
+  return readFileSync(yamlPath, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('- '))
+    .map((line) => line.slice(2).trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean)
+}
+
+/** Expand `dir/*` style globs one level deep. Only the trailing `*` form is supported. */
+function expandGlob(repoRoot: string, glob: string): string[] {
+  if (!glob.endsWith('/*')) {
+    return existsSync(join(repoRoot, glob)) ? [glob] : []
+  }
+  const parent = glob.slice(0, -2)
+  const parentPath = join(repoRoot, parent)
+  if (!existsSync(parentPath)) return []
+  return readdirSync(parentPath, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => `${parent}/${e.name}`)
+}
+
+/** Workspace packages that carry a bundler dependency, as repoRoot-relative paths, sorted. */
+export function findAppCandidates(repoRoot: string): string[] {
+  return readWorkspaceGlobs(repoRoot)
+    .flatMap((glob) => expandGlob(repoRoot, glob))
+    .filter((rel) => hasBundler(readJson<PackageJson>(join(repoRoot, rel, 'package.json'))))
+    .sort()
+}
+
+export function detect(cwd: string, opts?: { app?: string }): DetectResult {
   const dir = resolve(cwd)
   const repoRoot = findRepoRoot(dir)
-  const classified = classify(dir)
+  const packageManager = detectPackageManager(repoRoot)
+
+  const explicit = opts?.app ? resolve(repoRoot, opts.app) : null
+  const appDir = explicit ?? dir
+
+  let classified = classify(appDir)
+
+  // Nothing here, and we were not pointed at a specific app: look through the workspace.
+  if (!classified && !explicit) {
+    const candidates = findAppCandidates(repoRoot)
+    if (candidates.length === 1) {
+      const resolved = join(repoRoot, candidates[0])
+      const fromWorkspace = classify(resolved)
+      if (fromWorkspace) {
+        return {
+          ok: true,
+          detection: { ...fromWorkspace, repoRoot, appDir: resolved, packageManager },
+        }
+      }
+    }
+    if (candidates.length > 1) {
+      return {
+        ok: false,
+        reason: `Found ${candidates.length} apps in this workspace`,
+        hint: `Pick one with --app, for example: npx @web-remarq/cli init --app ${candidates[0]}`,
+        candidates,
+      }
+    }
+  }
 
   if (!classified) {
     return {
       ok: false,
-      reason: `No supported stack found in ${dir}`,
+      reason: `No supported stack found in ${relative(repoRoot, appDir) || appDir}`,
       hint: 'web-remarq supports Next.js, Vite (Vue/React/vanilla) and plain HTML pages. Run this from your app directory, or follow the manual setup: https://github.com/DPostnik/web-remarq#quick-start',
     }
   }
 
   return {
     ok: true,
-    detection: {
-      ...classified,
-      repoRoot,
-      appDir: dir,
-      packageManager: detectPackageManager(repoRoot),
-    },
+    detection: { ...classified, repoRoot, appDir, packageManager },
   }
 }

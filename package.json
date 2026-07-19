@@ -8,7 +8,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "e2e:install": "node scripts/e2e-install.mjs"
   },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",

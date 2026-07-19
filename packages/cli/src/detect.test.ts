@@ -145,4 +145,28 @@ describe('detect - monorepo', () => {
     expect(r.detection.appDir).toContain('apps/web')
     expect(r.detection.appDir).not.toContain('decoy')
   })
+
+  it('resolves an app nested two levels deep through a packages/** glob', () => {
+    const r = detect(fixture('mono-npm-doublestar-nested'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('vue')
+    expect(r.detection.appDir).toContain(join('packages', 'scope', 'web'))
+  })
+
+  it('reports a recognized-but-empty glob as unsupported instead of vanishing', () => {
+    const r = detect(fixture('mono-empty-glob'))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.unsupportedGlobs).toEqual(['packages/*'])
+    expect(r.hint).toContain('--app')
+  })
+
+  it('resolves an inline-array pnpm-workspace.yaml (packages: [\'apps/*\'])', () => {
+    const r = detect(fixture('mono-pnpm-inline-array'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('react')
+    expect(r.detection.appDir).toContain(join('apps', 'web'))
+  })
 })

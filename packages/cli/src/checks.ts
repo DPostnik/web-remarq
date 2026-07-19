@@ -202,12 +202,21 @@ export async function checkBuildPlugin(
     }
   }
   const configContent = readFileSync(join(d.appDir, d.configFile), 'utf8')
-  if (!configContent.includes('@web-remarq/unplugin')) {
+  // Case-insensitive on "remarq" rather than the exact package specifier, so an
+  // aliased import (`import remarq from '@web-remarq/unplugin/vite'`), a renamed
+  // helper (`remarqPreset()`), or any other literal mention of the plugin still
+  // matches. This still cannot see a plugin registered through a config imported
+  // from elsewhere - this file only reads d.configFile - so the hint on failure
+  // says so explicitly instead of asserting a negative it cannot actually prove.
+  if (!/remarq/i.test(configContent)) {
     return {
       id: 'build-plugin',
       status: 'fail',
       detail: `@web-remarq/unplugin is not registered in ${d.configFile}`,
-      hint: `Add to ${d.configFile}: import remarq from '@web-remarq/unplugin/vite', then include remarq() in the plugins array.`,
+      hint:
+        `Add to ${d.configFile}: import remarq from '@web-remarq/unplugin/vite', then include remarq() in the plugins array. ` +
+        `This check only reads ${d.configFile} itself - if you register the plugin through a shared or imported build config, ` +
+        `this failure is a false positive; verify manually (e.g. build once and check the output for data-remarq-source) and disregard it.`,
     }
   }
 

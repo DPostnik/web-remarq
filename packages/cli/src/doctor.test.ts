@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { cpSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import * as http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -177,6 +177,20 @@ describe('checkBuildPlugin', () => {
     const result = await checkBuildPlugin(detectionFor())
     expect(result.status).toBe('fail')
     expect(result.hint).toContain('vite.config.ts')
+    // The check only reads this one file - it cannot see a plugin registered via an
+    // imported or shared config, and the hint must say so, not just assert the negative.
+    expect(result.hint).toContain('shared')
+  })
+
+  it('does not report a false failure when the plugin is registered via an aliased, non-literal import', async () => {
+    // vite.config.ts here only says `import { remarqPreset } from './shared/build-config'`
+    // and `remarqPreset()` - the literal string '@web-remarq/unplugin' never appears in
+    // the config file itself, only in the shared preset file it imports.
+    const sharedPresetDir = fixture('vue-vite-wired-shared-preset')
+    const result = await checkBuildPlugin(
+      detectionFor({ repoRoot: sharedPresetDir, appDir: sharedPresetDir }),
+    )
+    expect(result.detail).not.toContain('not registered')
   })
 
   it('fails with an accurate message when configFile is null', async () => {
@@ -209,15 +223,12 @@ describe('checkBuildPlugin', () => {
   // The default `loadTransform` resolves @web-remarq/unplugin/transform exactly as
   // the user's app would (npm workspaces symlink packages/unplugin into the repo
   // root node_modules), which requires packages/unplugin to have been built first.
-  // dist/ is gitignored, so this is skipped - not silently passed - when absent.
-  const unpluginTransformBuilt = existsSync(resolve(__dirname, '../../unplugin/dist/transform.js'))
-
-  it.skipIf(!unpluginTransformBuilt)(
-    'reaches ok and stamps data-remarq-source when the plugin is registered and the transform succeeds (requires: npm run build --workspace=packages/unplugin)',
-    async () => {
-      const result = await checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }))
-      expect(result.status).toBe('ok')
-      expect(result.detail).toContain('data-remarq-source')
-    },
-  )
+  // dist/ is gitignored - packages/cli/vitest.global-setup.ts builds it before this
+  // project's tests run, so this genuinely executes on a plain `npm test` instead
+  // of silently skipping.
+  it('reaches ok and stamps data-remarq-source when the plugin is registered and the transform succeeds', async () => {
+    const result = await checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }))
+    expect(result.status).toBe('ok')
+    expect(result.detail).toContain('data-remarq-source')
+  })
 })

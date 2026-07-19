@@ -112,17 +112,29 @@ export function readWorkspaceGlobs(repoRoot: string): string[] {
   // Minimal parse: collect `- 'glob'` list items, scoped to the `packages:` top-level
   // key only. Avoids a YAML dependency. Other top-level keys (catalog, overrides,
   // onlyBuiltDependencies, ...) also carry lists and must not leak into this result.
+  // The `packages:` key also has a legal inline-array form - `packages: ['a', "b"]` -
+  // which never opens the block form, so it is parsed inline on the same line.
   const globs: string[] = []
   let inPackages = false
   for (const rawLine of readFileSync(yamlPath, 'utf8').split('\n')) {
     if (rawLine.trim() === '') continue
-    const isTopLevelKey = /^\S/.test(rawLine) && rawLine.trimEnd().endsWith(':')
+    const trimmed = rawLine.trim()
+    const isTopLevelKey = /^\S/.test(rawLine) && trimmed.endsWith(':')
     if (isTopLevelKey) {
-      inPackages = rawLine.trim() === 'packages:'
+      inPackages = trimmed === 'packages:'
+      continue
+    }
+    const inlineMatch = /^\S/.test(rawLine) ? trimmed.match(/^packages:\s*\[(.*)\]\s*$/) : null
+    if (inlineMatch) {
+      inPackages = false
+      for (const entry of inlineMatch[1].split(',')) {
+        const value = entry.trim().replace(/^['"]|['"]$/g, '')
+        if (value) globs.push(value)
+      }
       continue
     }
     if (!inPackages) continue
-    const line = rawLine.trim()
+    const line = trimmed
     if (!line.startsWith('- ')) continue
     const value = line.slice(2).trim().replace(/^['"]|['"]$/g, '')
     if (value) globs.push(value)
@@ -139,25 +151,58 @@ function listSubdirs(repoRoot: string, parent: string): string[] {
     .map((e) => `${parent}/${e.name}`)
 }
 
-// Expand one workspace glob entry one level deep. Handles the trailing "dir star"
-// form, a trailing slash after it, and a double-star form (treated the same -
-// only one level deep is supported). Negations ("not glob") are skipped silently,
-// as that is what a negation means. A plain path with no wildcard is checked
-// for existence. Anything else is a glob form we do not understand, and is
-// reported back via `unsupported` instead of silently contributing nothing.
+const MAX_GLOB_DEPTH = 4
+
+/**
+ * Recursively find every directory under `parent` (repoRoot-relative) that contains
+ * a package.json, bounded to MAX_GLOB_DEPTH levels. Used for a `/**` glob, where the
+ * app package may be nested under one or more grouping directories (e.g. `packages/**`
+ * matching `packages/scope/app`). Stops descending once a package.json is found -
+ * workspace packages are not expected to nest further packages beneath them.
+ */
+function listPackageDirsDeep(repoRoot: string, parent: string, depth: number): string[] {
+  const parentPath = join(repoRoot, parent)
+  if (depth > MAX_GLOB_DEPTH || !existsSync(parentPath)) return []
+  const found: string[] = []
+  for (const entry of readdirSync(parentPath, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const rel = `${parent}/${entry.name}`
+    if (existsSync(join(repoRoot, rel, 'package.json'))) {
+      found.push(rel)
+    } else {
+      found.push(...listPackageDirsDeep(repoRoot, rel, depth + 1))
+    }
+  }
+  return found
+}
+
+// Expand one workspace glob entry. Handles the trailing "dir star" form (one level
+// deep), a trailing slash after it, and a double-star form (walked recursively, see
+// listPackageDirsDeep). Negations ("not glob") are skipped silently, as that is what
+// a negation means. A plain path with no wildcard is checked for existence. Anything
+// else is a glob form we do not understand.
+//
+// A glob form that resolves to zero paths is reported back via `unsupported` unless
+// it is a plain path that does exist (a legitimate, understood, single-package entry) -
+// zero candidates from a pattern we claim to understand is exactly the silent failure
+// this mechanism exists to prevent, whether the pattern is unrecognized syntax or a
+// recognized pattern that matched nothing (typo'd directory, not-yet-created workspace).
 function expandGlob(repoRoot: string, glob: string): { paths: string[]; unsupported: boolean } {
   if (glob.startsWith('!')) return { paths: [], unsupported: false }
 
   const normalized = glob.endsWith('/') ? glob.slice(0, -1) : glob
 
   if (normalized.endsWith('/**')) {
-    return { paths: listSubdirs(repoRoot, normalized.slice(0, -3)), unsupported: false }
+    const paths = listPackageDirsDeep(repoRoot, normalized.slice(0, -3), 1)
+    return { paths, unsupported: paths.length === 0 }
   }
   if (normalized.endsWith('/*')) {
-    return { paths: listSubdirs(repoRoot, normalized.slice(0, -2)), unsupported: false }
+    const paths = listSubdirs(repoRoot, normalized.slice(0, -2))
+    return { paths, unsupported: paths.length === 0 }
   }
   if (!normalized.includes('*')) {
-    return { paths: existsSync(join(repoRoot, normalized)) ? [normalized] : [], unsupported: false }
+    const exists = existsSync(join(repoRoot, normalized))
+    return { paths: exists ? [normalized] : [], unsupported: !exists }
   }
   return { paths: [], unsupported: true }
 }

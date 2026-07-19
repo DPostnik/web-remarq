@@ -1,0 +1,6 @@
+{
+  "name": "web",
+  "private": true,
+  "dependencies": { "vue": "^3.5.0" },
+  "devDependencies": { "vite": "^7.0.0" }
+}

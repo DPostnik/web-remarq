@@ -25,14 +25,14 @@ describe('buildInstallCommand', () => {
   it('targets the workspace with npm -w', () => {
     const d = { ...base, appDir: '/repo/packages/web' }
     expect(buildInstallCommand(d, pkgs)).toBe(
-      'npm install -D -w "packages/web" web-remarq @web-remarq/unplugin',
+      "npm install -D -w 'packages/web' web-remarq @web-remarq/unplugin",
     )
   })
 
   it('targets the workspace with pnpm --filter by directory', () => {
     const d = { ...base, packageManager: 'pnpm' as const, appDir: '/repo/apps/web' }
     expect(buildInstallCommand(d, pkgs)).toBe(
-      'pnpm add -D --filter "./apps/web" web-remarq @web-remarq/unplugin',
+      "pnpm add -D --filter './apps/web' web-remarq @web-remarq/unplugin",
     )
   })
 
@@ -43,7 +43,9 @@ describe('buildInstallCommand', () => {
       appDir: '/repo/apps/web',
       appPackageName: 'web',
     }
-    expect(buildInstallCommand(d, pkgs)).toBe('yarn workspace web add -D web-remarq @web-remarq/unplugin')
+    expect(buildInstallCommand(d, pkgs)).toBe(
+      "yarn workspace 'web' add -D web-remarq @web-remarq/unplugin",
+    )
   })
 
   it('falls back to yarn --cwd when the package name is unknown', () => {
@@ -54,7 +56,7 @@ describe('buildInstallCommand', () => {
       appPackageName: null,
     }
     expect(buildInstallCommand(d, pkgs)).toBe(
-      'yarn --cwd "./apps/web" add -D web-remarq @web-remarq/unplugin',
+      "yarn --cwd './apps/web' add -D web-remarq @web-remarq/unplugin",
     )
   })
 
@@ -66,14 +68,33 @@ describe('buildInstallCommand', () => {
   it('targets the workspace with bun --cwd', () => {
     const d = { ...base, packageManager: 'bun' as const, appDir: '/repo/apps/web' }
     expect(buildInstallCommand(d, pkgs)).toBe(
-      'bun add -d --cwd "apps/web" web-remarq @web-remarq/unplugin',
+      "bun add -d --cwd 'apps/web' web-remarq @web-remarq/unplugin",
     )
   })
 
   it('quotes a workspace path that contains a space', () => {
     const d = { ...base, appDir: '/repo/packages/my app' }
     expect(buildInstallCommand(d, pkgs)).toBe(
-      'npm install -D -w "packages/my app" web-remarq @web-remarq/unplugin',
+      "npm install -D -w 'packages/my app' web-remarq @web-remarq/unplugin",
+    )
+  })
+
+  it('escapes a workspace path containing a literal single quote', () => {
+    const d = { ...base, appDir: "/repo/packages/o'brien" }
+    expect(buildInstallCommand(d, pkgs)).toBe(
+      "npm install -D -w 'packages/o'\\''brien' web-remarq @web-remarq/unplugin",
+    )
+  })
+
+  it('escapes an appPackageName containing a literal single quote in the yarn branch', () => {
+    const d = {
+      ...base,
+      packageManager: 'yarn' as const,
+      appDir: '/repo/apps/web',
+      appPackageName: "o'brien",
+    }
+    expect(buildInstallCommand(d, pkgs)).toBe(
+      "yarn workspace 'o'\\''brien' add -D web-remarq @web-remarq/unplugin",
     )
   })
 })

@@ -16,10 +16,15 @@ export type DoctorReport =
   | { ok: false; reason: string; hint: string; candidates?: string[] }
   | { ok: true; detected: Detection; checks: CheckResult[] }
 
-/** Live probe of the local MCP server. Injected in tests so they never open sockets. */
+/**
+ * Live probe of the local MCP server. Injected in tests so they never open sockets.
+ * Hits GET /store - the same widget-facing endpoint HttpStorageAdapter itself polls
+ * (see packages/mcp/src/http-server.ts and packages/core/src/core/http-storage-adapter.ts).
+ * There is no /annotations GET route; probing it always 404s.
+ */
 export async function probeMcpServer(port: number): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/annotations`, {
+    const res = await fetch(`http://127.0.0.1:${port}/store`, {
       signal: AbortSignal.timeout(1500),
     })
     return res.ok

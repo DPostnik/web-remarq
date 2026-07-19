@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { extname, join } from 'node:path'
 import { readJson } from './fs-utils'
 import type { CheckResult, Detection } from './types'
 
@@ -63,13 +63,113 @@ function sampleSourceFile(d: Detection): string | null {
   return null
 }
 
+/** Extensions a glob pattern's final segment plausibly matches, e.g. `src/foo/*.{jsx,tsx}` -> ['jsx', 'tsx']. */
+function globFileExtensions(glob: string): string[] {
+  const brace = glob.match(/\{([^}]+)\}/)
+  if (brace) return brace[1].split(',').map((ext) => ext.trim())
+  const single = glob.match(/\.([A-Za-z0-9]+)$/)
+  return single ? [single[1]] : []
+}
+
+/**
+ * Simple extension-level check: does any pattern in `globs` plausibly match `filePath`?
+ * Not a general glob engine - just enough to catch a mistyped include option
+ * (e.g. `src/**\/*.tsx` configured while the app only has `.vue` files).
+ */
+function includeGlobMatchesSample(globs: string[], filePath: string): boolean {
+  const ext = extname(filePath).replace(/^\./, '')
+  if (!ext) return true
+  return globs.some((glob) => globFileExtensions(glob).includes(ext))
+}
+
+export type ResolvedTransformModule =
+  | { ok: true; transformJSX: unknown; transformVueSFC: unknown }
+  | { ok: false; result: CheckResult }
+
+/**
+ * Resolves and imports @web-remarq/unplugin's transform entry point exactly as the
+ * user's app would (same require.resolve base as checkPackages). Distinguishes the
+ * three ways this can fail so the reported message is never false:
+ * - genuinely not installed
+ * - installed but never built (dist/transform.* missing)
+ * - installed at a version too old to export ./transform
+ */
+export async function resolveTransformModule(appDir: string): Promise<ResolvedTransformModule> {
+  const require = createRequire(join(appDir, 'noop.js'))
+
+  try {
+    require.resolve('@web-remarq/unplugin')
+  } catch {
+    return {
+      ok: false,
+      result: {
+        id: 'build-plugin',
+        status: 'fail',
+        detail: '@web-remarq/unplugin is not installed',
+        hint: 'Run `npx @web-remarq/cli init` again.',
+      },
+    }
+  }
+
+  let resolvedPath: string
+  try {
+    resolvedPath = require.resolve('@web-remarq/unplugin/transform')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') {
+      return {
+        ok: false,
+        result: {
+          id: 'build-plugin',
+          status: 'fail',
+          detail: '@web-remarq/unplugin is installed but is too old to expose the ./transform entry point',
+          hint: 'Upgrade @web-remarq/unplugin to a version that ships the transform API (`npm install @web-remarq/unplugin@latest`).',
+        },
+      }
+    }
+    return {
+      ok: false,
+      result: {
+        id: 'build-plugin',
+        status: 'fail',
+        detail: '@web-remarq/unplugin is installed but not built - dist/transform is missing',
+        hint: 'Run `npm run build --workspace=packages/unplugin`, or reinstall the package.',
+      },
+    }
+  }
+
+  let mod: Record<string, unknown>
+  try {
+    mod = await import(resolvedPath)
+  } catch (err) {
+    return {
+      ok: false,
+      result: {
+        id: 'build-plugin',
+        status: 'fail',
+        detail: `@web-remarq/unplugin failed to load: ${err instanceof Error ? err.message : String(err)}`,
+        hint: 'Reinstall @web-remarq/unplugin and rebuild it.',
+      },
+    }
+  }
+
+  return { ok: true, transformJSX: mod.transformJSX, transformVueSFC: mod.transformVueSFC }
+}
+
 /**
  * The most valuable check: run the user's installed transform over one of the
  * user's own files and confirm data-remarq-source appears. Catches the silent
  * failure where the plugin is wired up but the include glob misses the files -
  * annotations are created, file:line:col is empty, and the agent searches blind.
+ *
+ * For Vite-based stacks this also confirms the plugin is registered in the build
+ * config and that the configured include glob could match the sample file, before
+ * ever probing the transform - a forgotten `plugins: [remarq()]` or a mistyped
+ * include option must not report the same result as a correct setup.
  */
-export async function checkBuildPlugin(d: Detection): Promise<CheckResult> {
+export async function checkBuildPlugin(
+  d: Detection,
+  loadTransform: (appDir: string) => Promise<ResolvedTransformModule> = resolveTransformModule,
+): Promise<CheckResult> {
   if (d.framework === 'plain-html') {
     return {
       id: 'build-plugin',
@@ -92,6 +192,25 @@ export async function checkBuildPlugin(d: Detection): Promise<CheckResult> {
         }
   }
 
+  // Vite-based stacks (vue, react, vanilla-vite).
+  if (d.configFile === null) {
+    return {
+      id: 'build-plugin',
+      status: 'fail',
+      detail: 'no Vite config file found',
+      hint: "Create vite.config.ts and register the plugin: import remarq from '@web-remarq/unplugin/vite'",
+    }
+  }
+  const configContent = readFileSync(join(d.appDir, d.configFile), 'utf8')
+  if (!configContent.includes('@web-remarq/unplugin')) {
+    return {
+      id: 'build-plugin',
+      status: 'fail',
+      detail: `@web-remarq/unplugin is not registered in ${d.configFile}`,
+      hint: `Add to ${d.configFile}: import remarq from '@web-remarq/unplugin/vite', then include remarq() in the plugins array.`,
+    }
+  }
+
   const sample = sampleSourceFile(d)
   if (!sample) {
     return {
@@ -102,31 +221,37 @@ export async function checkBuildPlugin(d: Detection): Promise<CheckResult> {
     }
   }
 
-  let transformJSX: (code: string, path: string) => { code: string } | null
-  let transformVueSFC: (code: string, path: string) => { code: string } | null
-  try {
-    const require = createRequire(join(d.appDir, 'noop.js'))
-    const mod = await import(require.resolve('@web-remarq/unplugin/transform'))
-    transformJSX = mod.transformJSX
-    transformVueSFC = mod.transformVueSFC
-  } catch {
+  if (d.includeGlob && !includeGlobMatchesSample(d.includeGlob, sample)) {
     return {
       id: 'build-plugin',
       status: 'fail',
-      detail: '@web-remarq/unplugin is not installed',
-      hint: 'Run `npx @web-remarq/cli init` again.',
+      detail: `configured include glob (${d.includeGlob.join(', ')}) does not match ${sample}`,
+      hint: `Update the include option in ${d.configFile} so it matches this file type.`,
+    }
+  }
+
+  const loaded = await loadTransform(d.appDir)
+  if (!loaded.ok) return loaded.result
+
+  const transformFn = sample.endsWith('.vue') ? loaded.transformVueSFC : loaded.transformJSX
+  if (typeof transformFn !== 'function') {
+    return {
+      id: 'build-plugin',
+      status: 'fail',
+      detail: '@web-remarq/unplugin does not export the expected transform function',
+      hint: 'Upgrade @web-remarq/unplugin - the transform API may have changed.',
     }
   }
 
   const code = readFileSync(sample, 'utf8')
-  const out = sample.endsWith('.vue') ? transformVueSFC(code, sample) : transformJSX(code, sample)
+  const out = (transformFn as (code: string, path: string) => { code: string } | null)(code, sample)
 
   if (!out || !out.code.includes('data-remarq-source')) {
     return {
       id: 'build-plugin',
       status: 'fail',
       detail: `${sample} produced no data-remarq-source`,
-      hint: `Check the include glob in ${d.configFile ?? 'your build config'} - it must match this file type.`,
+      hint: `Check the include glob in ${d.configFile} - it must match this file type.`,
     }
   }
 

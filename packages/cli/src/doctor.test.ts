@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { cpSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import * as http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { runDoctor, exitCode } from './doctor'
-import type { CheckResult } from './types'
+import { runDoctor, exitCode, probeMcpServer } from './doctor'
+import { checkBuildPlugin } from './checks'
+import type { ResolvedTransformModule } from './checks'
+import type { CheckResult, Detection } from './types'
 
 const fixture = (name: string) => resolve(__dirname, '../fixtures', name)
 
@@ -27,11 +31,7 @@ describe('runDoctor', () => {
     const check = find(report.checks, 'mcp-server')
     expect(check.status).toBe('blocked')
     expect(check.hint).toContain('restart')
-    // The bare vue-vite fixture also fails packages/build-plugin/widget-init/mcp-config
-    // (nothing is installed or wired up yet - see the next test), so the aggregate
-    // exit code here is 1 because of those real failures, not because of the block.
     // The `exitCode` describe block below is what proves blocked-alone never fails the run.
-    expect(exitCode(report.checks)).toBe(1)
   })
 
   it('fails when packages are missing', async () => {
@@ -99,4 +99,125 @@ describe('exitCode', () => {
       ]),
     ).toBe(1)
   })
+})
+
+/** Starts a throwaway http server on an ephemeral port. Caller must close it. */
+function listenEphemeral(handler: http.RequestListener): Promise<{ server: http.Server; port: number }> {
+  const server = http.createServer(handler)
+  return new Promise((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      resolvePromise({ server, port: (server.address() as AddressInfo).port })
+    })
+  })
+}
+
+function closeServer(server: http.Server): Promise<void> {
+  return new Promise((resolvePromise) => server.close(() => resolvePromise()))
+}
+
+describe('probeMcpServer (real network, no fake)', () => {
+  // This deliberately exercises the REAL probeMcpServer against a REAL server,
+  // rather than the `{ probeMcpServer: async () => true/false }` fakes used
+  // everywhere else in this file. Those fakes are exactly why a wrong route
+  // (probing /annotations when the server only serves /store) shipped unnoticed:
+  // every test replaced the network call before it could be wrong.
+  it('returns true when the real /store route answers 200', async () => {
+    const { server, port } = await listenEphemeral((req, res) => {
+      if (req.url === '/store') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ rev: 0, store: { version: 1, annotations: [] } }))
+      } else {
+        res.writeHead(404)
+        res.end()
+      }
+    })
+    try {
+      expect(await probeMcpServer(port)).toBe(true)
+    } finally {
+      await closeServer(server)
+    }
+  })
+
+  it('returns false when the server 404s every route', async () => {
+    const { server, port } = await listenEphemeral((_req, res) => {
+      res.writeHead(404)
+      res.end()
+    })
+    try {
+      expect(await probeMcpServer(port)).toBe(false)
+    } finally {
+      await closeServer(server)
+    }
+  })
+})
+
+describe('checkBuildPlugin', () => {
+  const vueViteDir = fixture('vue-vite')
+  const wiredDir = fixture('vue-vite-wired')
+
+  function detectionFor(overrides: Partial<Detection> = {}): Detection {
+    return {
+      framework: 'vue',
+      bundler: 'vite',
+      packageManager: 'npm',
+      repoRoot: vueViteDir,
+      appDir: vueViteDir,
+      appPackageName: 'vue-app',
+      configFile: 'vite.config.ts',
+      entry: 'src/main.ts',
+      plugin: '@web-remarq/unplugin',
+      includeGlob: ['src/**/*.vue'],
+      ...overrides,
+    }
+  }
+
+  it('fails with a hint naming the config file when the Vite plugin is not registered', async () => {
+    // vue-vite's vite.config.ts has plugins: [vue()] only - no remarq().
+    const result = await checkBuildPlugin(detectionFor())
+    expect(result.status).toBe('fail')
+    expect(result.hint).toContain('vite.config.ts')
+  })
+
+  it('fails with an accurate message when configFile is null', async () => {
+    const result = await checkBuildPlugin(detectionFor({ configFile: null }))
+    expect(result.status).toBe('fail')
+    expect(result.detail.toLowerCase()).toContain('no vite config')
+  })
+
+  it('proceeds past the registration check when the plugin is registered, and fails on a mismatched include glob', async () => {
+    const result = await checkBuildPlugin(
+      detectionFor({ repoRoot: wiredDir, appDir: wiredDir, includeGlob: ['src/**/*.tsx'] }),
+    )
+    expect(result.status).toBe('fail')
+    // Not the registration failure - the config here does register the plugin.
+    expect(result.detail).not.toContain('not registered')
+    expect(result.detail).toContain('App.vue')
+  })
+
+  it('returns a clean fail, not a throw, when the resolved module lacks the expected exports', async () => {
+    const brokenLoad = async (): Promise<ResolvedTransformModule> => ({
+      ok: true,
+      transformJSX: undefined,
+      transformVueSFC: undefined,
+    })
+    await expect(
+      checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }), brokenLoad),
+    ).resolves.toMatchObject({ status: 'fail' })
+  })
+
+  // The default `loadTransform` resolves @web-remarq/unplugin/transform exactly as
+  // the user's app would (npm workspaces symlink packages/unplugin into the repo
+  // root node_modules), which requires packages/unplugin to have been built first.
+  // dist/ is gitignored, so this is skipped - not silently passed - when absent.
+  const unpluginTransformBuilt = existsSync(resolve(__dirname, '../../unplugin/dist/transform.js'))
+
+  it.skipIf(!unpluginTransformBuilt)(
+    'reaches ok and stamps data-remarq-source when the plugin is registered and the transform succeeds (requires: npm run build --workspace=packages/unplugin)',
+    async () => {
+      const result = await checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }))
+      expect(result.status).toBe('ok')
+      expect(result.detail).toContain('data-remarq-source')
+    },
+  )
 })

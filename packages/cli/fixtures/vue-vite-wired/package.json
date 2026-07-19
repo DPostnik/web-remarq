@@ -1,0 +1,6 @@
+{
+  "name": "vue-vite-wired",
+  "private": true,
+  "dependencies": { "vue": "^3.5.0" },
+  "devDependencies": { "vite": "^7.0.0", "@vitejs/plugin-vue": "^5.0.0", "@web-remarq/unplugin": "^0.0.2" }
+}

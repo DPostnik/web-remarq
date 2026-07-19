@@ -8,6 +8,7 @@ const vueDetection: Detection = {
   packageManager: 'pnpm',
   repoRoot: '/repo',
   appDir: '/repo/packages/web',
+  appPackageName: 'web',
   configFile: 'vite.config.ts',
   entry: 'src/main.ts',
   plugin: '@web-remarq/unplugin',

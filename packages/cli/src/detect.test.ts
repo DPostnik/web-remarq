@@ -113,4 +113,36 @@ describe('detect - monorepo', () => {
     if (r.ok) return
     expect(r.reason).toContain('No supported stack')
   })
+
+  it('resolves an app through a packages/** glob', () => {
+    const r = detect(fixture('mono-npm-doublestar'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('vue')
+    expect(r.detection.appDir).toContain('packages/web')
+  })
+
+  it('resolves an app through a trailing-slash apps/*/ glob', () => {
+    const r = detect(fixture('mono-pnpm-trailing-slash'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.framework).toBe('react')
+    expect(r.detection.appDir).toContain('apps/web')
+  })
+
+  it('reports unparseable workspace globs instead of pretending no app exists', () => {
+    const r = detect(fixture('mono-unsupported-glob'))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.unsupportedGlobs).toEqual(['packages/*/src'])
+    expect(r.hint).toContain('--app')
+  })
+
+  it('scopes pnpm-workspace.yaml parsing to the packages key', () => {
+    const r = detect(fixture('mono-pnpm-yaml-scoped'))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.detection.appDir).toContain('apps/web')
+    expect(r.detection.appDir).not.toContain('decoy')
+  })
 })

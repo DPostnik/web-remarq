@@ -11,6 +11,8 @@ export interface Detection {
   repoRoot: string
   /** Absolute path to the app package. Equals repoRoot outside a monorepo. */
   appDir: string
+  /** Name field of the app package's package.json, null when unreadable. */
+  appPackageName: string | null
   /** Path to the build config, relative to appDir. Null in plain-html mode. */
   configFile: string | null
   /** Path to the entry point, relative to appDir. Null when not found. */
@@ -21,7 +23,7 @@ export interface Detection {
 
 export type DetectResult =
   | { ok: true; detection: Detection }
-  | { ok: false; reason: string; hint: string; candidates?: string[] }
+  | { ok: false; reason: string; hint: string; candidates?: string[]; unsupportedGlobs?: string[] }
 
 export type EditKind = 'build-config' | 'entry'
 

@@ -19,13 +19,16 @@ export function buildInstallCommand(d: Detection, packages: string[]): string {
 
   switch (d.packageManager) {
     case 'pnpm':
-      return inWorkspace ? `pnpm add -D --filter ./${rel} ${list}` : `pnpm add -D ${list}`
+      return inWorkspace ? `pnpm add -D --filter "./${rel}" ${list}` : `pnpm add -D ${list}`
     case 'yarn':
-      return inWorkspace ? `yarn workspace ./${rel} add -D ${list}` : `yarn add -D ${list}`
+      if (!inWorkspace) return `yarn add -D ${list}`
+      return d.appPackageName
+        ? `yarn workspace ${d.appPackageName} add -D ${list}`
+        : `yarn --cwd "./${rel}" add -D ${list}`
     case 'bun':
-      return inWorkspace ? `bun add -d --cwd ${rel} ${list}` : `bun add -d ${list}`
+      return inWorkspace ? `bun add -d --cwd "${rel}" ${list}` : `bun add -d ${list}`
     case 'npm':
     default:
-      return inWorkspace ? `npm install -D -w ${rel} ${list}` : `npm install -D ${list}`
+      return inWorkspace ? `npm install -D -w "${rel}" ${list}` : `npm install -D ${list}`
   }
 }

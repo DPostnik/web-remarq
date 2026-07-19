@@ -15,6 +15,7 @@ const detection = (): Detection => ({
   packageManager: 'npm',
   repoRoot: dir,
   appDir: dir,
+  appPackageName: null,
   configFile: null,
   entry: 'index.html',
   plugin: null,
@@ -45,5 +46,17 @@ describe('injectScriptTag', () => {
     writeFileSync(join(dir, 'index.html'), '<div>fragment</div>')
     expect(injectScriptTag(detection())).toBe(false)
     expect(readFileSync(join(dir, 'index.html'), 'utf8')).toBe('<div>fragment</div>')
+  })
+
+  it('still injects when the file merely mentions web-remarq.global.js in unrelated text', () => {
+    writeFileSync(
+      join(dir, 'index.html'),
+      '<!doctype html>\n<html>\n  <body>\n    <!-- see docs for web-remarq.global.js -->\n    <h1>Hi</h1>\n  </body>\n</html>\n',
+    )
+    expect(injectScriptTag(detection())).toBe(true)
+
+    const html = readFileSync(join(dir, 'index.html'), 'utf8')
+    expect(html).toContain('HttpStorageAdapter')
+    expect((html.match(/HttpStorageAdapter/g) ?? []).length).toBe(1)
   })
 })

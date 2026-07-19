@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Detection } from './types'
 
-const MARKER = 'web-remarq.global.js'
+const MARKER = 'https://unpkg.com/web-remarq/dist/web-remarq.global.js'
 
 export const SCRIPT_TAG = `    <!-- web-remarq (dev only) -->
     <script src="https://unpkg.com/web-remarq/dist/web-remarq.global.js"></script>

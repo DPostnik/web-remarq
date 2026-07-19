@@ -74,3 +74,5 @@ export const rollupPlugin = unplugin.rollup
 export const webpackPlugin = unplugin.webpack
 export const esbuildPlugin = unplugin.esbuild
 export const rspackPlugin = unplugin.rspack
+
+export { transformJSX, transformVueSFC } from './transform'

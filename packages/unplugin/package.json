@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/unplugin",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Unplugin for web-remarq source location injection (Vite/webpack/Rollup/esbuild/Rspack)",
   "type": "module",
   "main": "dist/index.cjs",
@@ -36,6 +36,11 @@
       "types": "./dist/rspack.d.ts",
       "import": "./dist/rspack.js",
       "require": "./dist/rspack.cjs"
+    },
+    "./transform": {
+      "types": "./dist/transform.d.ts",
+      "import": "./dist/transform.js",
+      "require": "./dist/transform.cjs"
     }
   },
   "files": [

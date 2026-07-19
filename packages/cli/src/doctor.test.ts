@@ -285,6 +285,19 @@ describe('checkBuildPlugin', () => {
     expect(result.detail).toContain('JSX')
     expect(result.detail).toContain('Vue')
   })
+
+  it('fails, not skips, a vue app with the plugin registered but no sample source file', async () => {
+    // Same fixture as the "reaches ok" test above, but with the one .vue file removed
+    // before the check runs - the plugin is still registered in vite.config.ts, so the
+    // check gets past registration and hits the missing-sample-file branch. Unlike
+    // vanilla-vite, a vue app is expected to have JSX/Vue source, so this must stay
+    // a real `fail`, not the vanilla-vite `skipped` outcome.
+    cpSync(wiredDir, dir, { recursive: true })
+    rmSync(join(dir, 'src/App.vue'))
+    const result = await checkBuildPlugin(detectionFor({ repoRoot: dir, appDir: dir }))
+    expect(result.status).toBe('fail')
+    expect(result.detail).toContain('no source file found')
+  })
 })
 
 describe('checkPackages', () => {

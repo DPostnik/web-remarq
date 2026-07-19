@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { main } from './cli'
@@ -50,5 +50,65 @@ describe('main - init install failure', () => {
     expect(parsed.ok).toBe(false)
     expect(parsed.reason).toBe('Install failed')
     expect(parsed.command).toContain('web-remarq')
+  })
+})
+
+describe('main - init non-install failure', () => {
+  // Plain HTML has no packages to install (`packagesFor` returns []), so
+  // `deps.exec` is never invoked. A later step - here `writeMcpConfig`,
+  // reading a pre-existing malformed .mcp.json - throws instead. `main` must
+  // not blame this on the (never-run) install command.
+  it('reports a generic setup failure, not an install failure, when a non-install step throws', async () => {
+    const plainDir = mkdtempSync(join(tmpdir(), 'remarq-cli-plain-'))
+    cpSync(fixture('plain-html'), plainDir, { recursive: true })
+    writeFileSync(join(plainDir, '.mcp.json'), '{ not valid json', 'utf8')
+
+    const prevCwd = process.cwd()
+    process.chdir(plainDir)
+    try {
+      const neverExec = { exec: vi.fn(() => { throw new Error('exec must not run for plain-html') }) }
+      const code = await main(['init'], neverExec)
+      expect(code).toBe(1)
+      expect(neverExec.exec).not.toHaveBeenCalled()
+
+      const output = logSpy.mock.calls[0]?.[0] as string
+      expect(output).not.toContain('Install failed')
+      expect(output).not.toContain('package.json')
+      expect(output).not.toContain('(install command)')
+    } finally {
+      process.chdir(prevCwd)
+      rmSync(plainDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('main - unknown command', () => {
+  it('names the unrecognized command before printing usage', async () => {
+    const code = await main(['bogus'])
+    expect(code).toBe(1)
+    const output = logSpy.mock.calls[0]?.[0] as string
+    expect(output).toContain('bogus')
+  })
+
+  it('prints only usage, unchanged, when no command is given', async () => {
+    const code = await main([])
+    expect(code).toBe(0)
+    expect(logSpy.mock.calls[0]?.[0]).toContain('web-remarq installer')
+  })
+})
+
+describe('main - malformed --app', () => {
+  it('reports an argument error and exits non-zero for --app with no value', async () => {
+    const code = await main(['init', '--app'])
+    expect(code).toBe(1)
+    const output = logSpy.mock.calls[0]?.[0] as string
+    expect(output.toLowerCase()).toContain('app')
+  })
+
+  it('reports an argument error for --app --json instead of resolving app to "--json"', async () => {
+    const code = await main(['doctor', '--app', '--json'])
+    expect(code).toBe(1)
+    const parsed = JSON.parse(logSpy.mock.calls[0]?.[0] as string)
+    expect(parsed.ok).toBe(false)
   })
 })

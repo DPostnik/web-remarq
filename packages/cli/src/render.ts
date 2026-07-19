@@ -15,14 +15,17 @@ function countWord(n: number): string {
   return NUMBER_WORD[n] ?? String(n)
 }
 
-export function renderInit(result: InitResult): string {
-  if (!result.ok) {
-    const lines = [`✖ ${result.reason}`, `  ${result.hint}`]
-    if (result.candidates?.length) {
-      lines.push('', 'Candidates:', ...result.candidates.map((c) => `  ${c}`))
-    }
-    return lines.join('\n')
+/** Shared by `renderInit` and `renderDoctor` for their `ok: false` branches. */
+function renderFailure(reason: string, hint: string, candidates?: string[]): string {
+  const lines = [`✖ ${reason}`, `  ${hint}`]
+  if (candidates?.length) {
+    lines.push('', 'Candidates:', ...candidates.map((c) => `  ${c}`))
   }
+  return lines.join('\n')
+}
+
+export function renderInit(result: InitResult): string {
+  if (!result.ok) return renderFailure(result.reason, result.hint, result.candidates)
 
   const d = result.detected
   const stack = d.bundler ? `${d.framework} + ${d.bundler}` : d.framework
@@ -53,7 +56,7 @@ export function renderInit(result: InitResult): string {
 }
 
 export function renderDoctor(report: DoctorReport): string {
-  if (!report.ok) return `✖ ${report.reason}\n  ${report.hint}`
+  if (!report.ok) return renderFailure(report.reason, report.hint, report.candidates)
 
   const lines: string[] = []
   for (const check of report.checks) {
@@ -87,12 +90,34 @@ export function renderInstallFailure(failure: InstallFailure): string {
   ].join('\n')
 }
 
-export function parseArgs(argv: string[]): { command: string | null; json: boolean; app?: string } {
+/**
+ * `runInit` does more than the install command: it always writes .mcp.json, and
+ * for plain-HTML apps also injects the script tag. Neither of those is an
+ * install, so a failure there must not be blamed on a command that never ran.
+ */
+export function renderSetupFailure(message: string): string {
+  return [`✖ Setup failed`, `  ${message}`].join('\n')
+}
+
+export function renderArgError(message: string): string {
+  return [`✖ Argument error`, `  ${message}`].join('\n')
+}
+
+export function parseArgs(
+  argv: string[],
+): { command: string | null; json: boolean; app?: string; error?: string } {
   const positional = argv.filter((a) => !a.startsWith('--'))
   const appIndex = argv.indexOf('--app')
-  return {
-    command: positional[0] ?? null,
-    json: argv.includes('--json'),
-    app: appIndex === -1 ? undefined : argv[appIndex + 1],
+  const json = argv.includes('--json')
+
+  if (appIndex === -1) {
+    return { command: positional[0] ?? null, json }
   }
+
+  const value = argv[appIndex + 1]
+  if (value === undefined || value.startsWith('--')) {
+    return { command: positional[0] ?? null, json, error: '--app requires a directory value' }
+  }
+
+  return { command: positional[0] ?? null, json, app: value }
 }

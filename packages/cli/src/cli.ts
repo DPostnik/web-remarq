@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process'
 import { runInit } from './init'
 import type { InitDeps } from './init'
 import { exitCode, probeMcpServer, runDoctor } from './doctor'
-import { parseArgs, renderDoctor, renderInit, renderInstallFailure } from './render'
+import { parseArgs, renderArgError, renderDoctor, renderInit, renderInstallFailure, renderSetupFailure } from './render'
 import type { InstallFailure } from './render'
 
 const USAGE = `web-remarq installer
@@ -28,7 +28,14 @@ const defaultDeps: CliDeps = {
 }
 
 export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise<number> {
-  const { command, json, app } = parseArgs(argv)
+  const { command, json, app, error } = parseArgs(argv)
+
+  if (error) {
+    console.log(
+      json ? JSON.stringify({ ok: false, reason: 'Argument error', hint: error }, null, 2) : renderArgError(error),
+    )
+    return 1
+  }
 
   if (command === 'init') {
     // The install command is the one part of `runInit` that can throw
@@ -47,10 +54,19 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
       console.log(json ? JSON.stringify(result, null, 2) : renderInit(result))
       return result.ok ? 0 : 1
     } catch (err) {
-      const failure: InstallFailure = {
-        command: attemptedCommand ?? '(install command)',
-        message: err instanceof Error ? err.message : String(err),
+      const message = err instanceof Error ? err.message : String(err)
+
+      // `attemptedCommand` stays null when `deps.exec` was never called - e.g.
+      // plain-HTML has nothing to install, so a throw there must be a later
+      // step (writeMcpConfig, injectScriptTag), not the install.
+      if (attemptedCommand === null) {
+        console.log(
+          json ? JSON.stringify({ ok: false, reason: 'Setup failed', hint: message }, null, 2) : renderSetupFailure(message),
+        )
+        return 1
       }
+
+      const failure: InstallFailure = { command: attemptedCommand, message }
       console.log(
         json
           ? JSON.stringify({ ok: false, reason: 'Install failed', hint: failure.message, command: failure.command }, null, 2)
@@ -67,6 +83,9 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
     return exitCode(report.checks)
   }
 
+  if (command !== null) {
+    console.log(`Unknown command: ${command}`)
+  }
   console.log(USAGE)
   return command === null ? 0 : 1
 }

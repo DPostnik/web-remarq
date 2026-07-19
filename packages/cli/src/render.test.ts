@@ -61,6 +61,19 @@ describe('renderDoctor', () => {
     expect(text).toContain('restart Claude Code')
     expect(text).toContain('run init again')
   })
+
+  it('prints candidates on failure, same as renderInit', () => {
+    const text = renderDoctor({
+      ok: false,
+      reason: 'Found 2 apps in this workspace',
+      hint: 'Pick one with --app',
+      candidates: ['apps/web', 'apps/admin'],
+    })
+    expect(text).toContain('Found 2 apps in this workspace')
+    expect(text).toContain('Candidates:')
+    expect(text).toContain('apps/web')
+    expect(text).toContain('apps/admin')
+  })
 })
 
 describe('parseArgs', () => {
@@ -74,6 +87,18 @@ describe('parseArgs', () => {
 
   it('returns a null command when none is given', () => {
     expect(parseArgs([])).toEqual({ command: null, json: false, app: undefined })
+  })
+
+  it('reports an argument error when --app has no following value', () => {
+    const result = parseArgs(['init', '--app'])
+    expect(result.error).toBeTruthy()
+    expect(result.app).toBeUndefined()
+  })
+
+  it('reports an argument error when --app is followed by another flag, instead of swallowing it', () => {
+    const result = parseArgs(['init', '--app', '--json'])
+    expect(result.error).toBeTruthy()
+    expect(result.app).toBeUndefined()
   })
 })
 

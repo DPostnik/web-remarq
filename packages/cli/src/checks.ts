@@ -1,15 +1,50 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import { dirname, extname, join, parse } from 'node:path'
 import { readJson } from './fs-utils'
 import type { CheckResult, Detection } from './types'
 
-/** Resolve a package as the user's app would resolve it. */
+/** How many parent directories to walk before giving up - defense in depth, real trees never get close. */
+const PACKAGE_JSON_WALK_LIMIT = 25
+
+/**
+ * Walk up from `startFile` looking for the package.json that declares `name`.
+ * Needed because `require.resolve(name)` only lands on the package's main entry
+ * file (e.g. `dist/index.cjs`) - the package.json controlling that entry is some
+ * number of parent directories above it, and the exact number varies by package
+ * layout (`dist/index.js` vs `dist/esm/index.js`, etc).
+ *
+ * Matching on the `name` field (not just "first package.json found") matters:
+ * a naive walk could stop at a nested package.json belonging to a dependency
+ * bundled alongside the entry file, which would report the wrong version - or
+ * none at all, if that nested file has no `version` field.
+ */
+function findOwningPackageJson(startFile: string, name: string): { version: string } | null {
+  let dir = dirname(startFile)
+  const { root } = parse(dir)
+
+  for (let i = 0; i < PACKAGE_JSON_WALK_LIMIT; i++) {
+    const pkg = readJson<{ name?: string; version: string }>(join(dir, 'package.json'))
+    if (pkg && pkg.name === name) return { version: pkg.version }
+    if (dir === root) return null
+    dir = dirname(dir)
+  }
+  return null
+}
+
+/**
+ * Resolve a package as the user's app would resolve it, then read its own
+ * package.json for the version. Deliberately does NOT resolve `${name}/package.json`
+ * directly - that subpath only exists if the package's `exports` map explicitly lists
+ * "./package.json", which most packages (including our own `web-remarq`, `@web-remarq/unplugin`,
+ * `@web-remarq/next`) do not do. Resolving the main entry point instead works against
+ * any correctly-installed package, published or not, because "." is always exposed.
+ */
 function resolveInstalled(appDir: string, name: string): { version: string } | null {
   try {
     const require = createRequire(join(appDir, 'noop.js'))
-    const pkgPath = require.resolve(`${name}/package.json`)
-    return readJson<{ version: string }>(pkgPath)
+    const entryFile = require.resolve(name)
+    return findOwningPackageJson(entryFile, name)
   } catch {
     return null
   }

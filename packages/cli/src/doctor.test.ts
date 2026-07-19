@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runDoctor, exitCode, probeMcpServer } from './doctor'
-import { checkBuildPlugin } from './checks'
+import { checkBuildPlugin, checkPackages } from './checks'
 import type { ResolvedTransformModule } from './checks'
 import type { CheckResult, Detection } from './types'
 
@@ -230,5 +230,35 @@ describe('checkBuildPlugin', () => {
     const result = await checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }))
     expect(result.status).toBe('ok')
     expect(result.detail).toContain('data-remarq-source')
+  })
+})
+
+describe('checkPackages', () => {
+  // The monorepo root itself, not a copied fixture: npm workspaces symlink
+  // `web-remarq` (packages/core) into this repo's own node_modules, so an
+  // appDir pointing here is a package that is genuinely, correctly installed -
+  // not a fixture standing in for one. web-remarq's package.json exports map
+  // only lists "." and "./core", not "./package.json", so this is the exact
+  // shape of a real, correctly-installed user project.
+  const repoRoot = resolve(__dirname, '../../..')
+
+  it('reports ok with the real resolved version for a genuinely installed package', async () => {
+    const detection: Detection = {
+      framework: 'vanilla-vite',
+      bundler: 'vite',
+      packageManager: 'npm',
+      repoRoot,
+      appDir: repoRoot,
+      appPackageName: null,
+      configFile: null,
+      entry: null,
+      plugin: null,
+      includeGlob: null,
+    }
+
+    const result = checkPackages(detection)
+
+    expect(result.status).toBe('ok')
+    expect(result.detail).toMatch(/^web-remarq@\d+\.\d+\.\d+/)
   })
 })

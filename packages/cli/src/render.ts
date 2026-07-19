@@ -103,21 +103,48 @@ export function renderArgError(message: string): string {
   return [`✖ Argument error`, `  ${message}`].join('\n')
 }
 
+/** Recognized flags: --json and --app (space or equals form). Anything else starting with -- is an error. */
 export function parseArgs(
   argv: string[],
 ): { command: string | null; json: boolean; app?: string; error?: string } {
-  const positional = argv.filter((a) => !a.startsWith('--'))
-  const appIndex = argv.indexOf('--app')
+  // Computed up front, independent of the loop below: --json takes no value, so its
+  // position relative to a malformed --app never changes whether it was passed.
   const json = argv.includes('--json')
+  const positional: string[] = []
+  let app: string | undefined
 
-  if (appIndex === -1) {
-    return { command: positional[0] ?? null, json }
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+
+    if (arg === '--json') continue
+
+    if (arg.startsWith('--app=')) {
+      const value = arg.slice('--app='.length)
+      if (value === '') {
+        return { command: positional[0] ?? null, json, error: '--app requires a directory value' }
+      }
+      app = value
+      continue
+    }
+
+    if (arg === '--app') {
+      const value = argv[i + 1]
+      if (value === undefined || value.startsWith('--')) {
+        return { command: positional[0] ?? null, json, error: '--app requires a directory value' }
+      }
+      app = value
+      i++
+      continue
+    }
+
+    if (arg.startsWith('--')) {
+      return { command: positional[0] ?? null, json, error: `Unknown option: ${arg}` }
+    }
+
+    positional.push(arg)
   }
 
-  const value = argv[appIndex + 1]
-  if (value === undefined || value.startsWith('--')) {
-    return { command: positional[0] ?? null, json, error: '--app requires a directory value' }
-  }
-
-  return { command: positional[0] ?? null, json, app: value }
+  return app === undefined
+    ? { command: positional[0] ?? null, json }
+    : { command: positional[0] ?? null, json, app }
 }

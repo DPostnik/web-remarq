@@ -1,0 +1,5 @@
+{
+  "name": "vanilla-vite-wired",
+  "private": true,
+  "devDependencies": { "vite": "^7.0.0", "@web-remarq/unplugin": "^0.0.2" }
+}

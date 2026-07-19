@@ -17,6 +17,7 @@ Click any element on your running app and leave a comment - web-remarq fingerpri
 | [`@web-remarq/swc-plugin`](./packages/swc-plugin) | SWC/WASM plugin for source injection (Turbopack) | [![npm](https://img.shields.io/npm/v/@web-remarq/swc-plugin)](https://www.npmjs.com/package/@web-remarq/swc-plugin) |
 | [`@web-remarq/next`](./packages/next) | Next.js config wrapper — `withRemarq()` for webpack and Turbopack | [![npm](https://img.shields.io/npm/v/@web-remarq/next)](https://www.npmjs.com/package/@web-remarq/next) |
 | [`@web-remarq/cloud`](./packages/cloud) | Cloud storage adapter — sync annotations across team via Supabase | [![npm](https://img.shields.io/npm/v/@web-remarq/cloud)](https://www.npmjs.com/package/@web-remarq/cloud) |
+| [`@web-remarq/cli`](./packages/cli) | Installer and doctor - detects your stack, installs packages, prints the remaining edits, verifies the setup | [![npm](https://img.shields.io/npm/v/@web-remarq/cli)](https://www.npmjs.com/package/@web-remarq/cli) |
 
 ## Quick Start
 

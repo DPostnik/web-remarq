@@ -129,11 +129,10 @@ function findSourceFile(appDir, exts) {
  *
  * `doctor` exits non-zero whenever ANY check fails (see exitCode() in
  * doctor.ts), which this script's widget-init edit (never applied here, by
- * design) and a separate packages-check bug (see report) both trigger
- * regardless of build-plugin. execSync throws on a non-zero exit even with a
- * captured encoding, but still attaches stdout/stderr to the thrown error -
- * so recover the JSON from there rather than treating a non-zero doctor exit
- * as "could not run doctor".
+ * design) triggers regardless of build-plugin. execSync throws on a non-zero
+ * exit even with a captured encoding, but still attaches stdout/stderr to the
+ * thrown error - so recover the JSON from there rather than treating a
+ * non-zero doctor exit as "could not run doctor".
  */
 function checkStamping(appDir) {
   let out

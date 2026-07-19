@@ -61,6 +61,12 @@ Otherwise, for each entry in `checks`:
   action (restarting the agent or the dev server). Leave it alone.
 - `skipped` - not applicable to this stack. Leave it alone.
 
+Some `fail` hints state outright that the check cannot see the actual
+configuration (for example, a plugin registered through a shared or imported
+build config). If you hit one of these and have independently verified the
+configuration is genuinely correct, stop looping on that check - it is a false
+positive - and surface it to the user instead of retrying or "fixing" it.
+
 Loop steps 2-3 until no check is `fail`. If you are still failing after three
 rounds, stop and show the user the doctor output rather than guessing further.
 

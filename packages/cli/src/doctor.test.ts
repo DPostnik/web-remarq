@@ -68,6 +68,39 @@ describe('runDoctor', () => {
     expect(find(report.checks, 'widget-init').status).toBe('ok')
   })
 
+  it('passes widget-init for Next when WebRemarq.init lives in a component the layout renders', async () => {
+    cpSync(fixture('next-app'), dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'app/RemarqDevTools.tsx'),
+      "'use client'\nimport { useEffect } from 'react'\n\n" +
+        'export function RemarqDevTools() {\n' +
+        "  useEffect(() => {\n    import('web-remarq').then(({ WebRemarq }) => { WebRemarq.init({}) })\n  }, [])\n" +
+        '  return null\n}\n',
+    )
+    writeFileSync(
+      join(dir, 'app/layout.tsx'),
+      "import { RemarqDevTools } from './RemarqDevTools'\n\n" +
+        'export default function RootLayout({ children }: { children: React.ReactNode }) {\n' +
+        '  return <html><body><RemarqDevTools />{children}</body></html>\n}\n',
+    )
+    const report = await runDoctor(dir, {}, serverUp)
+    expect(report.ok).toBe(true)
+    if (!report.ok) return
+
+    expect(find(report.checks, 'widget-init').status).toBe('ok')
+  })
+
+  it('fails widget-init for Next when neither WebRemarq.init nor RemarqDevTools is present, with a hint about the component setup', async () => {
+    cpSync(fixture('next-app'), dir, { recursive: true })
+    const report = await runDoctor(dir, {}, serverUp)
+    expect(report.ok).toBe(true)
+    if (!report.ok) return
+
+    const check = find(report.checks, 'widget-init')
+    expect(check.status).toBe('fail')
+    expect(check.hint?.toLowerCase()).toContain('remarqdevtools')
+  })
+
   it('skips the build-plugin check in plain-html mode instead of failing it', async () => {
     cpSync(fixture('plain-html'), dir, { recursive: true })
     const report = await runDoctor(dir, {}, serverUp)
@@ -190,6 +223,11 @@ describe('checkBuildPlugin', () => {
     const result = await checkBuildPlugin(
       detectionFor({ repoRoot: sharedPresetDir, appDir: sharedPresetDir }),
     )
+    // Not just "no false failure": the registration check passes (remarqPreset still
+    // contains the literal "remarq"), and the transform genuinely runs and succeeds -
+    // the expected outcome here is a full, positive `ok`, not merely "didn't say
+    // 'not registered'", which would also pass if the check failed for any other reason.
+    expect(result.status).toBe('ok')
     expect(result.detail).not.toContain('not registered')
   })
 
@@ -230,6 +268,22 @@ describe('checkBuildPlugin', () => {
     const result = await checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }))
     expect(result.status).toBe('ok')
     expect(result.detail).toContain('data-remarq-source')
+  })
+
+  it('skips, not fails, a vanilla-vite app with no JSX/Vue source to stamp', async () => {
+    const vanillaDir = fixture('vanilla-vite-wired')
+    const result = await checkBuildPlugin(
+      detectionFor({
+        framework: 'vanilla-vite',
+        repoRoot: vanillaDir,
+        appDir: vanillaDir,
+        plugin: '@web-remarq/unplugin',
+        includeGlob: ['**/*.{jsx,tsx,vue}'],
+      }),
+    )
+    expect(result.status).toBe('skipped')
+    expect(result.detail).toContain('JSX')
+    expect(result.detail).toContain('Vue')
   })
 })
 

@@ -100,6 +100,27 @@ describe('parseArgs', () => {
     expect(result.error).toBeTruthy()
     expect(result.app).toBeUndefined()
   })
+
+  it('parses the --app=value equals form', () => {
+    expect(parseArgs(['doctor', '--app=apps/web'])).toEqual({
+      command: 'doctor',
+      json: false,
+      app: 'apps/web',
+    })
+  })
+
+  it('parses --app before the command, without leaking the value into positionals', () => {
+    expect(parseArgs(['--app', 'apps/web', 'init'])).toEqual({
+      command: 'init',
+      json: false,
+      app: 'apps/web',
+    })
+  })
+
+  it('reports an argument error for an unrecognized flag', () => {
+    const result = parseArgs(['init', '--apps', 'apps/web'])
+    expect(result.error).toBeTruthy()
+  })
 })
 
 describe('renderInstallFailure', () => {

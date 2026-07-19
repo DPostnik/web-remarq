@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, extname, join, parse } from 'node:path'
+import { dirname, extname, join, parse, relative } from 'node:path'
 import { readJson } from './fs-utils'
 import type { CheckResult, Detection } from './types'
 
@@ -72,9 +72,12 @@ export function checkPackages(d: Detection): CheckResult {
   return { id: 'packages', status: 'ok', detail: found.join(', ') }
 }
 
-/** First source file matching the stack, used as the sample for the transform check. */
-function sampleSourceFile(d: Detection): string | null {
-  const exts = d.framework === 'vue' ? ['.vue'] : ['.tsx', '.jsx']
+/** Depth-bounded walk of the usual source roots (src/, app/, components/), returning the first file matching `predicate`. */
+function walkSourceTree(
+  d: Detection,
+  exts: string[],
+  predicate: (path: string) => boolean = () => true,
+): string | null {
   const roots = [join(d.appDir, 'src'), join(d.appDir, 'app'), join(d.appDir, 'components')]
 
   const walk = (dir: string, depth: number): string | null => {
@@ -84,7 +87,7 @@ function sampleSourceFile(d: Detection): string | null {
       if (entry.isDirectory()) {
         const nested = walk(path, depth + 1)
         if (nested) return nested
-      } else if (exts.some((ext) => entry.name.endsWith(ext))) {
+      } else if (exts.some((ext) => entry.name.endsWith(ext)) && predicate(path)) {
         return path
       }
     }
@@ -96,6 +99,12 @@ function sampleSourceFile(d: Detection): string | null {
     if (hit) return hit
   }
   return null
+}
+
+/** First source file matching the stack, used as the sample for the transform check. */
+function sampleSourceFile(d: Detection): string | null {
+  const exts = d.framework === 'vue' ? ['.vue'] : ['.tsx', '.jsx']
+  return walkSourceTree(d, exts)
 }
 
 /** Extensions a glob pattern's final segment plausibly matches, e.g. `src/foo/*.{jsx,tsx}` -> ['jsx', 'tsx']. */
@@ -249,14 +258,24 @@ export async function checkBuildPlugin(
       status: 'fail',
       detail: `@web-remarq/unplugin is not registered in ${d.configFile}`,
       hint:
-        `Add to ${d.configFile}: import remarq from '@web-remarq/unplugin/vite', then include remarq() in the plugins array. ` +
-        `This check only reads ${d.configFile} itself - if you register the plugin through a shared or imported build config, ` +
-        `this failure is a false positive; verify manually (e.g. build once and check the output for data-remarq-source) and disregard it.`,
+        `Add remarq() to the plugins array in ${d.configFile}: import remarq from '@web-remarq/unplugin/vite', then include remarq() alongside your other plugins. ` +
+        `If the plugin is registered via an imported or shared build config, this check cannot see it - verify manually ` +
+        `(e.g. build once and check the output for data-remarq-source) and tell the user.`,
     }
   }
 
   const sample = sampleSourceFile(d)
   if (!sample) {
+    // A vanilla-vite app legitimately may have no JSX/Vue at all - there is nothing
+    // for the build plugin to stamp, which is not an error. vue/react stacks are
+    // expected to have a sample file, so a missing one there stays a real failure.
+    if (d.framework === 'vanilla-vite') {
+      return {
+        id: 'build-plugin',
+        status: 'skipped',
+        detail: 'no .jsx/.tsx/.vue file found - source stamping only applies to JSX/Vue files, and this app has none',
+      }
+    }
     return {
       id: 'build-plugin',
       status: 'fail',
@@ -314,6 +333,47 @@ export function checkWidgetInit(d: Detection): CheckResult {
           detail: 'no web-remarq script tag in index.html',
           hint: 'Run `npx @web-remarq/cli init` again.',
         }
+  }
+
+  // Next apps wire the widget across two files: a standalone 'use client' component
+  // (RemarqDevTools) that calls WebRemarq.init, and the root layout, which renders it.
+  // The init call therefore does not have to appear in the entry file at all - a
+  // correctly-wired app has it in the component file instead. Search the app source
+  // tree for either file rather than grepping only d.entry.
+  if (d.framework === 'next') {
+    const initFile = walkSourceTree(d, ['.tsx', '.jsx', '.ts', '.js'], (path) =>
+      readFileSync(path, 'utf8').includes('WebRemarq.init'),
+    )
+    if (initFile) {
+      return {
+        id: 'widget-init',
+        status: 'ok',
+        detail: `WebRemarq.init() found in ${relative(d.appDir, initFile)}`,
+      }
+    }
+
+    // Fallback: the component that owns WebRemarq.init may live outside src/app/components
+    // (or be re-exported from elsewhere) - if the layout renders it, that is still correct.
+    const entryRendersComponent =
+      d.entry !== null &&
+      existsSync(join(d.appDir, d.entry)) &&
+      readFileSync(join(d.appDir, d.entry), 'utf8').includes('RemarqDevTools')
+    if (entryRendersComponent) {
+      return {
+        id: 'widget-init',
+        status: 'ok',
+        detail: `<RemarqDevTools /> rendered in ${d.entry}`,
+      }
+    }
+
+    return {
+      id: 'widget-init',
+      status: 'fail',
+      detail: 'no WebRemarq.init() call found, and the root layout does not render <RemarqDevTools />',
+      hint:
+        'Create a RemarqDevTools client component that calls WebRemarq.init(...) (see the entry edit from `init`), ' +
+        'then render <RemarqDevTools /> inside the root layout body.',
+    }
   }
 
   if (!d.entry) {

@@ -233,7 +233,7 @@ export function detect(cwd: string, opts?: { app?: string }): DetectResult {
   const explicit = opts?.app ? resolve(repoRoot, opts.app) : null
   const appDir = explicit ?? dir
 
-  let classified = classify(appDir)
+  const classified = classify(appDir)
   let unsupportedGlobs: string[] = []
 
   // Nothing here, and we were not pointed at a specific app: look through the workspace.

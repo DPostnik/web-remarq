@@ -22,4 +22,7 @@ export type {
   ToolbarPosition,
   StorageAdapter,
   StorageChangeEvent,
+  StorageStatus,
+  StorageSyncState,
 } from './core/types'
+export { AnnotationNotFoundError, StorageConflictError } from './core/types'

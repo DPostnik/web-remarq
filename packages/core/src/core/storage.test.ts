@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Annotation, StorageAdapter, StorageChangeEvent } from './types';
+import type { Annotation, StorageAdapter, StorageChangeEvent, StorageStatus } from './types';
+import { StorageConflictError } from './types';
 import { AnnotationStorage, migrateAnnotation } from './storage';
 import { LocalStorageAdapter } from './local-storage-adapter';
 
@@ -240,6 +241,189 @@ describe('AnnotationStorage memory-only fallback', () => {
     } finally {
       Storage.prototype.setItem = originalSet;
     }
+  });
+});
+
+describe('AnnotationStorage rollback on adapter failure', () => {
+  function failingAdapter(fail: Partial<Record<'save' | 'remove' | 'clear', boolean>>, seed: Annotation[] = []): StorageAdapter {
+    return {
+      load: async () => ({ version: 1, annotations: seed }),
+      save: async () => { if (fail.save) throw new Error('save failed') },
+      remove: async () => { if (fail.remove) throw new Error('remove failed') },
+      clear: async () => { if (fail.clear) throw new Error('clear failed') },
+    };
+  }
+
+  it('add() rejects and the annotation is not shown as saved', async () => {
+    const store = new AnnotationStorage(failingAdapter({ save: true }));
+    await store.ready;
+    await expect(store.add(makeAnnotation({ id: 'x' }))).rejects.toThrow('save failed');
+    expect(store.getAll()).toEqual([]);
+  });
+
+  it('update() rejects and restores the previous copy', async () => {
+    const seed = makeAnnotation({ id: 'a1', comment: 'before' });
+    const store = new AnnotationStorage(failingAdapter({ save: true }, [seed]));
+    await store.ready;
+    await expect(store.update('a1', { comment: 'after' })).rejects.toThrow('save failed');
+    expect(store.getById('a1')?.comment).toBe('before');
+  });
+
+  it('update() on a StorageConflictError adopts the backend copy instead of the local one', async () => {
+    const seed = makeAnnotation({ id: 'a1', comment: 'before', rev: 1 });
+    const current = makeAnnotation({ id: 'a1', comment: 'server', status: 'in_progress', rev: 2 });
+    const adapter: StorageAdapter = {
+      ...failingAdapter({}, [seed]),
+      save: async () => { throw new StorageConflictError(current) },
+    };
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    await expect(store.update('a1', { comment: 'mine' })).rejects.toBeInstanceOf(StorageConflictError);
+    expect(store.getById('a1')).toMatchObject({ comment: 'server', status: 'in_progress', rev: 2 });
+  });
+
+  it('remove() and clearAll() reject and restore the cache', async () => {
+    const seed = [makeAnnotation({ id: 'a1' }), makeAnnotation({ id: 'a2' })];
+    const store = new AnnotationStorage(failingAdapter({ remove: true, clear: true }, seed));
+    await store.ready;
+    await expect(store.remove('a1')).rejects.toThrow('remove failed');
+    expect(store.getAll().map((a) => a.id)).toEqual(['a1', 'a2']);
+    await expect(store.clearAll()).rejects.toThrow('clear failed');
+    expect(store.getAll()).toHaveLength(2);
+  });
+
+  it('importJSON() restores the previous annotations when a write fails part-way', async () => {
+    const seed = [makeAnnotation({ id: 'old' })];
+    const saved: string[] = [];
+    let calls = 0;
+    const adapter: StorageAdapter = {
+      load: async () => ({ version: 1, annotations: seed }),
+      save: async (a) => { calls++; if (calls === 2) throw new Error('disk full'); saved.push(a.id) },
+      remove: async () => {},
+      clear: async () => {},
+    };
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    await expect(
+      store.importJSON({ version: 1, annotations: [makeAnnotation({ id: 'n1' }), makeAnnotation({ id: 'n2' })] }),
+    ).rejects.toThrow('disk full');
+    expect(store.getAll().map((a) => a.id)).toEqual(['old']);
+    expect(saved).toContain('old'); // best-effort re-save of the previous set
+  });
+
+  it('forwards adapter status notifications through onStatus()', async () => {
+    const seen: StorageStatus[] = [];
+    const adapter: StorageAdapter = {
+      ...failingAdapter({}),
+      onStatus: (cb) => { cb({ state: 'queued', pending: 2 }); return () => {} },
+    };
+    const store = new AnnotationStorage(adapter);
+    store.onStatus((s) => seen.push(s));
+    expect(seen).toEqual([{ state: 'queued', pending: 2 }]);
+  });
+});
+
+describe('AnnotationStorage with a revision-aware adapter (save resolves with the confirmed copy)', () => {
+  /** Backend that assigns revisions like the cloud adapter: insert = rev 1, conditional update = rev + 1. */
+  function revisionAdapter(seed: Annotation[] = []) {
+    const rows = new Map(seed.map((a) => [a.id, a]));
+    const seenRevs: Array<number | undefined> = [];
+    const adapter: StorageAdapter = {
+      load: async () => ({ version: 1, annotations: [...rows.values()] }),
+      save: async (a) => {
+        seenRevs.push(a.rev);
+        if (typeof a.rev === 'number') {
+          const current = rows.get(a.id);
+          if (!current || current.rev !== a.rev) throw new StorageConflictError(current ?? null);
+          const saved = { ...a, rev: a.rev + 1 };
+          rows.set(a.id, saved);
+          return saved;
+        }
+        if (rows.has(a.id)) throw new StorageConflictError(rows.get(a.id)!);
+        const saved = { ...a, rev: 1 };
+        rows.set(a.id, saved);
+        return saved;
+      },
+      remove: async (id) => { rows.delete(id) },
+      clear: async () => { rows.clear() },
+    };
+    return { adapter, rows, seenRevs };
+  }
+
+  it('create / edit / edit carries the current revision every time, without a reload or a false conflict', async () => {
+    const { adapter, rows, seenRevs } = revisionAdapter();
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    await store.add(makeAnnotation({ id: 'a1' }));
+    expect(store.getById('a1')?.rev).toBe(1);
+    await store.update('a1', { comment: 'second' });
+    expect(store.getById('a1')?.rev).toBe(2);
+    await store.update('a1', { comment: 'third' });
+    expect(store.getById('a1')).toMatchObject({ comment: 'third', rev: 3 });
+    expect(rows.get('a1')).toMatchObject({ comment: 'third', rev: 3 });
+    expect(seenRevs).toEqual([undefined, 1, 2]);
+  });
+
+  it('load / edit / edit starts from the loaded revision', async () => {
+    const { adapter, seenRevs } = revisionAdapter([makeAnnotation({ id: 'a1', rev: 3 })]);
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    await store.update('a1', { comment: 'four' });
+    await store.update('a1', { comment: 'five' });
+    expect(store.getById('a1')?.rev).toBe(5);
+    expect(seenRevs).toEqual([3, 4]);
+  });
+
+  it('a real concurrent change is still a conflict, and the adopted backend copy makes the next edit succeed', async () => {
+    const { adapter, rows } = revisionAdapter([makeAnnotation({ id: 'a1', rev: 3 })]);
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    rows.set('a1', makeAnnotation({ id: 'a1', status: 'in_progress', rev: 4 })); // someone else wrote
+    await expect(store.update('a1', { comment: 'stale' })).rejects.toBeInstanceOf(StorageConflictError);
+    expect(store.getById('a1')).toMatchObject({ status: 'in_progress', rev: 4 });
+    await store.update('a1', { comment: 'fresh' });
+    expect(rows.get('a1')).toMatchObject({ comment: 'fresh', status: 'in_progress', rev: 5 });
+  });
+
+  it('an adapter that resolves with nothing (localStorage-style) leaves the local copy untouched', async () => {
+    const store = await makeStore();
+    const ann = makeAnnotation({ id: 'a1' });
+    await store.add(ann);
+    expect(store.getById('a1')).toEqual(ann);
+    expect(store.getById('a1')?.rev).toBeUndefined();
+  });
+
+  it('a failed write confirms nothing: no revision is adopted, the cache is rolled back', async () => {
+    const { adapter } = revisionAdapter([makeAnnotation({ id: 'a1', rev: 3 })]);
+    const failing: StorageAdapter = { ...adapter, save: async () => { throw new Error('network down') } };
+    const store = new AnnotationStorage(failing);
+    await store.ready;
+    await expect(store.add(makeAnnotation({ id: 'new' }))).rejects.toThrow('network down');
+    expect(store.getById('new')).toBeUndefined();
+    await expect(store.update('a1', { comment: 'x' })).rejects.toThrow('network down');
+    expect(store.getById('a1')).toMatchObject({ comment: 'Fix padding', rev: 3 });
+  });
+
+  it('importJSON writes every record as a new one: an exported rev never becomes the expected revision of an update', async () => {
+    const { adapter, rows, seenRevs } = revisionAdapter([makeAnnotation({ id: 'a1', rev: 3 })]);
+    const store = new AnnotationStorage(adapter);
+    await store.ready;
+    await store.importJSON({ version: 1, annotations: [makeAnnotation({ id: 'a1', comment: 'imported', rev: 3 }), makeAnnotation({ id: 'b1', rev: 9 })] });
+    expect(seenRevs).toEqual([undefined, undefined]);
+    expect(rows.get('a1')).toMatchObject({ comment: 'imported', rev: 1 });
+    expect(store.getAll().map((a) => [a.id, a.rev])).toEqual([['a1', 1], ['b1', 1]]);
+  });
+
+  it('importJSON rollback re-creates the previous records without their old revisions', async () => {
+    const { adapter, rows, seenRevs } = revisionAdapter([makeAnnotation({ id: 'old', rev: 7 })]);
+    let calls = 0;
+    const flaky: StorageAdapter = { ...adapter, save: async (a) => { calls++; if (calls === 1) throw new Error('disk full'); return adapter.save(a) } };
+    const store = new AnnotationStorage(flaky);
+    await store.ready;
+    await expect(store.importJSON({ version: 1, annotations: [makeAnnotation({ id: 'n1' })] })).rejects.toThrow('disk full');
+    expect(seenRevs).toEqual([undefined]); // only the rollback re-save reached the backend, as a new record
+    expect(rows.get('old')).toMatchObject({ id: 'old', rev: 1 });
+    expect(store.getById('old')?.rev).toBe(1);
   });
 });
 

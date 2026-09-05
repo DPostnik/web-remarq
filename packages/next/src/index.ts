@@ -22,6 +22,37 @@ const LOADER_PATH = require.resolve("@web-remarq/next/loader");
 
 const JSX_TEST = /\.(jsx|tsx)$/;
 
+/** Client-side env var the RemarqDevTools snippet reads to pair with the local MCP server. */
+export const TOKEN_ENV = "NEXT_PUBLIC_WEB_REMARQ_TOKEN";
+
+/**
+ * Read the local MCP token from `.remarq/config.json`, walking up from `from`
+ * (an app inside a monorepo finds the repo-root config). `withRemarq` calls
+ * this in development only; see `isProductionBuild`.
+ */
+export function readLocalToken(from: string = process.cwd()): string | null {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as typeof import("path");
+  let dir = from;
+  for (let i = 0; i < 12; i++) {
+    const file = path.join(dir, ".remarq", "config.json");
+    if (fs.existsSync(file)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { token?: unknown };
+        return typeof parsed.token === "string" ? parsed.token : null;
+      } catch {
+        return null;
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 /**
  * Wrap your Next.js config to enable web-remarq source location injection.
  * Works across Next.js 13–16+ with automatic strategy detection.
@@ -39,9 +70,10 @@ function withRemarq<T extends Record<string, any>>(
   options: RemarqOptions = {},
 ): T {
   const { production = false } = options;
+  const isProductionBuild = process.env.NODE_ENV === "production";
 
   // Skip in production unless explicitly opted in
-  if (!production && process.env.NODE_ENV === "production") {
+  if (!production && isProductionBuild) {
     return nextConfig;
   }
 
@@ -51,6 +83,16 @@ function withRemarq<T extends Record<string, any>>(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: Record<string, any> = { ...nextConfig };
+
+  // Pair the widget with the local MCP server: expose the token from
+  // .remarq/config.json as a public env var. Development only, regardless of
+  // the `production` option: that option opts into source instrumentation,
+  // never into shipping a local credential in a production bundle. A value
+  // the user set in `env` themselves is left untouched either way.
+  const token = isProductionBuild ? null : readLocalToken();
+  if (token && !(nextConfig.env ?? {})[TOKEN_ENV]) {
+    result.env = { ...(nextConfig.env ?? {}), [TOKEN_ENV]: token };
+  }
 
   // Webpack config — works on Next 13–16
   const existingWebpack = nextConfig.webpack;

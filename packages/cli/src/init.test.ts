@@ -34,13 +34,28 @@ describe('runInit', () => {
     expect(result.next).toBe('doctor')
   })
 
-  it('is idempotent - a second run does not rewrite .mcp.json', () => {
+  it('is idempotent - a second run does not rewrite .mcp.json or .remarq/config.json', () => {
     copy('vue-vite')
-    runInit(dir, {}, deps)
+    const first = runInit(dir, {}, deps)
+    expect(first.ok && first.wroteLocalConfig).toBe(true)
+    const configBefore = readFileSync(join(dir, '.remarq', 'config.json'), 'utf8')
     const second = runInit(dir, {}, deps)
     expect(second.ok).toBe(true)
     if (!second.ok) return
     expect(second.wroteMcpConfig).toBe(false)
+    expect(second.wroteLocalConfig).toBe(false)
+    expect(readFileSync(join(dir, '.remarq', 'config.json'), 'utf8')).toBe(configBefore)
+  })
+
+  it('creates a gitignored .remarq/config.json with a project id and a token that never appears in the result', () => {
+    copy('vue-vite')
+    const result = runInit(dir, {}, deps)
+    expect(result.ok).toBe(true)
+    const config = JSON.parse(readFileSync(join(dir, '.remarq', 'config.json'), 'utf8'))
+    expect(config.projectId).toMatch(/^prj_[0-9a-f]{16}$/)
+    expect(config.token).toMatch(/^[0-9a-f]{48}$/)
+    expect(readFileSync(join(dir, '.remarq', '.gitignore'), 'utf8')).toBe('*\n')
+    expect(JSON.stringify(result)).not.toContain(config.token)
   })
 
   it('preserves an unrelated MCP server already configured', () => {

@@ -22,6 +22,7 @@ describe('renderInit', () => {
       detected: detection,
       installed: ['web-remarq', '@web-remarq/unplugin'],
       wroteMcpConfig: true,
+      wroteLocalConfig: true,
       edits: [
         { file: 'packages/web/vite.config.ts', kind: 'build-config', snippet: 'plugins: []', note: 'after vue()' },
         { file: 'packages/web/src/main.ts', kind: 'entry', snippet: 'WebRemarq.init({})' },

@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Installer and doctor for web-remarq - sets up the widget, build plugin and MCP server in your project",
   "type": "module",
   "main": "dist/cli.js",

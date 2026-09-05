@@ -72,7 +72,7 @@ if (import.meta.env.DEV) {
 { "mcpServers": { "web-remarq": { "command": "npx", "args": ["-y", "@web-remarq/mcp"] } } }
 ```
 
-The MCP server starts in local mode automatically: annotations live in `.remarq/annotations.json` (self-gitignored), served to the widget over `127.0.0.1`.
+The MCP server starts in local mode automatically: annotations live in `.remarq/annotations.json` (self-gitignored), served to the widget over `127.0.0.1`. Access is paired, not open: `.remarq/config.json` holds the project id and a random token; the Vite plugin hands the token to the widget in development, and the server accepts only listed browser origins. See the [`@web-remarq/mcp` README](./packages/mcp/README.md#access-model-mcp-050-protocol-2) for the model and its limits.
 
 The daily loop:
 
@@ -81,7 +81,20 @@ The daily loop:
 3. **Or don't.** With no agent running, every actionable annotation is mirrored as a ticket file in `.remarq/tasks/<id>.md` - comment, source location, grep hints, and reporting instructions included. Later, tell any agent: "work through the tickets in `.remarq/tasks/`".
 4. **Verify.** A blue marker means the agent claims a fix. Look at it: Verify (green, ticket disappears) or Reject with a reason (back to pending - the agent on duty picks it up again). Agents cannot verify their own work; that button is human-only.
 
-The widget is offline-safe: it caches and buffers in localStorage while the server is down and syncs back on reconnect.
+#### Offline and durability
+
+The toolbar's small dot says where your last change landed - and the states are never blurred together:
+
+| Dot | State | Meaning |
+|-----|-------|---------|
+| green | `synced` | the server confirmed the write |
+| orange, pulsing | `queued` | server unreachable; the change is in a per-project queue in localStorage and is replayed, in order, when the server is back - including after a reload |
+| red | `memory` | localStorage unavailable too (quota, disabled); the change lives in this tab only and is lost on reload - you are told so |
+| red | `unauthorized` | not paired: no token, a rotated token, or an origin the server does not allow; nothing is sent until fixed |
+| red | `rejected` | the server refused a change as invalid; it is parked, not retried forever |
+| orange | `conflict` | your change collided with a newer server copy (an agent moved it first); fields that could be kept were kept, the rest is journaled per project in localStorage and survives reloads until you export and clear it |
+
+Rules that hold behind the dot: a queue only empties after the server confirms each operation; a stale local copy can never roll back a newer status or truncate history (writes carry revisions, collisions are merged three-way against the copy the edit was made from, which is stored with the queued change so a reload cannot turn a partial edit into an overwrite); a queue built for project A is never sent to a project B later served on the same port; a queue built before any server was ever seen is only sent after `WebRemarq.adoptUnsent()`; `WebRemarq.exportUnsent()` downloads everything that never reached the server, conflict records included (a conflict is written to the journal before the queued change is dropped, so a crash in between replays the change and replaces the record instead of losing it; when the journal itself cannot be written the change stays queued and the state says `memory`); `WebRemarq.getSyncStatus()` returns the state programmatically. Two tabs editing the same annotation do not lose changes silently: the second write is a detectable conflict. Imports are validated before anything is cleared and the previous store is backed up to `localStorage["remarq:import-backup"]`.
 
 ### 2. Designer → developer handoff (no server)
 

@@ -21,7 +21,14 @@ export type {
   ToolbarPosition,
   StorageAdapter,
   StorageChangeEvent,
+  StorageStatus,
+  StorageSyncState,
 } from './types'
+export { AnnotationNotFoundError, StorageConflictError } from './types'
+export { mergeAnnotation } from './merge'
+export type { MergeResult } from './merge'
+export { validateAnnotation, validateStore, isSafeAnnotationId, LIMITS } from './validate'
+export type { ValidationResult, StoreValidationResult } from './validate'
 export { createFingerprint } from './fingerprint'
 export { matchElement } from './matcher'
 export { AnnotationStorage, migrateAnnotation } from './storage'

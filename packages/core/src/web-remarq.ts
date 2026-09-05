@@ -1,7 +1,10 @@
-import type { Actor, Annotation, ImportResult, QualityCheckInput, WebRemarqOptions } from './core/types'
+import type { Actor, Annotation, ImportResult, QualityCheckInput, StorageAdapter, StorageStatus, WebRemarqOptions } from './core/types'
+import { StorageConflictError } from './core/types'
 import { AnnotationStorage } from './core/storage'
 import { QualityRunner } from './core/quality-runner'
 import { LocalStorageAdapter } from './core/local-storage-adapter'
+import { HttpStorageAdapter } from './core/http-storage-adapter'
+import { validateStore } from './core/validate'
 import { createFingerprint } from './core/fingerprint'
 import { matchElement } from './core/matcher'
 import { generateAgentExport, actionableOnly } from './core/agent-export'
@@ -20,9 +23,13 @@ import { showShortcutsModal, hideShortcutsModal } from './ui/shortcuts-modal'
 import { RouteObserver } from './spa'
 import { toBucket, initViewportListener, destroyViewportListener } from './core/viewport'
 
+const IMPORT_BACKUP_KEY = 'remarq:import-backup'
+
 let initialized = false
 let options: WebRemarqOptions = {}
 let storage: AnnotationStorage
+let storageAdapter: StorageAdapter
+let lastSyncState: StorageStatus['state'] | null = null
 let themeManager: ThemeManager
 let toolbar: Toolbar
 let overlay: Overlay
@@ -88,6 +95,43 @@ function qualityInput(ann: Annotation): QualityCheckInput {
     route: ann.route,
     viewport: { width: window.innerWidth, height: window.innerHeight },
   }
+}
+
+/**
+ * Every storage mutation goes through here: the cache was updated optimistically
+ * and AnnotationStorage rolls it back on failure, so all that is left to do is
+ * tell the user and repaint. No storage rejection is ever left unhandled.
+ */
+function persist(operation: Promise<unknown>, what: string): void {
+  operation.catch((err: unknown) => {
+    const detail = err instanceof StorageConflictError
+      ? 'it changed elsewhere first - showing the current version'
+      : err instanceof Error ? err.message : String(err)
+    console.warn(`[web-remarq] ${what} failed:`, err)
+    if (themeManager) showToast(themeManager.container, `${what} failed: ${detail}`, 5000)
+    if (initialized) refreshMarkers()
+  })
+}
+
+function handleSyncStatus(status: StorageStatus): void {
+  toolbar?.setSyncStatus(status)
+  const changed = status.state !== lastSyncState
+  lastSyncState = status.state
+  if (!changed || status.state === 'synced' || !themeManager) return
+  const prefix: Record<StorageStatus['state'], string> = {
+    synced: '',
+    queued: 'Offline - changes are saved locally',
+    memory: 'Warning: localStorage unavailable',
+    unauthorized: 'Not paired with the local server',
+    rejected: 'The server rejected a change',
+    conflict: 'A change collided with a newer version',
+    incompatible: 'Local server is too old',
+  }
+  showToast(themeManager.container, `${prefix[status.state]}${status.message ? `: ${status.message}` : ''}`, 6000)
+}
+
+function httpAdapter(): HttpStorageAdapter | null {
+  return storageAdapter instanceof HttpStorageAdapter ? storageAdapter : null
 }
 
 function cacheElement(annotationId: string, el: HTMLElement): void {
@@ -230,7 +274,7 @@ function handleInspectClick(e: MouseEvent): void {
       }
       // Cache the element immediately — no need to re-match
       cacheElement(ann.id, target)
-      storage.add(ann)
+      persist(storage.add(ann), 'Saving annotation')
       refreshMarkers()
       showToast(themeManager.container, 'Annotation added')
       qualityRunner.run(ann.id, qualityInput(ann))
@@ -291,7 +335,7 @@ function handleInspectKeydown(e: KeyboardEvent): void {
   if (e.altKey && e.code === 'KeyD') {
     e.preventDefault()
     elementCache.clear()
-    storage.clearAll()
+    persist(storage.clearAll(), 'Clearing annotations')
     qualityRunner.clear()
     qualityBubbles.clear()
     refreshMarkers()
@@ -353,7 +397,7 @@ function handleMarkerClick(annotationId: string): void {
       qualityBubbles.remove(ann.id)
       qualityBubbles.suppress(null)
       elementCache.delete(ann.id)
-      storage.remove(ann.id)
+      persist(storage.remove(ann.id), 'Deleting annotation')
       refreshMarkers()
     },
     onClose: () => {
@@ -361,7 +405,7 @@ function handleMarkerClick(annotationId: string): void {
       qualityBubbles.suppress(null)
     },
     onEdit: (newComment: string) => {
-      storage.update(ann.id, { comment: newComment })
+      persist(storage.update(ann.id, { comment: newComment }), 'Saving edit')
       refreshMarkers()
       const fresh = storage.getById(ann.id) ?? ann
       qualityRunner.run(ann.id, { ...qualityInput(fresh), comment: newComment })
@@ -390,10 +434,10 @@ function handleMarkerClick(annotationId: string): void {
     detailCallbacks.onUseRewrite = (rewrite: string) => {
       const fresh = storage.getById(ann.id)
       const qc = fresh?.qualityCheck
-      storage.update(ann.id, {
+      persist(storage.update(ann.id, {
         comment: rewrite,
         ...(qc ? { qualityCheck: { ...qc, refinedBy: 'designer' as const } } : {}),
-      })
+      }), 'Saving rewrite')
       markers.setSelected(null)
       qualityBubbles.suppress(null)
       refreshMarkers()
@@ -579,7 +623,7 @@ function applyTransition(id: string, action: LifecycleAction, opts: TransitionOp
   if (!ann) return
   const { status, event } = transition(ann, action, opts)
   const lifecycle = [...ann.lifecycle, event]
-  storage.update(id, { status, lifecycle })
+  persist(storage.update(id, { status, lifecycle }), `Recording "${action}"`)
   markers?.updateStatus(id, status)
   refreshMarkers()
 }
@@ -614,7 +658,8 @@ export const WebRemarq = {
 
     try {
       injectStyles()
-      storage = new AnnotationStorage(options.storage ?? new LocalStorageAdapter())
+      storageAdapter = options.storage ?? new LocalStorageAdapter()
+      storage = new AnnotationStorage(storageAdapter)
       storage.onChange(() => scheduleRefresh())
       themeManager = new ThemeManager(document.body, options.theme)
       overlay = new Overlay(themeManager.container)
@@ -626,7 +671,7 @@ export const WebRemarq = {
       qualityBubbles = new QualityBubbleManager(themeManager.container, handleMarkerClick)
       qualityRunner = new QualityRunner(options.qualityGate, {
         persist: (id, check) => {
-          storage.update(id, { qualityCheck: check })
+          persist(storage.update(id, { qualityCheck: check }), 'Saving quality check')
         },
         onPending: (id) => qualityBubbles.setPending(id),
         onSettled: (id, check) => qualityBubbles.setVerdict(id, check),
@@ -636,7 +681,7 @@ export const WebRemarq = {
       detachedPanel = new DetachedPanel(themeManager.container, (id) => {
         elementCache.delete(id)
         qualityRunner.forget(id)
-        storage.remove(id)
+        persist(storage.remove(id), 'Deleting annotation')
         refreshMarkers()
       }, position)
 
@@ -659,7 +704,7 @@ export const WebRemarq = {
         },
         onClear: () => {
           elementCache.clear()
-          storage.clearAll()
+          persist(storage.clearAll(), 'Clearing annotations')
           qualityRunner.clear()
           qualityBubbles.clear()
           refreshMarkers()
@@ -681,11 +726,17 @@ export const WebRemarq = {
       setupMutationObserver()
       initViewportListener(() => refreshMarkers())
 
+      storage.onStatus(handleSyncStatus)
+
       storage.ready.then(() => {
         if (storage.isMemoryOnly) {
           toolbar.setMemoryWarning(true)
+          showToast(themeManager.container, 'Warning: localStorage unavailable - annotations live in memory only and are lost on reload', 6000)
         }
         refreshMarkers()
+      }).catch((err: unknown) => {
+        console.error('[web-remarq] Initial load failed:', err)
+        showToast(themeManager.container, `Could not load annotations: ${err instanceof Error ? err.message : String(err)}`, 6000)
       })
 
       console.debug(`[web-remarq] Initialized on route: ${currentRoute()}`)
@@ -725,6 +776,7 @@ export const WebRemarq = {
       elementCache.clear()
       inspecting = false
       spacingMode = false
+      lastSyncState = null
       initialized = false
     } catch (err) {
       console.error('[web-remarq] Destroy failed:', err)
@@ -746,10 +798,40 @@ export const WebRemarq = {
     else copyToClipboard()
   },
 
+  /**
+   * Replace all annotations with the contents of a JSON export. The file is
+   * validated BEFORE anything is cleared; the previous store is copied to
+   * localStorage (`remarq:import-backup`) so a failure part-way is recoverable.
+   */
   async import(file: File): Promise<ImportResult> {
     const text = await file.text()
-    const data = JSON.parse(text)
-    storage.importJSON(data)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      showToast(themeManager.container, 'Import failed: the file is not valid JSON', 5000)
+      throw new Error('import: invalid JSON')
+    }
+    const validated = validateStore(parsed)
+    if (!validated.ok) {
+      showToast(themeManager.container, `Import failed: ${validated.errors[0]}`, 6000)
+      throw new Error(`import: ${validated.errors.join('; ')}`)
+    }
+
+    try {
+      localStorage.setItem(IMPORT_BACKUP_KEY, JSON.stringify(storage.exportJSON()))
+    } catch {
+      // no backup possible (quota / disabled) - the import still proceeds, the toast below says so
+    }
+
+    try {
+      await storage.importJSON(validated.store)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast(themeManager.container, `Import failed part-way: ${message}. Previous annotations restored; a copy is in localStorage["${IMPORT_BACKUP_KEY}"]`, 8000)
+      refreshMarkers()
+      throw err
+    }
     refreshMarkers()
 
     const allAnns = storage.getAll()
@@ -776,8 +858,40 @@ export const WebRemarq = {
 
   clearAll(): void {
     elementCache.clear()
-    storage?.clearAll()
+    if (storage) persist(storage.clearAll(), 'Clearing annotations')
     if (initialized) refreshMarkers()
+  },
+
+  /** Where the last write landed (see StorageSyncState). Null when the adapter does not report it. */
+  getSyncStatus(): StorageStatus | null {
+    return httpAdapter()?.getStatus() ?? null
+  },
+
+  /** Store the token from `.remarq/config.json` for the local server and reconnect (HttpStorageAdapter only). */
+  async pair(token: string): Promise<void> {
+    const adapter = httpAdapter()
+    if (!adapter) throw new Error('pair() needs an HttpStorageAdapter')
+    await adapter.pair(token)
+    if (initialized) refreshMarkers()
+  },
+
+  /** Send queued changes that were made before any local server was seen (HttpStorageAdapter only). Returns how many were adopted. */
+  async adoptUnsent(): Promise<number> {
+    const adapter = httpAdapter()
+    if (!adapter) return 0
+    const n = await adapter.adoptUnsent()
+    if (initialized) {
+      refreshMarkers()
+      showToast(themeManager.container, n ? `Sent ${n} queued change${n === 1 ? '' : 's'}` : 'Nothing to send')
+    }
+    return n
+  },
+
+  /** Download everything that never reached the local server (queues, rejected ops, conflicts) as JSON. */
+  exportUnsent(): void {
+    const adapter = httpAdapter()
+    if (!adapter) return
+    downloadFile(JSON.stringify(adapter.exportUnsent(), null, 2), `remarq-unsent-${Date.now()}.json`, 'application/json')
   },
 
   acknowledge(id: string, opts?: TransitionOpts): void {

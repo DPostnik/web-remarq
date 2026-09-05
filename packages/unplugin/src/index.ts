@@ -1,41 +1,19 @@
 import { createUnplugin } from 'unplugin'
 import { relative } from 'path'
+import { createFilter, DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './filter'
+import { CONFIG_ENDPOINT, readLocalConfig } from './local-config'
 import { transformJSX, transformVueSFC } from './transform'
 
 export interface Options {
-  /** Glob patterns for files to include. Default: ['**\/*.jsx', '**\/*.tsx', '**\/*.vue'] */
+  /**
+   * Glob patterns for files to include. Supports `**`, `*`, `?` and brace groups
+   * (`src/**\/*.{jsx,tsx}`). Default: ['**\/*.jsx', '**\/*.tsx', '**\/*.vue']
+   */
   include?: string[]
   /** Glob patterns for files to exclude. Default: ['node_modules/**'] */
   exclude?: string[]
   /** Enable in production builds. Default: false */
   production?: boolean
-}
-
-const DEFAULT_INCLUDE = ['**/*.jsx', '**/*.tsx', '**/*.vue']
-const DEFAULT_EXCLUDE = ['node_modules/**']
-
-function createFilter(include: string[], exclude: string[]): (id: string) => boolean {
-  // Simple glob matching without picomatch dependency
-  function toRegex(glob: string): RegExp {
-    const escaped = glob
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*\*/g, '§GLOBSTAR§')
-      .replace(/\*/g, '[^/]*')
-      .replace(/\/§GLOBSTAR§\//g, '§OPTPATH§')
-      .replace(/§GLOBSTAR§/g, '.*')
-      .replace(/\?/g, '[^/]')
-      .replace(/§OPTPATH§/g, '/(?:.*/)?')
-    return new RegExp(`(?:^|/)${escaped}$`)
-  }
-
-  const includePatterns = include.map(toRegex)
-  const excludePatterns = exclude.map(toRegex)
-
-  return (id: string) => {
-    const normalized = id.split('\\').join('/')
-    if (excludePatterns.some(re => re.test(normalized))) return false
-    return includePatterns.some(re => re.test(normalized))
-  }
 }
 
 const unplugin = createUnplugin((options: Options = {}) => {
@@ -63,6 +41,37 @@ const unplugin = createUnplugin((options: Options = {}) => {
 
       return transformJSX(code, filePath) ?? undefined
     },
+
+    vite: {
+      /**
+       * Development-only pairing endpoint. The widget (HttpStorageAdapter) asks
+       * the dev server for the local MCP token at GET /__web-remarq/config.json
+       * so the credential never has to appear in source. Same-origin only: any
+       * code running in the dev app could read it, which is the app itself.
+       * The token is useless remotely - the MCP endpoint listens on 127.0.0.1.
+       * Never registered in production builds (no dev server there anyway).
+       */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      configureServer(server: any) {
+        if (!options.production && process.env.NODE_ENV === 'production') return
+        const root: string = server.config?.root ?? process.cwd()
+        server.middlewares.use(
+          CONFIG_ENDPOINT,
+          (req: { method?: string }, res: { statusCode: number; setHeader(n: string, v: string): void; end(b?: string): void }, next: () => void) => {
+            if (req.method !== 'GET') return next()
+            const config = readLocalConfig(root)
+            res.setHeader('cache-control', 'no-store')
+            if (!config) {
+              res.statusCode = 404
+              res.end()
+              return
+            }
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify(config))
+          },
+        )
+      },
+    },
   }
 })
 
@@ -76,3 +85,4 @@ export const esbuildPlugin = unplugin.esbuild
 export const rspackPlugin = unplugin.rspack
 
 export { transformJSX, transformVueSFC } from './transform'
+export { createFilter, DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './filter'

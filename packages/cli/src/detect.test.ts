@@ -45,7 +45,7 @@ describe('detect - single repo', () => {
     expect(r.detection.framework).toBe('react')
     expect(r.detection.packageManager).toBe('pnpm')
     expect(r.detection.entry).toBe('src/main.tsx')
-    expect(r.detection.includeGlob).toEqual(['src/**/*.{jsx,tsx}'])
+    expect(r.detection.includeGlob).toEqual(['src/**/*.jsx', 'src/**/*.tsx'])
   })
 
   it('detects next with yarn', () => {

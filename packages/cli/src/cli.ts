@@ -24,7 +24,12 @@ export interface CliDeps {
 }
 
 const defaultDeps: CliDeps = {
-  exec: (cmd, cwd) => { execSync(cmd, { cwd, stdio: 'inherit' }) },
+  // With --json the CLI's stdout IS the payload an agent parses: the package
+  // manager's progress lines must not interleave with it. Its stderr stays
+  // visible either way, so a failing install is still explained.
+  exec: (cmd, cwd, quiet) => {
+    execSync(cmd, { cwd, stdio: quiet ? ['ignore', 'ignore', 'inherit'] : 'inherit' })
+  },
 }
 
 export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise<number> {
@@ -44,13 +49,13 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
     // can point the user at it, then run `runInit` itself inside try/catch:
     // that call is what invokes `deps.exec` and is where the throw surfaces.
     let attemptedCommand: string | null = null
-    const exec: InitDeps['exec'] = (cmd, cwd) => {
+    const exec: InitDeps['exec'] = (cmd, cwd, quiet) => {
       attemptedCommand = cmd
-      deps.exec(cmd, cwd)
+      deps.exec(cmd, cwd, quiet)
     }
 
     try {
-      const result = runInit(process.cwd(), { app }, { exec })
+      const result = runInit(process.cwd(), { app, quiet: json }, { exec })
       console.log(json ? JSON.stringify(result, null, 2) : renderInit(result))
       return result.ok ? 0 : 1
     } catch (err) {

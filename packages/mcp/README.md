@@ -39,11 +39,6 @@ automatically:
 Annotations are stored in a JSON file on disk and served to the widget over a
 small HTTP endpoint on `127.0.0.1`. No Supabase project, no project key.
 
-Trust model: the endpoint binds to `127.0.0.1` with permissive CORS, so any
-page open in the local browser can reach it for as long as the server runs -
-this is meant for dev-time use with low-sensitivity data, not a hardened
-local API.
-
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `REMARQ_PORT` | `1817` | Port for the widget-facing HTTP endpoint |
@@ -58,6 +53,95 @@ On the widget side, pair it with `HttpStorageAdapter` and `submitFlow`:
 import { WebRemarq, HttpStorageAdapter } from 'web-remarq'
 WebRemarq.init({ submitFlow: true, storage: new HttpStorageAdapter() })
 ```
+
+### Access model (mcp 0.5.0, protocol 2)
+
+On first start the server writes `.remarq/config.json`:
+
+```json
+{
+  "projectId": "prj_…",          // stable identity of this store
+  "token": "…",                  // random bearer credential for the HTTP endpoint
+  "allowedOrigins": ["http://localhost:*", "http://127.0.0.1:*", "http://[::1]:*"]
+}
+```
+
+`npx @web-remarq/cli init` creates the same file up front. It is owner-only
+and gitignored; the token never appears in source, URLs, ticket files, logs or
+`doctor` output.
+
+Every request except `GET /health` needs `Authorization: Bearer <token>` -
+reads included. Browser requests must also come from an origin in
+`allowedOrigins` (exact scheme + host; `:*` means any port). Foreign, `null`
+and look-alike origins (`localhost.evil.com`) are refused on preflight, read
+and write; a `Host` header that does not name this loopback listener is
+refused too (DNS rebinding). Remote/staging origins are never allowed unless
+you list them on purpose.
+
+How the widget gets the token, in development only:
+
+- **Vite**: `@web-remarq/unplugin` serves it at `/__web-remarq/config.json`
+  on your dev server; `HttpStorageAdapter` fetches it same-origin.
+- **Next.js**: `withRemarq()` exposes it as `NEXT_PUBLIC_WEB_REMARQ_TOKEN`;
+  the `RemarqDevTools` snippet passes it as `new HttpStorageAdapter({ token })`.
+- **Plain HTML / other bundlers**: paste it once in the browser console -
+  `WebRemarq.pair('<token>')` - it is kept in localStorage for that endpoint.
+
+Rotating the token (edit the file, restart the server) does not change
+`projectId` and does not touch annotations; widgets show "not paired" until
+they get the new token. Changing `projectId` is a different project: widgets
+keep their queued changes for the old one.
+
+What this protects: the HTTP boundary, against other pages in your browser
+and against rebinding attacks. What it does not protect: a process on your
+machine with file access (it can read `.remarq/config.json`), and it is not a
+cryptographic "human approval" - the lifecycle records who acted, it does not
+authenticate them.
+
+### Protocol 2 endpoints
+
+| Route | Auth | Purpose |
+|-------|------|---------|
+| `GET /health` | none, any origin | `{ ok, protocol: 2 }` - liveness only, no data |
+| `GET /store` | token | `{ rev, protocol, projectId, store }`; every annotation carries its own `rev` |
+| `PUT /annotations/:id` | token | Create (no `If-Match`) or update (`If-Match: <rev>` required). Body is validated (types, enums, sizes, filename-safe id, unknown top-level fields rejected). Wrong revision → `409 { code: "conflict", details: { current } }`; missing → `428` |
+| `DELETE /annotations/:id` | token | Optional `If-Match`; mismatch → 409 |
+| `DELETE /annotations` | token | Clear |
+
+Limits: 512 KB body, 10 000-character comments, 500 lifecycle events,
+`application/json` only. An invalid request is a 4xx and changes neither the
+store nor `.remarq/tasks/`.
+
+**Upgrading from mcp 0.4.x**: widgets older than `web-remarq` 0.9.0 get 401
+from a 0.5.0 server and go into their offline buffer instead of losing data;
+upgrade the widget and the buffer is migrated (see "Offline and durability" in
+the core README). A 0.9.0 widget refuses to talk to a 0.4.x server
+("incompatible") rather than writing without revisions.
+
+Only one server may serve a store: `.remarq/server.lock` names the owning
+process, and a second start against the same store exits with an error. The
+atomic transition guarantee below depends on this.
+
+### Atomic transitions
+
+`acknowledge`, `claim_fix` and `dismiss` are atomic per annotation: the read,
+the lifecycle check and the write happen inside one critical section (local
+file store) or as one conditional `UPDATE … WHERE id = ? AND rev = ?` (cloud,
+needs `004_rev.sql`). Of several concurrent callers exactly one wins; the
+others get `invalid_transition` with `details.conflict: true`, the current
+status/revision and the last event - do not start work, re-read the annotation.
+
+Pass `operationId` (any unique string you keep) to make a call idempotent: a
+retry after a lost response finds the event already recorded and returns
+`{ ok: true, replayed: true }` instead of appending a second one. A different
+`operationId` never impersonates the earlier winner.
+
+The guarantee is "one winner per transition", not "an authenticated owner":
+nothing identifies which agent won, the lifecycle records `actor: 'agent'`.
+Cloud mode has the same contract through the conditional update; the
+disposable-database run that proves it against real Postgres is still an open
+verification step (the adapter tests assert the exact statement, not SQL
+atomicity).
 
 ### Watching for new feedback
 
@@ -135,14 +219,17 @@ There is no mode switch:
   > Work through the tickets in .remarq/tasks/, one background subagent per
   > file, in parallel. Follow the instructions inside each file.
 
-Duplicate work is prevented by the lifecycle machine, not by locks: the first
-thing any executor does is `acknowledge` - if that fails, someone else owns
-the task and the file should be skipped.
+Duplicate work is prevented by the atomic lifecycle transition, not by file
+locks: the first thing any executor does is `acknowledge` with a fresh
+`operationId` - if it answers `invalid_transition`, someone else already moved
+the annotation and the file should be skipped; if the call fails without an
+answer, retry with the same `operationId`.
 
 ## Cloud mode prerequisites
 
-1. A Supabase project provisioned with `@web-remarq/cloud` (≥0.2.0). Run both
-   `001_init.sql` and `002_lifecycle.sql` from the cloud package.
+1. A Supabase project provisioned with `@web-remarq/cloud` (≥0.4.0). Run
+   `001_init.sql`, `002_lifecycle.sql`, `003_quality.sql` and `004_rev.sql`
+   from the cloud package (all additive).
 2. A project key generated via `npx @web-remarq/cloud gen-key --name "..."`.
 
 ## Configuration
@@ -178,9 +265,9 @@ if any are missing or malformed. Leave all three unset for local mode.
 |------|-------|---------|
 | `list_annotations` | `{ route?, status?, viewportBucket?, file?, limit? }` | `{ annotations[], total }` - `status` accepts `draft`, `pending`, `in_progress`, `fixed_unverified`, `verified`, `dismissed`; each item carries `quality` (`clear` \| `ambiguous` \| `unactionable`) when an AI pre-flight check ran |
 | `get_annotation` | `{ id }` | Full `AgentAnnotation` shape (source + searchHints + lifecycle + `qualityCheck` when present) |
-| `acknowledge` | `{ id }` | `{ ok, status }` after `pending → in_progress` |
-| `claim_fix` | `{ id }` | `{ ok, status }` after `pending\|in_progress → fixed_unverified` |
-| `dismiss` | `{ id, reason? }` | `{ ok, status }` after non-terminal → `dismissed` |
+| `acknowledge` | `{ id, operationId? }` | `{ ok, status, rev, replayed? }` after `pending → in_progress` (atomic, one winner) |
+| `claim_fix` | `{ id, operationId? }` | `{ ok, status, rev, replayed? }` after `pending\|in_progress → fixed_unverified` |
+| `dismiss` | `{ id, reason?, operationId? }` | `{ ok, status, rev, replayed? }` after non-terminal → `dismissed` |
 | `watch_annotations` | `{ timeoutSeconds? }` (1-120, default 25) | `{ annotations[], total, timedOut }` - long-polls for new pending annotations |
 
 When `qualityCheck.score` is `ambiguous` or `unactionable`, the comment likely needs designer clarification — prefer `dismiss` with a reason over guessing at intent.
@@ -188,7 +275,7 @@ When `qualityCheck.score` is `ambiguous` or `unactionable`, the comment likely n
 ### Error codes
 
 - `annotation_not_found` — id absent in project (also returned if RLS hides it)
-- `invalid_transition` — lifecycle action not allowed from current status; payload includes `currentStatus`
+- `invalid_transition` — lifecycle action not allowed from current status. `details` carries `conflict: true`, `currentStatus`, `currentRev`, `lastEvent` and `requestedTransition`: treat it as "someone else got there first" - do not start work, re-read the annotation. Storage adapters without `mutate()` (custom ones) answer `atomic: false` on success
 - `storage_error` - Supabase / network failure in cloud mode, or a local
   file-store error (e.g. corrupted store) in local mode; payload includes root
   cause

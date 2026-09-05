@@ -10,7 +10,11 @@ export const DUTY_PROMPT =
   'You are on annotation duty for this project. Designers drop feedback via ' +
   'the web-remarq MCP server. Run this loop until told to stop: call ' +
   'watch_annotations (timeoutSeconds: 60); if it times out, call it again. ' +
-  'For EACH annotation it returns, call acknowledge with its id first. Then, ' +
+  'For EACH annotation it returns, call acknowledge with its id first, passing ' +
+  'a fresh operationId you keep for retries; if acknowledge answers ' +
+  'invalid_transition, another agent already holds it - skip it and do not ' +
+  'start work; if the call fails without an answer, retry with the same ' +
+  'operationId. Then, ' +
   'if you can run background subagents, dispatch one that applies the fix to ' +
   'the project files and calls claim_fix when done - do not fix anything ' +
   'yourself in the main loop and do not wait for subagents, go straight back ' +

@@ -12,6 +12,13 @@ This creates two tables (`projects`, `annotations`), enables row-level security,
 and installs the `current_project_id()` helper that gates all access by the
 `x-remarq-project-key` header.
 
+Then run, in order, [`002_lifecycle.sql`](./002_lifecycle.sql),
+[`003_quality.sql`](./003_quality.sql) and [`004_rev.sql`](./004_rev.sql).
+All three are additive (`add column`), safe on an existing project. `004_rev`
+is required by cloud ≥0.4.0: it adds the per-record revision the adapter uses
+for conditional writes (`update … where id = ? and rev = ?`), which is what
+makes concurrent agent transitions resolve to one winner.
+
 ## 2. Verify the schema
 
 In a new query, run:

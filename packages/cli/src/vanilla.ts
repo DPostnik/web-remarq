@@ -4,7 +4,10 @@ import type { Detection } from './types'
 
 const MARKER = 'https://unpkg.com/web-remarq/dist/web-remarq.global.js'
 
-export const SCRIPT_TAG = `    <!-- web-remarq (dev only) -->
+// No bundler means no dev-server pairing endpoint: the widget reports
+// "not paired" until the token from .remarq/config.json is pasted once via
+// WebRemarq.pair('<token>') in the browser console (kept in localStorage).
+export const SCRIPT_TAG = `    <!-- web-remarq (dev only). First run: WebRemarq.pair('<token from .remarq/config.json>') in the console. -->
     <script src="https://unpkg.com/web-remarq/dist/web-remarq.global.js"></script>
     <script>
       WebRemarq.init({ submitFlow: true, storage: new WebRemarq.HttpStorageAdapter() })

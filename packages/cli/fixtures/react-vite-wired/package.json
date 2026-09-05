@@ -1,0 +1,6 @@
+{
+  "name": "react-vite-wired",
+  "private": true,
+  "dependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "devDependencies": { "vite": "^7.0.0", "@vitejs/plugin-react": "^4.0.0", "@web-remarq/unplugin": "^0.1.0" }
+}

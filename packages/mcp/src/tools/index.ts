@@ -43,7 +43,7 @@ export function registerTools(
   server.registerTool(
     'acknowledge',
     {
-      description: 'Mark an annotation as in-progress (pending → in_progress).',
+      description: 'Mark an annotation as in-progress (pending → in_progress). Atomic: of several concurrent callers exactly one wins; the others get invalid_transition with details.conflict=true - then do not start work, re-read the annotation. Pass operationId (any unique string you keep) so a retry after a lost response is recognised instead of double-counted.',
       inputSchema: acknowledgeInputSchema.shape,
     },
     (input) => cast(handleAcknowledge(input, storage)),
@@ -52,7 +52,7 @@ export function registerTools(
   server.registerTool(
     'claim_fix',
     {
-      description: 'Claim a fix for an annotation (→ fixed_unverified). Human verification still required.',
+      description: 'Claim a fix for an annotation (→ fixed_unverified). Human verification still required. Atomic with the same operationId retry semantics as acknowledge; invalid_transition means the annotation changed under you - re-read it.',
       inputSchema: claimFixInputSchema.shape,
     },
     (input) => cast(handleClaimFix(input, storage)),
@@ -61,7 +61,7 @@ export function registerTools(
   server.registerTool(
     'dismiss',
     {
-      description: 'Dismiss an annotation with an optional reason (terminal state).',
+      description: 'Dismiss an annotation with an optional reason (terminal state). Atomic with the same operationId retry semantics as acknowledge.',
       inputSchema: dismissInputSchema.shape,
     },
     (input) => cast(handleDismiss(input, storage)),

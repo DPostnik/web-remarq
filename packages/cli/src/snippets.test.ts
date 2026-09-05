@@ -28,6 +28,17 @@ describe('buildEdits', () => {
     expect(edits[1].snippet).toContain('HttpStorageAdapter')
   })
 
+  it('prints one plain include pattern per extension for react (no brace groups)', () => {
+    const edits = buildEdits({
+      ...vueDetection,
+      framework: 'react',
+      entry: 'src/main.tsx',
+      includeGlob: ['src/**/*.jsx', 'src/**/*.tsx'],
+    })
+    expect(edits[0].snippet).toContain("include: ['src/**/*.jsx', 'src/**/*.tsx']")
+    expect(edits[0].snippet).not.toContain('{jsx,tsx}')
+  })
+
   it('emits the withRemarq wrapper for next', () => {
     const edits = buildEdits({
       ...vueDetection,

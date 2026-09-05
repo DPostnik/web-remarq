@@ -1,7 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
 import type { Annotation, ElementFingerprint } from 'web-remarq'
+import { AnnotationNotFoundError, StorageConflictError } from 'web-remarq/core'
 import { CloudStorageAdapter } from './cloud-storage-adapter'
+import type { CloudStorageOptions } from './types'
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
@@ -14,64 +16,41 @@ interface ChainResult {
   error?: unknown
 }
 
-interface ChainSpies {
-  from: ReturnType<typeof vi.fn>
-  select: ReturnType<typeof vi.fn>
-  order: ReturnType<typeof vi.fn>
-  upsert: ReturnType<typeof vi.fn>
-  delete: ReturnType<typeof vi.fn>
-  eq: ReturnType<typeof vi.fn>
-  neq: ReturnType<typeof vi.fn>
-}
+type Call = { method: string; args: unknown[] }
 
-function buildChain(result: ChainResult): { client: unknown; spies: ChainSpies } {
-  const spies: ChainSpies = {
-    from: vi.fn(),
-    select: vi.fn(),
-    order: vi.fn(),
-    upsert: vi.fn(),
-    delete: vi.fn(),
-    eq: vi.fn(),
-    neq: vi.fn(),
-  }
-
-  const chain: Record<string, unknown> = {
-    then: (resolve: (value: ChainResult) => unknown) => resolve(result),
-  }
-  chain.select = (...args: unknown[]) => {
-    spies.select(...args)
-    return chain
-  }
-  chain.order = (...args: unknown[]) => {
-    spies.order(...args)
-    return chain
-  }
-  chain.upsert = (...args: unknown[]) => {
-    spies.upsert(...args)
-    return chain
-  }
-  chain.delete = (...args: unknown[]) => {
-    spies.delete(...args)
-    return chain
-  }
-  chain.eq = (...args: unknown[]) => {
-    spies.eq(...args)
-    return chain
-  }
-  chain.neq = (...args: unknown[]) => {
-    spies.neq(...args)
-    return chain
-  }
-
+/**
+ * Scripted stand-in for the supabase-js query builder. Every `from()` opens a
+ * new chain; every builder method records itself and returns the chain; the
+ * chain resolves (it is thenable) to the next scripted result. Tests assert on
+ * the recorded call sequence per query - this proves WHICH statement was sent
+ * (a conditional update with `eq('rev', n)`, an insert, a maybeSingle read),
+ * which is what the concurrency guarantees rest on. It does NOT prove SQL
+ * atomicity - see the README: the disposable-database run is a separate step.
+ */
+function scripted(results: ChainResult[]) {
+  const queries: Call[][] = []
   const client = {
-    from: (...args: unknown[]) => {
-      spies.from(...args)
+    from: (table: string) => {
+      const calls: Call[] = [{ method: 'from', args: [table] }]
+      queries.push(calls)
+      const result = results.shift() ?? { data: null, error: null }
+      const chain: Record<string, unknown> = {
+        then: (resolve: (value: ChainResult) => unknown) => resolve(result),
+      }
+      for (const method of ['select', 'order', 'insert', 'upsert', 'update', 'delete', 'eq', 'neq', 'maybeSingle']) {
+        chain[method] = (...args: unknown[]) => {
+          calls.push({ method, args })
+          return chain
+        }
+      }
       return chain
     },
   }
-
-  return { client, spies }
+  return { client, queries }
 }
+
+const methods = (q: Call[]) => q.map((c) => c.method)
+const call = (q: Call[], method: string) => q.find((c) => c.method === method)!.args
 
 const FP: ElementFingerprint = {
   dataAnnotate: null,
@@ -103,10 +82,29 @@ const ANNOTATION: Annotation = {
   lifecycle: [{ type: 'created', actor: 'designer', timestamp: 1711814400000 }],
 }
 
+const ROW = {
+  id: 'a1',
+  route: '/dashboard',
+  viewport: '1920x1080',
+  viewport_bucket: 1900,
+  fingerprint: FP,
+  comment: 'fix this',
+  status: 'pending',
+  timestamp_ms: 1711814400000,
+  lifecycle: [{ type: 'created', actor: 'designer', timestamp: 1711814400000 }],
+  rev: 3,
+}
+
 const OPTS = {
   supabaseUrl: 'https://example.supabase.co',
   supabaseAnonKey: 'anon-key',
   projectKey: 'pk_testkey',
+}
+
+function adapterWith(results: ChainResult[], opts: CloudStorageOptions = OPTS) {
+  const { client, queries } = scripted(results)
+  mockCreateClient.mockReturnValue(client as never)
+  return { adapter: new CloudStorageAdapter(opts), queries }
 }
 
 beforeEach(() => {
@@ -115,9 +113,7 @@ beforeEach(() => {
 
 describe('CloudStorageAdapter constructor', () => {
   it('passes project key header and disables session persistence', () => {
-    const { client } = buildChain({ data: [], error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    new CloudStorageAdapter(OPTS)
+    adapterWith([])
     expect(mockCreateClient).toHaveBeenCalledWith(
       OPTS.supabaseUrl,
       OPTS.supabaseAnonKey,
@@ -130,161 +126,142 @@ describe('CloudStorageAdapter constructor', () => {
 })
 
 describe('CloudStorageAdapter.load', () => {
-  it('returns annotations mapped from snake_case rows', async () => {
-    const rows = [
-      {
-        id: 'a1',
-        route: '/r',
-        viewport: '1920x1080',
-        viewport_bucket: 1900,
-        fingerprint: FP,
-        comment: 'one',
-        status: 'pending',
-        timestamp_ms: 100,
-      },
-      {
-        id: 'a2',
-        route: '/r',
-        viewport: '1024x768',
-        viewport_bucket: 1000,
-        fingerprint: FP,
-        comment: 'two',
-        status: 'verified',
-        timestamp_ms: 200,
-        lifecycle: [
-          { type: 'created', actor: 'designer', timestamp: 200 },
-          { type: 'verified', actor: 'developer', timestamp: 250 },
-        ],
-      },
-    ]
-    const { client, spies } = buildChain({ data: rows, error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
+  it('returns annotations mapped from snake_case rows, including rev', async () => {
+    const legacy = { ...ROW, id: 'a0', comment: 'legacy', lifecycle: undefined, rev: undefined }
+    const { adapter, queries } = adapterWith([{ data: [legacy, ROW], error: null }])
 
     const store = await adapter.load()
 
-    expect(spies.from).toHaveBeenCalledWith('annotations')
-    expect(spies.select).toHaveBeenCalledWith('*')
-    expect(spies.order).toHaveBeenCalledWith('timestamp_ms', { ascending: true })
-    expect(store).toEqual({
-      version: 1,
-      annotations: [
-        {
-          id: 'a1',
-          comment: 'one',
-          fingerprint: FP,
-          route: '/r',
-          viewport: '1920x1080',
-          viewportBucket: 1900,
-          timestamp: 100,
-          status: 'pending',
-          lifecycle: [],
-        },
-        {
-          id: 'a2',
-          comment: 'two',
-          fingerprint: FP,
-          route: '/r',
-          viewport: '1024x768',
-          viewportBucket: 1000,
-          timestamp: 200,
-          status: 'verified',
-          lifecycle: [
-            { type: 'created', actor: 'designer', timestamp: 200 },
-            { type: 'verified', actor: 'developer', timestamp: 250 },
-          ],
-        },
-      ],
+    expect(methods(queries[0])).toEqual(['from', 'select', 'order'])
+    expect(call(queries[0], 'order')).toEqual(['timestamp_ms', { ascending: true }])
+    expect(store.annotations[0]).toEqual({
+      id: 'a0', comment: 'legacy', fingerprint: FP, route: '/dashboard', viewport: '1920x1080',
+      viewportBucket: 1900, timestamp: 1711814400000, status: 'pending', lifecycle: [],
     })
+    expect(store.annotations[1]).toMatchObject({ id: 'a1', rev: 3, lifecycle: ROW.lifecycle })
   })
 
   it('returns empty store (not null) when no rows exist', async () => {
-    const { client } = buildChain({ data: [], error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
-    const store = await adapter.load()
-
-    expect(store).toEqual({ version: 1, annotations: [] })
+    const { adapter } = adapterWith([{ data: [], error: null }])
+    expect(await adapter.load()).toEqual({ version: 1, annotations: [] })
   })
 
-  it('throws on supabase error when onError is "throw"', async () => {
+  it('throws on supabase error when onError is "throw", logs and falls back otherwise', async () => {
     const err = new Error('rls denied')
-    const { client } = buildChain({ data: null, error: err })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter({ ...OPTS, onError: 'throw' })
-
+    const { adapter } = adapterWith([{ data: null, error: err }], { ...OPTS, onError: 'throw' })
     await expect(adapter.load()).rejects.toThrow('rls denied')
-  })
 
-  it('returns empty store and logs when onError is "memory-fallback"', async () => {
-    const err = new Error('network down')
-    const { client } = buildChain({ data: null, error: err })
-    mockCreateClient.mockReturnValue(client as never)
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const adapter = new CloudStorageAdapter({ ...OPTS, onError: 'memory-fallback' })
-
-    const store = await adapter.load()
-
-    expect(store).toEqual({ version: 1, annotations: [] })
+    const { adapter: lenient } = adapterWith([{ data: null, error: err }], { ...OPTS, onError: 'memory-fallback' })
+    expect(await lenient.load()).toEqual({ version: 1, annotations: [] })
     expect(warn).toHaveBeenCalledWith('[web-remarq cloud]', err)
     warn.mockRestore()
   })
 })
 
 describe('CloudStorageAdapter.save', () => {
-  it('upserts a row without project_id and with updated_at', async () => {
-    const { client, spies } = buildChain({ data: null, error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
+  it('inserts a new record (no rev) at rev 1, without project_id or created_at', async () => {
+    const { adapter, queries } = adapterWith([{ data: null, error: null }])
 
     await adapter.save(ANNOTATION)
 
-    expect(spies.from).toHaveBeenCalledWith('annotations')
-    const [row, options] = spies.upsert.mock.calls[0]
+    expect(methods(queries[0])).toEqual(['from', 'insert'])
+    const [row] = call(queries[0], 'insert') as [Record<string, unknown>]
     expect(row).not.toHaveProperty('project_id')
     expect(row).not.toHaveProperty('created_at')
-    expect(row).toMatchObject({
-      id: 'a1',
-      route: '/dashboard',
-      viewport: '1920x1080',
-      viewport_bucket: 1900,
-      fingerprint: FP,
-      comment: 'fix this',
-      status: 'pending',
-      timestamp_ms: 1711814400000,
-    })
+    expect(row).toMatchObject({ id: 'a1', route: '/dashboard', comment: 'fix this', status: 'pending', timestamp_ms: 1711814400000, rev: 1 })
+    expect(row.lifecycle).toEqual(ANNOTATION.lifecycle)
     expect(typeof row.updated_at).toBe('string')
-    expect(() => new Date(row.updated_at).toISOString()).not.toThrow()
-    expect(options).toEqual({ onConflict: 'id' })
   })
 
-  it('throws when supabase returns an error and onError is "throw"', async () => {
-    const err = new Error('insert failed')
-    const { client } = buildChain({ data: null, error: err })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
+  it('a copy that carries rev is a conditional update on id AND rev, bumping rev', async () => {
+    const { adapter, queries } = adapterWith([{ data: [{ id: 'a1' }], error: null }])
 
+    await adapter.save({ ...ANNOTATION, comment: 'edited', rev: 3 })
+
+    expect(methods(queries[0])).toEqual(['from', 'update', 'eq', 'eq', 'select'])
+    const [row] = call(queries[0], 'update') as [Record<string, unknown>]
+    expect(row).toMatchObject({ comment: 'edited', rev: 4 })
+    const eqs = queries[0].filter((c) => c.method === 'eq').map((c) => c.args)
+    expect(eqs).toEqual([['id', 'a1'], ['rev', 3]])
+  })
+
+  it('throws StorageConflictError with the current copy when the conditional update matches nothing', async () => {
+    const { adapter } = adapterWith([
+      { data: [], error: null }, // update matched 0 rows
+      { data: { ...ROW, comment: 'server side', rev: 4 }, error: null }, // fetchOne
+    ])
+
+    const err = await adapter.save({ ...ANNOTATION, comment: 'stale', rev: 3 }).catch((e) => e)
+    expect(err).toBeInstanceOf(StorageConflictError)
+    expect((err as StorageConflictError).current).toMatchObject({ comment: 'server side', rev: 4 })
+  })
+
+  it('reports an insert of an id that already exists as a conflict, not a silent overwrite', async () => {
+    const { adapter } = adapterWith([
+      { data: null, error: { code: '23505', message: 'duplicate key' } },
+      { data: ROW, error: null },
+    ])
+    await expect(adapter.save(ANNOTATION)).rejects.toBeInstanceOf(StorageConflictError)
+  })
+
+  it('throws other errors when onError is "throw"', async () => {
+    const { adapter } = adapterWith([{ data: null, error: new Error('insert failed') }])
     await expect(adapter.save(ANNOTATION)).rejects.toThrow('insert failed')
   })
+})
 
-  it('writes lifecycle array in the upserted row', async () => {
-    const { client, spies } = buildChain({ data: null, error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
-    await adapter.save(ANNOTATION)
-
-    const [row] = spies.upsert.mock.calls[0]
-    expect(row.lifecycle).toEqual([
-      { type: 'created', actor: 'designer', timestamp: 1711814400000 },
+describe('CloudStorageAdapter.mutate', () => {
+  it('reads, applies, and writes with a single conditional statement on the read revision', async () => {
+    const { adapter, queries } = adapterWith([
+      { data: ROW, error: null }, // fetchOne
+      { data: [{ id: 'a1' }], error: null }, // conditional update matched
     ])
+
+    const saved = await adapter.mutate('a1', (c) => ({
+      ...c, status: 'in_progress', lifecycle: [...c.lifecycle, { type: 'acknowledged', actor: 'agent', timestamp: 2 }],
+    }))
+
+    expect(methods(queries[0])).toEqual(['from', 'select', 'eq', 'maybeSingle'])
+    expect(methods(queries[1])).toEqual(['from', 'update', 'eq', 'eq', 'select'])
+    expect(queries[1].filter((c) => c.method === 'eq').map((c) => c.args)).toEqual([['id', 'a1'], ['rev', 3]])
+    expect(saved).toMatchObject({ status: 'in_progress', rev: 4 })
+    expect(saved.lifecycle).toHaveLength(2)
+  })
+
+  it('re-reads and re-applies when the conditional update lost the race, so the loser sees the winner', async () => {
+    const applied: string[] = []
+    const { adapter, queries } = adapterWith([
+      { data: ROW, error: null }, // read rev 3, pending
+      { data: [], error: null }, // update on rev 3 matched nothing: someone else won
+      { data: { ...ROW, status: 'in_progress', rev: 4 }, error: null }, // re-read
+    ])
+
+    await expect(
+      adapter.mutate('a1', (c) => {
+        applied.push(c.status)
+        if (c.status !== 'pending') throw new Error(`cannot acknowledge from ${c.status}`)
+        return { ...c, status: 'in_progress' }
+      }),
+    ).rejects.toThrow('cannot acknowledge from in_progress')
+    expect(applied).toEqual(['pending', 'in_progress'])
+    expect(queries).toHaveLength(3)
+  })
+
+  it('persists nothing when apply returns the same object, and rejects unknown ids', async () => {
+    const { adapter, queries } = adapterWith([{ data: ROW, error: null }])
+    const same = await adapter.mutate('a1', (c) => c)
+    expect(same.rev).toBe(3)
+    expect(queries).toHaveLength(1)
+
+    const { adapter: missing } = adapterWith([{ data: null, error: null }])
+    await expect(missing.mutate('nope', (c) => c)).rejects.toBeInstanceOf(AnnotationNotFoundError)
   })
 })
 
 describe('CloudStorageAdapter lifecycle round-trip', () => {
   it('preserves multi-event lifecycle through save → load', async () => {
-    const annotationWithHistory: Annotation = {
+    const withHistory: Annotation = {
       ...ANNOTATION,
       status: 'fixed_unverified',
       lifecycle: [
@@ -293,112 +270,41 @@ describe('CloudStorageAdapter lifecycle round-trip', () => {
         { type: 'fix_claimed', actor: 'agent', timestamp: 300 },
       ],
     }
+    const { adapter: writer, queries } = adapterWith([{ data: null, error: null }])
+    await writer.save(withHistory)
+    const [captured] = call(queries[0], 'insert') as [Record<string, unknown>]
 
-    // Capture what gets upserted, then feed it back to load
-    let capturedRow: Record<string, unknown> | null = null
-    const captureChain = buildChain({ data: null, error: null })
-    captureChain.spies.upsert.mockImplementation((row: Record<string, unknown>) => {
-      capturedRow = row
-      return (captureChain.client as { from: () => unknown }).from()
-    })
-    mockCreateClient.mockReturnValue(captureChain.client as never)
-    const writer = new CloudStorageAdapter(OPTS)
-    await writer.save(annotationWithHistory)
-
-    expect(capturedRow).not.toBeNull()
-    const readChain = buildChain({ data: [capturedRow], error: null })
-    mockCreateClient.mockReturnValue(readChain.client as never)
-    const reader = new CloudStorageAdapter(OPTS)
+    const { adapter: reader } = adapterWith([{ data: [captured], error: null }])
     const store = await reader.load()
-
-    expect(store.annotations[0].lifecycle).toEqual(annotationWithHistory.lifecycle)
+    expect(store.annotations[0].lifecycle).toEqual(withHistory.lifecycle)
+    expect(store.annotations[0].rev).toBe(1)
   })
 
-  it('defaults lifecycle to [] when row has no lifecycle field (pre-migration row)', async () => {
-    const legacyRow = {
-      id: 'a-legacy',
-      route: '/r',
-      viewport: '1920x1080',
-      viewport_bucket: 1900,
-      fingerprint: FP,
-      comment: 'old',
-      status: 'pending',
-      timestamp_ms: 1,
-      // no lifecycle field
-    }
-    const { client } = buildChain({ data: [legacyRow], error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
+  it('defaults lifecycle to [] for pre-migration rows (missing or null)', async () => {
+    const { adapter } = adapterWith([{ data: [{ ...ROW, lifecycle: undefined }, { ...ROW, id: 'n', lifecycle: null }], error: null }])
     const store = await adapter.load()
-
-    expect(store.annotations[0].lifecycle).toEqual([])
-  })
-
-  it('defaults lifecycle to [] when row has lifecycle: null', async () => {
-    const nullRow = {
-      id: 'a-null',
-      route: '/r',
-      viewport: '1920x1080',
-      viewport_bucket: 1900,
-      fingerprint: FP,
-      comment: 'null lifecycle',
-      status: 'pending',
-      timestamp_ms: 1,
-      lifecycle: null,
-    }
-    const { client } = buildChain({ data: [nullRow], error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
-    const store = await adapter.load()
-
-    expect(store.annotations[0].lifecycle).toEqual([])
+    expect(store.annotations.map((a) => a.lifecycle)).toEqual([[], []])
   })
 })
 
-describe('CloudStorageAdapter.remove', () => {
+describe('CloudStorageAdapter.remove / clear', () => {
   it('deletes by id', async () => {
-    const { client, spies } = buildChain({ data: null, error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
+    const { adapter, queries } = adapterWith([{ data: null, error: null }])
     await adapter.remove('target-id')
-
-    expect(spies.from).toHaveBeenCalledWith('annotations')
-    expect(spies.delete).toHaveBeenCalled()
-    expect(spies.eq).toHaveBeenCalledWith('id', 'target-id')
+    expect(methods(queries[0])).toEqual(['from', 'delete', 'eq'])
+    expect(call(queries[0], 'eq')).toEqual(['id', 'target-id'])
   })
 
-  it('throws on error when onError is "throw"', async () => {
-    const err = new Error('delete failed')
-    const { client } = buildChain({ data: null, error: err })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
-    await expect(adapter.remove('x')).rejects.toThrow('delete failed')
-  })
-})
-
-describe('CloudStorageAdapter.clear', () => {
-  it('deletes all rows within RLS scope using neq placeholder', async () => {
-    const { client, spies } = buildChain({ data: null, error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
+  it('deletes all rows within RLS scope using the neq placeholder', async () => {
+    const { adapter, queries } = adapterWith([{ data: null, error: null }])
     await adapter.clear()
-
-    expect(spies.from).toHaveBeenCalledWith('annotations')
-    expect(spies.delete).toHaveBeenCalled()
-    expect(spies.neq).toHaveBeenCalledWith('id', '__never_matches__')
+    expect(methods(queries[0])).toEqual(['from', 'delete', 'neq'])
+    expect(call(queries[0], 'neq')).toEqual(['id', '__never_matches__'])
   })
 
   it('throws on error when onError is "throw"', async () => {
-    const err = new Error('clear failed')
-    const { client } = buildChain({ data: null, error: err })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
+    const { adapter } = adapterWith([{ data: null, error: new Error('delete failed') }, { data: null, error: new Error('clear failed') }])
+    await expect(adapter.remove('x')).rejects.toThrow('delete failed')
     await expect(adapter.clear()).rejects.toThrow('clear failed')
   })
 })
@@ -413,57 +319,15 @@ describe('CloudStorageAdapter quality_check round-trip', () => {
     timestamp: 1,
   }
 
-  it('writes quality_check in the upserted row', async () => {
-    const { client, spies } = buildChain({ data: null, error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
+  it('writes quality_check in the inserted row and maps it back on load', async () => {
+    const { adapter, queries } = adapterWith([{ data: null, error: null }])
     await adapter.save({ ...ANNOTATION, qualityCheck })
-
-    const [row] = spies.upsert.mock.calls[0]
+    const [row] = call(queries[0], 'insert') as [Record<string, unknown>]
     expect(row.quality_check).toEqual(qualityCheck)
-  })
 
-  it('maps quality_check back to qualityCheck on load', async () => {
-    const row = {
-      id: 'a1',
-      route: '/r',
-      viewport: '1920x1080',
-      viewport_bucket: 1900,
-      fingerprint: FP,
-      comment: 'one',
-      status: 'pending',
-      timestamp_ms: 100,
-      lifecycle: [],
-      quality_check: qualityCheck,
-    }
-    const { client } = buildChain({ data: [row], error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
-    const store = await adapter.load()
-
+    const { adapter: reader } = adapterWith([{ data: [{ ...ROW, quality_check: qualityCheck }, ROW], error: null }])
+    const store = await reader.load()
     expect(store.annotations[0].qualityCheck).toEqual(qualityCheck)
-  })
-
-  it('leaves qualityCheck undefined when the row has no quality_check', async () => {
-    const row = {
-      id: 'a1',
-      route: '/r',
-      viewport: '1920x1080',
-      viewport_bucket: 1900,
-      fingerprint: FP,
-      comment: 'one',
-      status: 'pending',
-      timestamp_ms: 100,
-      lifecycle: [],
-    }
-    const { client } = buildChain({ data: [row], error: null })
-    mockCreateClient.mockReturnValue(client as never)
-    const adapter = new CloudStorageAdapter(OPTS)
-
-    const store = await adapter.load()
-
-    expect(store.annotations[0].qualityCheck).toBeUndefined()
+    expect(store.annotations[1].qualityCheck).toBeUndefined()
   })
 })

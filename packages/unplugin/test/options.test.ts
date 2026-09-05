@@ -64,6 +64,13 @@ describe('unplugin — include / exclude filters', () => {
     expect(plugin.transformInclude('src\\components\\App.tsx')).toBe(true);
     expect(plugin.transformInclude('node_modules\\react\\App.tsx')).toBe(false);
   });
+
+  it('honours the CLI-generated src/**/*.{jsx,tsx} include (brace expansion)', () => {
+    const plugin = makeRaw({ include: ['src/**/*.{jsx,tsx}'] });
+    expect(plugin.transformInclude('/abs/app/src/App.tsx')).toBe(true);
+    expect(plugin.transformInclude('/abs/app/src/App.jsx')).toBe(true);
+    expect(plugin.transformInclude('/abs/app/src/main.ts')).toBe(false);
+  });
 });
 
 describe('unplugin — production gating', () => {

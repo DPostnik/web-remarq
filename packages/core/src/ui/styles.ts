@@ -414,6 +414,25 @@ const CSS = `
   opacity: 0;
 }
 
+.remarq-sync {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: 0 2px 0 4px;
+  flex-shrink: 0;
+  align-self: center;
+  background: #22c55e;
+  cursor: help;
+}
+.remarq-sync[data-state="queued"],
+.remarq-sync[data-state="conflict"] { background: var(--remarq-pending); }
+.remarq-sync[data-state="queued"] { animation: remarq-sync-pulse 1.2s ease-in-out infinite; }
+.remarq-sync[data-state="memory"],
+.remarq-sync[data-state="unauthorized"],
+.remarq-sync[data-state="rejected"],
+.remarq-sync[data-state="incompatible"] { background: #ef4444; }
+@keyframes remarq-sync-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
 .remarq-spacing {
   position: fixed;
   pointer-events: none;

@@ -70,7 +70,9 @@ function classify(appDir: string): Omit<Detection, 'repoRoot' | 'appDir' | 'pack
         configFile,
         entry: firstExisting(appDir, REACT_ENTRIES),
         plugin: '@web-remarq/unplugin',
-        includeGlob: ['src/**/*.{jsx,tsx}'],
+        // One pattern per extension rather than `src/**/*.{jsx,tsx}`: plain patterns
+        // work with every @web-remarq/unplugin version, brace groups only with >= 0.2.0.
+        includeGlob: ['src/**/*.jsx', 'src/**/*.tsx'],
       }
     }
     return {
@@ -80,7 +82,7 @@ function classify(appDir: string): Omit<Detection, 'repoRoot' | 'appDir' | 'pack
       configFile,
       entry: firstExisting(appDir, VANILLA_ENTRIES),
       plugin: '@web-remarq/unplugin',
-      includeGlob: ['**/*.{jsx,tsx,vue}'],
+      includeGlob: ['**/*.jsx', '**/*.tsx', '**/*.vue'],
     }
   }
 

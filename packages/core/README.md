@@ -131,7 +131,7 @@ import { WebRemarq, HttpStorageAdapter } from 'web-remarq'
 WebRemarq.init({ submitFlow: true, storage: new HttpStorageAdapter() }) // pairs with npx @web-remarq/mcp
 ```
 
-Buffers writes to localStorage (`remarq:http-buffer`) and caches reads (`remarq:http-cache`) while the server is unreachable, polls every 2s for external changes, and flushes the buffer on reconnect.
+Keeps everything per project in localStorage, keyed by the server's `projectId` (`remarq:http:<project>:cache|outbox|rejected|conflicts`): an ordered outbox of writes made while the server is unreachable (replayed on reconnect, dropped only after confirmation), operations the server rejected, and a journal of conflicts - local changes that lost to a newer server copy, kept with the server copy and the dropped fields across reloads until `clearParked()`. Polls every 2s for external changes. `getStatus()`/`onStatus()` report `synced|queued|memory|unauthorized|rejected|conflict|incompatible`; `exportUnsent()` returns all of it for backup.
 
 ### Custom adapters
 

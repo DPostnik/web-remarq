@@ -37,6 +37,9 @@ export function renderInit(result: InitResult): string {
     result.wroteMcpConfig
       ? '✔ wrote        .mcp.json (repo root)'
       : '✔ mcp config   already up to date',
+    result.wroteLocalConfig
+      ? '✔ wrote        .remarq/config.json (project id + local token, gitignored)'
+      : '✔ local config already present (.remarq/config.json)',
   ]
 
   if (result.edits.length === 0) {

@@ -73,6 +73,16 @@ The rule matches `*.jsx` / `*.tsx` and excludes `node_modules`. Your existing
 
 **Security note:** `production: true` exposes source file paths in the DOM. Use only for internal/staging environments.
 
+## Pairing with the local MCP server
+
+In development the wrapper reads the token from `.remarq/config.json` (walking
+up from the app directory, so a monorepo app finds the repo-root config) and
+exposes it as `NEXT_PUBLIC_WEB_REMARQ_TOKEN`, which the widget snippet uses to
+pair with `npx @web-remarq/mcp`. This happens only when `NODE_ENV` is not
+`production` - never in a production build, even with `production: true` (that
+option enables source instrumentation, not credential delivery). A value you
+set yourself in `env.NEXT_PUBLIC_WEB_REMARQ_TOKEN` is always left as is.
+
 ## Requirements
 
 - Peer dependency: `next >= 13`
@@ -91,3 +101,7 @@ for Babel-based setups use
 ## License
 
 MIT
+
+### SWC runtime compatibility
+
+This release pins `@swc/core` to `1.15.33`, the runtime tested with `@web-remarq/swc-plugin@0.1.0`. Update the runtime and WASM plugin together after verifying a real loader transform.

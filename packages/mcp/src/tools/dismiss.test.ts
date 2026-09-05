@@ -43,7 +43,7 @@ describe('dismiss', () => {
     const result = await handleDismiss({ id: 't' }, storage)
 
     const payload = JSON.parse(result.content[0].text)
-    expect(payload).toEqual({ ok: true, status: 'dismissed' })
+    expect(payload).toMatchObject({ ok: true, status: 'dismissed' })
     const [saved] = save.mock.calls[0]
     expect(saved.status).toBe('dismissed')
     expect(saved.lifecycle[1]).toMatchObject({

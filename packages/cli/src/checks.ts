@@ -1,7 +1,8 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, extname, join, parse, relative } from 'node:path'
+import { dirname, join, parse, relative } from 'node:path'
 import { readJson } from './fs-utils'
+import { readRemarqInclude } from './vite-config'
 import type { CheckResult, Detection } from './types'
 
 /** How many parent directories to walk before giving up - defense in depth, real trees never get close. */
@@ -107,27 +108,15 @@ function sampleSourceFile(d: Detection): string | null {
   return walkSourceTree(d, exts)
 }
 
-/** Extensions a glob pattern's final segment plausibly matches, e.g. `src/foo/*.{jsx,tsx}` -> ['jsx', 'tsx']. */
-function globFileExtensions(glob: string): string[] {
-  const brace = glob.match(/\{([^}]+)\}/)
-  if (brace) return brace[1].split(',').map((ext) => ext.trim())
-  const single = glob.match(/\.([A-Za-z0-9]+)$/)
-  return single ? [single[1]] : []
-}
-
-/**
- * Simple extension-level check: does any pattern in `globs` plausibly match `filePath`?
- * Not a general glob engine - just enough to catch a mistyped include option
- * (e.g. `src/**\/*.tsx` configured while the app only has `.vue` files).
- */
-function includeGlobMatchesSample(globs: string[], filePath: string): boolean {
-  const ext = extname(filePath).replace(/^\./, '')
-  if (!ext) return true
-  return globs.some((glob) => globFileExtensions(glob).includes(ext))
-}
-
 export type ResolvedTransformModule =
-  | { ok: true; transformJSX: unknown; transformVueSFC: unknown }
+  | {
+      ok: true
+      /** Installed version, for the report. Null only if the package.json could not be located. */
+      version: string | null
+      transformJSX: unknown
+      transformVueSFC: unknown
+      createFilter: unknown
+    }
   | { ok: false; result: CheckResult }
 
 /**
@@ -196,8 +185,18 @@ export async function resolveTransformModule(appDir: string): Promise<ResolvedTr
     }
   }
 
-  return { ok: true, transformJSX: mod.transformJSX, transformVueSFC: mod.transformVueSFC }
+  return {
+    ok: true,
+    version: resolveInstalled(appDir, '@web-remarq/unplugin')?.version ?? null,
+    transformJSX: mod.transformJSX,
+    transformVueSFC: mod.transformVueSFC,
+    createFilter: mod.createFilter,
+  }
 }
+
+const MANUAL_VERIFY_HINT =
+  'Verify it yourself: start the dev server, open the app, and confirm in DevTools that a JSX/Vue element carries data-remarq-source="<file>:<line>:<col>". ' +
+  'To let doctor verify it, register the plugin inline in the config file: import remarq from \'@web-remarq/unplugin/vite\' and call remarq({ include: [...] }) with a literal array.'
 
 /**
  * The most valuable check: run the user's installed transform over one of the
@@ -205,10 +204,14 @@ export async function resolveTransformModule(appDir: string): Promise<ResolvedTr
  * failure where the plugin is wired up but the include glob misses the files -
  * annotations are created, file:line:col is empty, and the agent searches blind.
  *
- * For Vite-based stacks this also confirms the plugin is registered in the build
- * config and that the configured include glob could match the sample file, before
- * ever probing the transform - a forgotten `plugins: [remarq()]` or a mistyped
- * include option must not report the same result as a correct setup.
+ * For Vite-based stacks this confirms, in order: the plugin is registered in the
+ * build config (comments do not count); the include option written in that config
+ * accepts the sample file according to the *installed* package's own filter; and
+ * the installed transform stamps the file. A forgotten `plugins: [remarq()]`, a
+ * mistyped include, or a package too old to honour the include must not report
+ * the same result as a correct setup. When the include option cannot be read
+ * without executing the config (shared preset, variable, spread), the check is
+ * reported as `blocked` - "not verified" - never as `ok`.
  */
 export async function checkBuildPlugin(
   d: Detection,
@@ -246,13 +249,14 @@ export async function checkBuildPlugin(
     }
   }
   const configContent = readFileSync(join(d.appDir, d.configFile), 'utf8')
-  // Case-insensitive on "remarq" rather than the exact package specifier, so an
-  // aliased import (`import remarq from '@web-remarq/unplugin/vite'`), a renamed
-  // helper (`remarqPreset()`), or any other literal mention of the plugin still
-  // matches. This still cannot see a plugin registered through a config imported
-  // from elsewhere - this file only reads d.configFile - so the hint on failure
-  // says so explicitly instead of asserting a negative it cannot actually prove.
-  if (!/remarq/i.test(configContent)) {
+  // Reads the registration from the config text without executing it. Any literal
+  // mention of "remarq" outside comments counts as registered (an aliased import,
+  // a shared `remarqPreset()` helper) - but only an inline `remarq({ include: [...] })`
+  // is readable enough to verify the include option below. This file only reads
+  // d.configFile, so a plugin registered through an imported config cannot be
+  // seen - the hint on failure says so instead of asserting a negative it cannot prove.
+  const reading = readRemarqInclude(configContent)
+  if (reading.kind === 'not-registered') {
     return {
       id: 'build-plugin',
       status: 'fail',
@@ -284,25 +288,36 @@ export async function checkBuildPlugin(
     }
   }
 
-  if (d.includeGlob && !includeGlobMatchesSample(d.includeGlob, sample)) {
+  const loaded = await loadTransform(d.appDir)
+  if (!loaded.ok) return loaded.result
+  const installed = loaded.version ? `@web-remarq/unplugin@${loaded.version}` : '@web-remarq/unplugin'
+
+  const transformFn = sample.endsWith('.vue') ? loaded.transformVueSFC : loaded.transformJSX
+  if (typeof transformFn !== 'function' || typeof loaded.createFilter !== 'function') {
     return {
       id: 'build-plugin',
       status: 'fail',
-      detail: `configured include glob (${d.includeGlob.join(', ')}) does not match ${sample}`,
-      hint: `Update the include option in ${d.configFile} so it matches this file type.`,
+      detail: `${installed} does not export the expected transform and filter functions`,
+      hint: 'Upgrade @web-remarq/unplugin to >= 0.2.0 (`npm install @web-remarq/unplugin@latest`), or rebuild it if it is a local build.',
     }
   }
 
-  const loaded = await loadTransform(d.appDir)
-  if (!loaded.ok) return loaded.result
+  const relSample = relative(d.appDir, sample).split('\\').join('/')
 
-  const transformFn = sample.endsWith('.vue') ? loaded.transformVueSFC : loaded.transformJSX
-  if (typeof transformFn !== 'function') {
-    return {
-      id: 'build-plugin',
-      status: 'fail',
-      detail: '@web-remarq/unplugin does not export the expected transform function',
-      hint: 'Upgrade @web-remarq/unplugin - the transform API may have changed.',
+  // The include filter, as the installed package itself evaluates it against the
+  // absolute id a bundler would pass. `d.includeGlob` is what `init` suggests, not
+  // what the user wrote - only the config's own include is worth checking.
+  if (reading.kind !== 'unreadable') {
+    const createFilter = loaded.createFilter as (include?: string[]) => (id: string) => boolean
+    const filter = reading.kind === 'explicit' ? createFilter(reading.include) : createFilter()
+    if (!filter(sample)) {
+      const shown = reading.kind === 'explicit' ? reading.include.join(', ') : 'the plugin default'
+      return {
+        id: 'build-plugin',
+        status: 'fail',
+        detail: `include (${shown}) in ${d.configFile} does not match ${relSample} - ${installed} will skip it`,
+        hint: `Update the include option in ${d.configFile} so it matches this file, e.g. include: ['src/**/*${relSample.slice(relSample.lastIndexOf('.'))}'].`,
+      }
     }
   }
 
@@ -313,12 +328,26 @@ export async function checkBuildPlugin(
     return {
       id: 'build-plugin',
       status: 'fail',
-      detail: `${sample} produced no data-remarq-source`,
-      hint: `Check the include glob in ${d.configFile} - it must match this file type.`,
+      detail: `${installed} produced no data-remarq-source for ${relSample}`,
+      hint: `The file matches the include option but the transform stamped nothing - it may contain no JSX/template elements. Try another component, or upgrade @web-remarq/unplugin.`,
     }
   }
 
-  return { id: 'build-plugin', status: 'ok', detail: `${sample} -> data-remarq-source stamped` }
+  if (reading.kind === 'unreadable') {
+    return {
+      id: 'build-plugin',
+      status: 'blocked',
+      detail: `${installed} stamps ${relSample}, but the include option in ${d.configFile} was not verified: ${reading.reason}`,
+      hint: MANUAL_VERIFY_HINT,
+    }
+  }
+
+  const includeShown = reading.kind === 'explicit' ? `include [${reading.include.join(', ')}]` : 'the default include'
+  return {
+    id: 'build-plugin',
+    status: 'ok',
+    detail: `${relSample} -> data-remarq-source stamped; ${includeShown} in ${d.configFile} matches it (checked with ${installed})`,
+  }
 }
 
 export function checkWidgetInit(d: Detection): CheckResult {
@@ -410,18 +439,57 @@ export function checkMcpConfig(d: Detection): CheckResult {
   }
 }
 
+export type McpProbeResult =
+  /** /health and an authenticated GET /store both answered. */
+  | 'ok'
+  /** Nothing listens on the port. */
+  | 'down'
+  /** The server answers but refused the token from .remarq/config.json. */
+  | 'unauthorized'
+  /** The server answers but predates protocol 2 (no /health, or no projectId). */
+  | 'incompatible'
+  /** No token in .remarq/config.json - the probe could not authenticate. */
+  | 'no-token'
+
 export async function checkMcpServer(
   port: number,
-  probe: (port: number) => Promise<boolean>,
+  probe: (port: number) => Promise<McpProbeResult>,
 ): Promise<CheckResult> {
-  const up = await probe(port)
-  if (up) return { id: 'mcp-server', status: 'ok', detail: `responding on 127.0.0.1:${port}` }
-  // Not a failure: the server boots with the agent's MCP client, so this is
-  // always red right after setup, even when everything is configured correctly.
-  return {
-    id: 'mcp-server',
-    status: 'blocked',
-    detail: `no response on 127.0.0.1:${port}`,
-    hint: 'The server starts with your agent - restart Claude Code (or your MCP client) to pick it up.',
+  const result = await probe(port)
+  switch (result) {
+    case 'ok':
+      return { id: 'mcp-server', status: 'ok', detail: `responding on 127.0.0.1:${port}, token accepted` }
+    case 'unauthorized':
+      return {
+        id: 'mcp-server',
+        status: 'fail',
+        detail: `127.0.0.1:${port} refused the token from .remarq/config.json`,
+        hint:
+          'The running server was started from a directory with a different .remarq/config.json, or the token was rotated. ' +
+          'Restart the MCP server from the repository root (it reads .remarq/config.json there), then run doctor again.',
+      }
+    case 'incompatible':
+      return {
+        id: 'mcp-server',
+        status: 'fail',
+        detail: `127.0.0.1:${port} answers but speaks an older protocol (no /health or no project id)`,
+        hint: 'Upgrade @web-remarq/mcp (protocol 2: token + per-record revisions) and restart your MCP client.',
+      }
+    case 'no-token':
+      return {
+        id: 'mcp-server',
+        status: 'fail',
+        detail: 'no token in .remarq/config.json - doctor cannot authenticate its probe',
+        hint: 'Run `npx @web-remarq/cli init` again (it creates .remarq/config.json), or start the MCP server once so it creates the file.',
+      }
+    case 'down':
+      // Not a failure: the server boots with the agent's MCP client, so this is
+      // always red right after setup, even when everything is configured correctly.
+      return {
+        id: 'mcp-server',
+        status: 'blocked',
+        detail: `no response on 127.0.0.1:${port}`,
+        hint: 'The server starts with your agent - restart Claude Code (or your MCP client) to pick it up.',
+      }
   }
 }

@@ -53,6 +53,25 @@ describe('main - init install failure', () => {
   })
 })
 
+describe('main - init --json keeps stdout parseable', () => {
+  // Found by the real-scaffold e2e: `init --json` ran the package manager with
+  // inherited stdio, so npm's "added N packages" landed in front of the JSON
+  // payload and every consumer following SKILL.md ("read the JSON") failed to
+  // parse it. The install must run with stdout suppressed under --json, and
+  // only under --json - the human-readable run still shows npm's progress.
+  it('asks exec to be quiet under --json and noisy otherwise', async () => {
+    const exec = vi.fn()
+    expect(await main(['init', '--json'], { exec })).toBe(0)
+    expect(exec).toHaveBeenCalledWith(expect.stringContaining('npm install'), expect.any(String), true)
+    expect(() => JSON.parse(logSpy.mock.calls[0]?.[0] as string)).not.toThrow()
+
+    exec.mockClear()
+    logSpy.mockClear()
+    expect(await main(['init'], { exec })).toBe(0)
+    expect(exec).toHaveBeenCalledWith(expect.stringContaining('npm install'), expect.any(String), false)
+  })
+})
+
 describe('main - init non-install failure', () => {
   // Plain HTML has no packages to install (`packagesFor` returns []), so
   // `deps.exec` is never invoked. A later step - here `writeMcpConfig`,

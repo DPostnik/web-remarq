@@ -1,23 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Annotation, StorageAdapter } from 'web-remarq'
-import { actionableOnly, generateAgentExport } from 'web-remarq/core'
+import { actionableOnly, generateAgentExport, isSafeAnnotationId } from 'web-remarq/core'
 
 /** Double-quoted YAML scalar; JSON string escaping is valid YAML. */
 function yamlString(value: string): string {
   return JSON.stringify(value)
 }
 
-/**
- * Annotation ids become `<id>.md` filenames under a server-owned directory.
- * Ids normally come from core (filename-safe by construction) but the widget
- * HTTP endpoint accepts arbitrary strings, so both the file projection and
- * the HTTP layer must reject anything that isn't a plain filename segment
- * (no path separators, no leading dot, no traversal).
- */
-export function isSafeAnnotationId(id: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)
-}
+// Annotation ids become `<id>.md` filenames under a server-owned directory.
+// The HTTP layer validates ids on the way in (core `isSafeAnnotationId`); the
+// projection re-checks so a legacy store can never produce a traversal path.
+export { isSafeAnnotationId }
 
 /**
  * Renders one annotation as a ticket file for .remarq/tasks/.
@@ -71,9 +65,9 @@ export function renderTaskFile(annotation: Annotation): string {
   }
 
   lines.push('## Agent instructions', '')
-  lines.push(`1. BEFORE touching code, call the web-remarq MCP tool \`acknowledge\` with \`{ "id": ${yamlString(agent.id)} }\`. If it errors, another agent already owns this task - skip this file.`)
+  lines.push(`1. BEFORE touching code, call the web-remarq MCP tool \`acknowledge\` with \`{ "id": ${yamlString(agent.id)}, "operationId": "<a fresh unique id you keep for retries>" }\`. Exactly one caller wins this transition. If it returns \`invalid_transition\`, someone else already moved this annotation: do NOT start work, re-read it with \`get_annotation\` and skip this file. If the call itself fails without an answer (timeout, transport error), retry with the SAME operationId - a retry is recognised and never counted twice.`)
   lines.push('2. Apply the fix described in the comment.')
-  lines.push(`3. When the fix is committed to the working tree, call \`claim_fix\` with \`{ "id": ${yamlString(agent.id)} }\`. A human verifies afterwards - never mark anything as done yourself.`)
+  lines.push(`3. When the fix is committed to the working tree, call \`claim_fix\` with \`{ "id": ${yamlString(agent.id)}, "operationId": "<another fresh id>" }\`. A human verifies afterwards - never mark anything as done yourself. An \`invalid_transition\` here means the annotation changed under you (dismissed, reopened, edited): re-read it before deciding anything.`)
   lines.push('')
   lines.push('This file is a live projection maintained by the web-remarq MCP server: it updates when the annotation changes and disappears once the annotation is verified or dismissed. Do not edit or delete it.')
   lines.push('')

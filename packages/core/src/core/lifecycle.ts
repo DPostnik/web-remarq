@@ -86,6 +86,27 @@ function nextStatus(
   }
 }
 
+const EVENT_TO_ACTION: Partial<Record<AnnotationEventType, LifecycleAction>> = {
+  submitted: 'submit',
+  acknowledged: 'acknowledge',
+  fix_claimed: 'claimFix',
+  verified: 'verify',
+  rejected: 'reject',
+  dismissed: 'dismiss',
+  reopened: 'reopen',
+}
+
+/**
+ * Status reached by replaying an already-recorded event on top of `from`, or
+ * null when that transition is not allowed from `from`. Used when merging a
+ * local lifecycle onto a newer server copy: only events that are still valid
+ * transitions survive. `created` and `migrated` are not transitions.
+ */
+export function replayEvent(from: AnnotationStatus, type: AnnotationEventType): AnnotationStatus | null {
+  const action = EVENT_TO_ACTION[type]
+  return action ? nextStatus(from, action) : null
+}
+
 export function transition(
   annotation: Annotation,
   action: LifecycleAction,

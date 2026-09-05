@@ -1,12 +1,16 @@
 import { join, relative } from 'node:path'
 import type { Detection, Edit } from './types'
 
+// The Vite widget needs no token in source: HttpStorageAdapter asks the dev
+// server for it (the remarq plugin serves /__web-remarq/config.json in dev).
 const WIDGET_INIT_VITE = `import { WebRemarq, HttpStorageAdapter } from 'web-remarq'
 
 if (import.meta.env.DEV) {
   WebRemarq.init({ submitFlow: true, storage: new HttpStorageAdapter() })
 }`
 
+// withRemarq() exposes the local token as NEXT_PUBLIC_WEB_REMARQ_TOKEN in
+// development only; the component passes it through explicitly.
 const WIDGET_INIT_NEXT = `'use client'
 import { useEffect } from 'react'
 
@@ -14,7 +18,10 @@ export function RemarqDevTools() {
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return
     import('web-remarq').then(({ WebRemarq, HttpStorageAdapter }) => {
-      WebRemarq.init({ submitFlow: true, storage: new HttpStorageAdapter() })
+      WebRemarq.init({
+        submitFlow: true,
+        storage: new HttpStorageAdapter({ token: process.env.NEXT_PUBLIC_WEB_REMARQ_TOKEN }),
+      })
     })
   }, [])
   return null
@@ -39,7 +46,7 @@ export default withRemarq({
     }
   }
 
-  const include = JSON.stringify(d.includeGlob ?? []).replace(/"/g, "'")
+  const include = `[${(d.includeGlob ?? []).map((glob) => `'${glob}'`).join(', ')}]`
   return {
     file: d.configFile ? repoRelative(d, d.configFile) : '<vite config not found>',
     kind: 'build-config',

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runDoctor, exitCode, probeMcpServer } from './doctor'
-import { checkBuildPlugin, checkPackages } from './checks'
+import { checkBuildPlugin, checkPackages, resolveTransformModule } from './checks'
 import type { ResolvedTransformModule } from './checks'
 import type { CheckResult, Detection } from './types'
 
@@ -15,8 +15,8 @@ let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'remarq-doctor-')) })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-const serverUp = { probeMcpServer: async () => true }
-const serverDown = { probeMcpServer: async () => false }
+const serverUp = { probeMcpServer: async () => 'ok' as const }
+const serverDown = { probeMcpServer: async () => 'down' as const }
 
 const find = (checks: CheckResult[], id: CheckResult['id']) =>
   checks.find((c) => c.id === id)!
@@ -151,11 +151,44 @@ function closeServer(server: http.Server): Promise<void> {
 
 describe('probeMcpServer (real network, no fake)', () => {
   // This deliberately exercises the REAL probeMcpServer against a REAL server,
-  // rather than the `{ probeMcpServer: async () => true/false }` fakes used
+  // rather than the `{ probeMcpServer: async () => 'ok' }` fakes used
   // everywhere else in this file. Those fakes are exactly why a wrong route
-  // (probing /annotations when the server only serves /store) shipped unnoticed:
-  // every test replaced the network call before it could be wrong.
-  it('returns true when the real /store route answers 200', async () => {
+  // once shipped unnoticed: every test replaced the network call before it
+  // could be wrong. The fake server below mirrors packages/mcp/src/http-server.ts
+  // (protocol 2): /health is public, /store needs the bearer token.
+  const TOKEN = 'doctor-token-0123456789'
+  function protocol2(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, protocol: 2 }))
+      return
+    }
+    if (req.url === '/store') {
+      if (req.headers.authorization !== `Bearer ${TOKEN}`) {
+        res.writeHead(401, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: 'unauthorized', code: 'unauthorized' }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ rev: 0, protocol: 2, projectId: 'prj_x', store: { version: 1, annotations: [] } }))
+      return
+    }
+    res.writeHead(404)
+    res.end()
+  }
+
+  it('returns ok only when /health answers protocol 2 AND /store accepts the token', async () => {
+    const { server, port } = await listenEphemeral(protocol2)
+    try {
+      expect(await probeMcpServer(port, TOKEN)).toBe('ok')
+      expect(await probeMcpServer(port, 'wrong-token-000000000')).toBe('unauthorized')
+      expect(await probeMcpServer(port, null)).toBe('no-token')
+    } finally {
+      await closeServer(server)
+    }
+  })
+
+  it('reports an older server (no /health) as incompatible, and nothing listening as down', async () => {
     const { server, port } = await listenEphemeral((req, res) => {
       if (req.url === '/store') {
         res.writeHead(200, { 'content-type': 'application/json' })
@@ -166,28 +199,33 @@ describe('probeMcpServer (real network, no fake)', () => {
       }
     })
     try {
-      expect(await probeMcpServer(port)).toBe(true)
+      expect(await probeMcpServer(port, TOKEN)).toBe('incompatible')
     } finally {
       await closeServer(server)
     }
+    expect(await probeMcpServer(port, TOKEN)).toBe('down')
   })
 
-  it('returns false when the server 404s every route', async () => {
-    const { server, port } = await listenEphemeral((_req, res) => {
-      res.writeHead(404)
-      res.end()
-    })
-    try {
-      expect(await probeMcpServer(port)).toBe(false)
-    } finally {
-      await closeServer(server)
-    }
+  it('doctor turns unauthorized into a fail with a restart hint, never a silent ok', async () => {
+    cpSync(fixture('vue-vite'), dir, { recursive: true })
+    const report = await runDoctor(dir, {}, { probeMcpServer: async () => 'unauthorized' })
+    expect(report.ok).toBe(true)
+    if (!report.ok) return
+    const check = find(report.checks, 'mcp-server')
+    expect(check.status).toBe('fail')
+    expect(check.hint).toContain('config.json')
+    expect(JSON.stringify(report)).not.toContain(TOKEN)
   })
 })
 
 describe('checkBuildPlugin', () => {
   const vueViteDir = fixture('vue-vite')
   const wiredDir = fixture('vue-vite-wired')
+
+  // Fixtures copied into a temp dir sit outside this repo's node_modules, so the
+  // default loader cannot resolve @web-remarq/unplugin from there. Resolve it from
+  // the in-repo fixture instead - still the real built package, not a fake.
+  const loadFromRepo = () => resolveTransformModule(wiredDir)
 
   function detectionFor(overrides: Partial<Detection> = {}): Detection {
     return {
@@ -215,20 +253,44 @@ describe('checkBuildPlugin', () => {
     expect(result.hint).toContain('shared')
   })
 
-  it('does not report a false failure when the plugin is registered via an aliased, non-literal import', async () => {
+  it('reports blocked (not verified), not ok and not fail, when the plugin comes from a shared preset', async () => {
     // vite.config.ts here only says `import { remarqPreset } from './shared/build-config'`
-    // and `remarqPreset()` - the literal string '@web-remarq/unplugin' never appears in
-    // the config file itself, only in the shared preset file it imports.
+    // and `remarqPreset()` - the include option lives in a file this check does not read.
+    // The transform still runs (so a broken install is still a real fail), but the
+    // include option is genuinely unverified and must be reported as such.
     const sharedPresetDir = fixture('vue-vite-wired-shared-preset')
     const result = await checkBuildPlugin(
       detectionFor({ repoRoot: sharedPresetDir, appDir: sharedPresetDir }),
     )
-    // Not just "no false failure": the registration check passes (remarqPreset still
-    // contains the literal "remarq"), and the transform genuinely runs and succeeds -
-    // the expected outcome here is a full, positive `ok`, not merely "didn't say
-    // 'not registered'", which would also pass if the check failed for any other reason.
-    expect(result.status).toBe('ok')
-    expect(result.detail).not.toContain('not registered')
+    expect(result.status).toBe('blocked')
+    expect(result.detail).toContain('not verified')
+    expect(result.detail).toContain('shared')
+    expect(result.hint).toContain('Verify it yourself')
+  })
+
+  it('reports blocked when the include option is a variable rather than a literal', async () => {
+    cpSync(wiredDir, dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'vite.config.ts'),
+      "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\nimport remarq from '@web-remarq/unplugin/vite'\n" +
+        "const patterns = ['src/**/*.vue']\nexport default defineConfig({ plugins: [vue(), remarq({ include: patterns })] })\n",
+    )
+    const result = await checkBuildPlugin(detectionFor({ repoRoot: dir, appDir: dir }), loadFromRepo)
+    expect(result.status).toBe('blocked')
+    expect(result.detail).toContain('not verified')
+  })
+
+  it('does not count a commented-out registration as registered', async () => {
+    cpSync(wiredDir, dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'vite.config.ts'),
+      "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\n" +
+        "// import remarq from '@web-remarq/unplugin/vite'\n// TODO: add remarq() to plugins\n" +
+        'export default defineConfig({ plugins: [vue()] })\n',
+    )
+    const result = await checkBuildPlugin(detectionFor({ repoRoot: dir, appDir: dir }))
+    expect(result.status).toBe('fail')
+    expect(result.detail).toContain('not registered')
   })
 
   it('fails with an accurate message when configFile is null', async () => {
@@ -237,25 +299,71 @@ describe('checkBuildPlugin', () => {
     expect(result.detail.toLowerCase()).toContain('no vite config')
   })
 
-  it('proceeds past the registration check when the plugin is registered, and fails on a mismatched include glob', async () => {
+  it('fails on an include option in the config that the installed filter rejects for the sample file', async () => {
+    cpSync(wiredDir, dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'vite.config.ts'),
+      "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\nimport remarq from '@web-remarq/unplugin/vite'\n" +
+        "export default defineConfig({ plugins: [vue(), remarq({ include: ['src/**/*.tsx'] })] })\n",
+    )
+    // `includeGlob` is what init would suggest - deliberately correct here, to prove the
+    // check reads the include from the config file, not from the CLI's own suggestion.
     const result = await checkBuildPlugin(
-      detectionFor({ repoRoot: wiredDir, appDir: wiredDir, includeGlob: ['src/**/*.tsx'] }),
+      detectionFor({ repoRoot: dir, appDir: dir, includeGlob: ['src/**/*.vue'] }),
+      loadFromRepo,
     )
     expect(result.status).toBe('fail')
-    // Not the registration failure - the config here does register the plugin.
     expect(result.detail).not.toContain('not registered')
+    expect(result.detail).toContain('src/**/*.tsx')
     expect(result.detail).toContain('App.vue')
+    expect(result.hint).toContain("include: ['src/**/*.vue']")
+  })
+
+  it('reaches ok for a React app configured with the brace include older CLI versions printed', async () => {
+    // Regression: `src/**/*.{jsx,tsx}` used to be escaped literally by the plugin
+    // filter, so App.tsx never matched. Doctor used to pass anyway because it called
+    // the transform directly and bypassed the filter. Both halves are pinned here:
+    // the installed filter accepts the brace form, and doctor actually consults it.
+    const reactDir = fixture('react-vite-wired')
+    const result = await checkBuildPlugin(
+      detectionFor({
+        framework: 'react',
+        repoRoot: reactDir,
+        appDir: reactDir,
+        entry: 'src/main.tsx',
+        includeGlob: ['src/**/*.jsx', 'src/**/*.tsx'],
+      }),
+    )
+    expect(result.status).toBe('ok')
+    expect(result.detail).toContain('data-remarq-source')
+    expect(result.detail).toContain('src/**/*.{jsx,tsx}')
+    expect(result.detail).toMatch(/@web-remarq\/unplugin@\d+\.\d+\.\d+/)
   })
 
   it('returns a clean fail, not a throw, when the resolved module lacks the expected exports', async () => {
     const brokenLoad = async (): Promise<ResolvedTransformModule> => ({
       ok: true,
+      version: '0.0.9',
       transformJSX: undefined,
       transformVueSFC: undefined,
+      createFilter: undefined,
     })
     await expect(
       checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }), brokenLoad),
     ).resolves.toMatchObject({ status: 'fail' })
+  })
+
+  it('fails, not ok, when the installed package has the transform but not the filter (stale build)', async () => {
+    const staleLoad = async (): Promise<ResolvedTransformModule> => ({
+      ok: true,
+      version: '0.0.9',
+      transformJSX: () => ({ code: 'data-remarq-source' }),
+      transformVueSFC: () => ({ code: 'data-remarq-source' }),
+      createFilter: undefined,
+    })
+    const result = await checkBuildPlugin(detectionFor({ repoRoot: wiredDir, appDir: wiredDir }), staleLoad)
+    expect(result.status).toBe('fail')
+    expect(result.hint).toContain('0.2.0')
   })
 
   // The default `loadTransform` resolves @web-remarq/unplugin/transform exactly as
@@ -278,7 +386,7 @@ describe('checkBuildPlugin', () => {
         repoRoot: vanillaDir,
         appDir: vanillaDir,
         plugin: '@web-remarq/unplugin',
-        includeGlob: ['**/*.{jsx,tsx,vue}'],
+        includeGlob: ['**/*.jsx', '**/*.tsx', '**/*.vue'],
       }),
     )
     expect(result.status).toBe('skipped')

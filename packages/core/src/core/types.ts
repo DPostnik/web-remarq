@@ -67,6 +67,12 @@ export interface AnnotationEvent {
   actorName?: string
   timestamp: number
   reason?: string
+  /**
+   * Caller-chosen operation id (v0.9.0). A transition retried with the same
+   * opId after a lost response is recognised as already applied instead of
+   * appending a second event. Only agents/tools set it; the widget never does.
+   */
+  opId?: string
 }
 
 export interface QualityCheck {
@@ -102,6 +108,13 @@ export interface Annotation {
   status: AnnotationStatus
   lifecycle: AnnotationEvent[]
   qualityCheck?: QualityCheck
+  /**
+   * Per-annotation revision, assigned by a revision-aware backend (v0.9.0:
+   * the local MCP server, the cloud adapter). Clients echo it back on writes
+   * (`If-Match`) so a stale copy cannot overwrite a newer status or history.
+   * Absent on backends that do not track revisions (localStorage).
+   */
+  rev?: number
 }
 
 export interface AnnotationStore {
@@ -183,11 +196,85 @@ export interface StorageChangeEvent {
   id?: string
 }
 
+/**
+ * Where the adapter's writes currently land (v0.9.0). Distinct states, never
+ * collapsed: a write the server confirmed, a write that only reached durable
+ * local storage (queued for the server), and a write that lives in memory only.
+ */
+export type StorageSyncState =
+  /** Every write is confirmed by the backend. */
+  | 'synced'
+  /** Backend unreachable; writes are queued in durable local storage. */
+  | 'queued'
+  /** Durable local storage is unavailable too; writes survive only until reload. */
+  | 'memory'
+  /** Backend refused the credential or the project does not match; nothing is sent. */
+  | 'unauthorized'
+  /** Backend rejected an operation as invalid; it was parked, not retried. */
+  | 'rejected'
+  /** A stale write collided with a newer backend copy; local intent was kept for review. */
+  | 'conflict'
+  /** The backend speaks an older protocol; nothing is sent until it is upgraded. */
+  | 'incompatible'
+
+export interface StorageStatus {
+  state: StorageSyncState
+  /** Operations waiting to be sent (queued state) or parked (rejected/conflict). */
+  pending: number
+  /** Human-readable detail for the toolbar/toast. */
+  message?: string
+}
+
+/**
+ * Error thrown by `StorageAdapter.mutate` when the record does not exist.
+ * Kept as a plain class (no subclassing of DOMException) so adapters in any
+ * runtime can throw it.
+ */
+export class AnnotationNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Annotation ${id} not found`)
+    this.name = 'AnnotationNotFoundError'
+  }
+}
+
+/**
+ * Thrown by a revision-aware adapter's `save` when the record changed on the
+ * backend since the caller last read it. `current` is the backend's copy
+ * (null when it was deleted there). The caller keeps its intent and decides.
+ */
+export class StorageConflictError extends Error {
+  constructor(public readonly current: Annotation | null) {
+    super('annotation changed on the backend since it was last read')
+    this.name = 'StorageConflictError'
+  }
+}
+
 export interface StorageAdapter {
   load(): Promise<AnnotationStore | null>
-  save(annotation: Annotation): Promise<void>
+  /**
+   * Persist one annotation. A revision-aware backend may resolve with the
+   * confirmed copy (v0.9.0: it carries the revision the backend assigned);
+   * `AnnotationStorage` then replaces its cached copy with it, so the next
+   * write carries the current revision instead of a stale one. Resolving
+   * with nothing keeps the caller's copy as is. Never resolve with a copy
+   * after a failed write - reject instead.
+   */
+  save(annotation: Annotation): Promise<void | Annotation>
   remove(id: string): Promise<void>
   clear(): Promise<void>
   subscribe?(callback: (event: StorageChangeEvent) => void): () => void
+  /**
+   * Atomic read-check-write (v0.9.0, optional). Loads the current record,
+   * applies `apply` to it and persists the result so that no other mutation
+   * of the same record can interleave: concurrent callers observe each
+   * other's results, never a shared stale read. `apply` may throw to abort
+   * (nothing is persisted, the error propagates); returning the same object
+   * it was given persists nothing (no revision bump). Rejects with
+   * `AnnotationNotFoundError` when the id is absent. Adapters without this
+   * method only offer non-atomic load()+save().
+   */
+  mutate?(id: string, apply: (current: Annotation) => Annotation): Promise<Annotation>
+  /** Sync-state notifications (v0.9.0, optional). Fires on every state change. */
+  onStatus?(callback: (status: StorageStatus) => void): () => void
   readonly isMemoryOnly?: boolean
 }

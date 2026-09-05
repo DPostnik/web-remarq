@@ -1,4 +1,14 @@
-import type { ToolbarPosition } from '../core/types'
+import type { StorageStatus, ToolbarPosition } from '../core/types'
+
+const SYNC_LABEL: Record<StorageStatus['state'], string> = {
+  synced: 'Saved to the local server',
+  queued: 'Saved locally, waiting for the server',
+  memory: 'In memory only - lost on reload',
+  unauthorized: 'Not paired with the local server',
+  rejected: 'Some changes were rejected by the server',
+  conflict: 'Some changes collided with newer server copies',
+  incompatible: 'Local server too old',
+}
 
 export interface ToolbarCallbacks {
   onInspect: () => void
@@ -53,6 +63,7 @@ export class Toolbar {
   private submitBadgeEl: HTMLElement | null = null
   private exportMenu: HTMLElement | null = null
   private fileInput: HTMLInputElement
+  private syncEl: HTMLElement | null = null
   private minimized = false
   private buttons: HTMLElement[] = []
 
@@ -167,6 +178,19 @@ export class Toolbar {
 
   setMemoryWarning(show: boolean): void {
     this.toolbarEl.title = show ? 'localStorage unavailable — annotations stored in memory only' : ''
+  }
+
+  /** Small dot before the first button: where the last write landed (see StorageSyncState). */
+  setSyncStatus(status: StorageStatus): void {
+    if (!this.syncEl) {
+      this.syncEl = document.createElement('span')
+      this.syncEl.className = 'remarq-sync'
+      this.toolbarEl.insertBefore(this.syncEl, this.toolbarEl.firstChild)
+    }
+    this.syncEl.setAttribute('data-state', status.state)
+    const pending = status.pending > 0 ? ` (${status.pending} pending)` : ''
+    this.syncEl.title = `${SYNC_LABEL[status.state]}${pending}${status.message ? `\n${status.message}` : ''}`
+    this.syncEl.setAttribute('aria-label', this.syncEl.title)
   }
 
   destroy(): void {

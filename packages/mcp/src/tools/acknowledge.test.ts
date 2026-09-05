@@ -44,7 +44,7 @@ describe('acknowledge', () => {
 
     expect(result.isError).toBeFalsy()
     const payload = JSON.parse(result.content[0].text)
-    expect(payload).toEqual({ ok: true, status: 'in_progress' })
+    expect(payload).toMatchObject({ ok: true, status: 'in_progress' })
 
     expect(save).toHaveBeenCalledTimes(1)
     const [saved] = save.mock.calls[0]

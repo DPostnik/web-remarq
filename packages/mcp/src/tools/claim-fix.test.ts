@@ -43,7 +43,7 @@ describe('claim_fix', () => {
     const result = await handleClaimFix({ id: 't' }, storage)
 
     const payload = JSON.parse(result.content[0].text)
-    expect(payload).toEqual({ ok: true, status: 'fixed_unverified' })
+    expect(payload).toMatchObject({ ok: true, status: 'fixed_unverified' })
     const [saved] = save.mock.calls[0]
     expect(saved.status).toBe('fixed_unverified')
     expect(saved.lifecycle[1]).toMatchObject({ type: 'fix_claimed', actor: 'agent' })

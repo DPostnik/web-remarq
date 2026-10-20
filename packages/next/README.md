@@ -27,6 +27,10 @@ With options:
 export default withRemarq({ /* config */ }, { production: false })
 ```
 
+`next.config.mjs`, `next.config.ts` and `next.config.js` (`require`) all work.
+Versions before 0.3.1 crashed when imported from an ESM config and returned a
+string source map that Next 15 under webpack rejected with a 500 on every page.
+
 ## What it does
 
 Transforms this:

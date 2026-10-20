@@ -1,7 +1,17 @@
+import { createRequire } from "node:module";
+import fs from "node:fs";
+import path from "node:path";
+
 export interface RemarqOptions {
   /** Enable in production builds. Default: false */
   production?: boolean;
 }
+
+// A real `require` for both output formats. The ESM bundle has no `require`
+// in scope: tsup substitutes a shim that throws on call and has no `resolve`,
+// which broke `import withRemarq from "@web-remarq/next"` in next.config.mjs.
+// tsup `shims: true` provides `import.meta.url` in the CJS build.
+const nodeRequire = createRequire(import.meta.url);
 
 /**
  * Detect the installed Next.js major version.
@@ -9,8 +19,7 @@ export interface RemarqOptions {
  */
 function getNextMajorVersion(): number {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const nextPkg = require("next/package.json");
+    const nextPkg = nodeRequire("next/package.json") as { version: string };
     const major = parseInt(nextPkg.version.split(".")[0], 10);
     return isNaN(major) ? 0 : major;
   } catch {
@@ -18,7 +27,7 @@ function getNextMajorVersion(): number {
   }
 }
 
-const LOADER_PATH = require.resolve("@web-remarq/next/loader");
+const LOADER_PATH = nodeRequire.resolve("@web-remarq/next/loader");
 
 const JSX_TEST = /\.(jsx|tsx)$/;
 
@@ -31,10 +40,6 @@ export const TOKEN_ENV = "NEXT_PUBLIC_WEB_REMARQ_TOKEN";
  * this in development only; see `isProductionBuild`.
  */
 export function readLocalToken(from: string = process.cwd()): string | null {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require("fs") as typeof import("fs");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require("path") as typeof import("path");
   let dir = from;
   for (let i = 0; i < 12; i++) {
     const file = path.join(dir, ".remarq", "config.json");

@@ -1,7 +1,17 @@
 import { defineConfig } from 'vitest/config';
 
+// Standalone runs (cd packages/core && vitest) need the same Node 25 workaround
+// as the root config: the experimental global localStorage shadows jsdom's.
+const [major, minor] = process.versions.node.split('.').map(Number);
+const hasWebStorage = major > 22 || (major === 22 && minor >= 4);
+const execArgv = hasWebStorage ? ['--no-experimental-webstorage'] : [];
+
 export default defineConfig({
   test: {
+    poolOptions: {
+      forks: { execArgv },
+      threads: { execArgv },
+    },
     name: 'core',
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],

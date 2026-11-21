@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, parse, relative } from 'node:path'
 import { readJson } from './fs-utils'
-import { readRemarqInclude } from './vite-config'
+import { readRemarqInclude, readRemarqWidget } from './vite-config'
 import type { CheckResult, Detection } from './types'
 
 /** How many parent directories to walk before giving up - defense in depth, real trees never get close. */
@@ -405,25 +405,35 @@ export function checkWidgetInit(d: Detection): CheckResult {
     }
   }
 
+  // Vite stacks: the remarq plugin injects the widget in dev when its call has `widget: true`.
+  if (d.configFile && readRemarqWidget(readFileSync(join(d.appDir, d.configFile), 'utf8')) === 'enabled') {
+    return { id: 'widget-init', status: 'ok', detail: `remarq({ widget: true }) in ${d.configFile} injects the widget in dev` }
+  }
+
   if (!d.entry) {
     return {
       id: 'widget-init',
       status: 'fail',
-      detail: 'entry point not found',
-      hint: 'Add WebRemarq.init(...) to your app entry point, guarded to dev only.',
+      detail: 'entry point not found, and the remarq() call in the Vite config has no widget: true',
+      hint: 'Run `npx @web-remarq/cli init` again - it adds widget: true to the remarq() call in your Vite config.',
     }
   }
 
-  const path = join(d.appDir, d.entry)
-  const found = existsSync(path) && readFileSync(path, 'utf8').includes('WebRemarq.init')
-  return found
+  return entryCallsInit(d)
     ? { id: 'widget-init', status: 'ok', detail: `WebRemarq.init() found in ${d.entry}` }
     : {
         id: 'widget-init',
         status: 'fail',
-        detail: `WebRemarq.init() not found in ${d.entry}`,
-        hint: 'Add the widget bootstrap from `npx @web-remarq/cli init` to your entry point.',
+        detail: `no widget: true on remarq() in ${d.configFile ?? 'the Vite config'}, and no WebRemarq.init() in ${d.entry}`,
+        hint: 'Run `npx @web-remarq/cli init` again - it adds widget: true to the remarq() call in your Vite config.',
       }
+}
+
+/** True when the app entry starts the widget itself (manual wiring), not through the build plugin. */
+export function entryCallsInit(d: Detection): boolean {
+  if (!d.entry) return false
+  const path = join(d.appDir, d.entry)
+  return existsSync(path) && readFileSync(path, 'utf8').includes('WebRemarq.init')
 }
 
 export function checkMcpConfig(d: Detection): CheckResult {

@@ -3,7 +3,7 @@ import { join, relative, resolve } from 'node:path'
 import { findRepoRoot, firstExisting, readJson } from './fs-utils'
 import type { Bundler, Detection, DetectResult, Framework, PackageManager, PluginName } from './types'
 
-interface PackageJson {
+export interface PackageJson {
   name?: string
   dependencies?: Record<string, string>
   devDependencies?: Record<string, string>
@@ -16,7 +16,7 @@ const VUE_ENTRIES = ['src/main.ts', 'src/main.js', 'src/main.mts']
 const REACT_ENTRIES = ['src/main.tsx', 'src/main.jsx', 'src/index.tsx', 'src/index.jsx']
 const VANILLA_ENTRIES = ['src/main.ts', 'src/main.js']
 
-function hasDep(pkg: PackageJson | null, name: string): boolean {
+export function hasDep(pkg: PackageJson | null, name: string): boolean {
   if (!pkg) return false
   return Boolean(pkg.dependencies?.[name] ?? pkg.devDependencies?.[name])
 }

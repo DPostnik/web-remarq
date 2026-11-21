@@ -68,6 +68,37 @@ describe('runDoctor', () => {
     expect(find(report.checks, 'widget-init').status).toBe('ok')
   })
 
+  it('passes widget-init when the Vite config turns the widget on, and fails without it', async () => {
+    cpSync(fixture('vue-vite-wired'), dir, { recursive: true })
+    const without = await runDoctor(dir, {}, serverUp)
+    expect(without.ok && find(without.checks, 'widget-init').status).toBe('fail')
+
+    writeFileSync(
+      join(dir, 'vite.config.ts'),
+      "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\nimport remarq from '@web-remarq/unplugin/vite'\n" +
+        'export default defineConfig({ plugins: [vue(), remarq({ widget: true })] })\n',
+    )
+    const report = await runDoctor(dir, {}, serverUp)
+    expect(report.ok).toBe(true)
+    if (!report.ok) return
+    const check = find(report.checks, 'widget-init')
+    expect(check.status).toBe('ok')
+    expect(check.detail).toContain('widget: true')
+  })
+
+  it('probes the port from .remarq/config.json, falling back to 1817', async () => {
+    cpSync(fixture('vue-vite'), dir, { recursive: true })
+    const ports: number[] = []
+    const probe = { probeMcpServer: async (port: number) => { ports.push(port); return 'down' as const } }
+    await runDoctor(dir, {}, probe)
+    mkdirSync(join(dir, '.remarq'))
+    writeFileSync(join(dir, '.remarq/config.json'), JSON.stringify({ port: 4321 }))
+    await runDoctor(dir, {}, probe)
+    writeFileSync(join(dir, '.remarq/config.json'), JSON.stringify({ port: '4321' }))
+    await runDoctor(dir, {}, probe)
+    expect(ports).toEqual([1817, 4321, 1817])
+  })
+
   it('passes widget-init for Next when WebRemarq.init lives in a component the layout renders', async () => {
     cpSync(fixture('next-app'), dir, { recursive: true })
     writeFileSync(

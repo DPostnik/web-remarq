@@ -21,7 +21,7 @@ function copy(name: string) {
 }
 
 describe('runInit', () => {
-  it('installs, writes .mcp.json and returns two edits for vue + vite', () => {
+  it('installs, writes .mcp.json and the Claude settings, and registers the plugin in the Vite config itself', () => {
     copy('vue-vite')
     const result = runInit(dir, {}, deps)
 
@@ -30,21 +30,82 @@ describe('runInit', () => {
     expect(calls).toEqual(['npm install -D web-remarq @web-remarq/unplugin'])
     expect(result.wroteMcpConfig).toBe(true)
     expect(existsSync(join(dir, '.mcp.json'))).toBe(true)
-    expect(result.edits).toHaveLength(2)
-    expect(result.next).toBe('doctor')
+    expect(readFileSync(join(dir, 'vite.config.ts'), 'utf8')).toBe(
+      "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\nimport remarq from '@web-remarq/unplugin/vite'\n" +
+        "export default defineConfig({ plugins: [vue(), remarq({ widget: true, include: ['src/**/*.vue'] })] })\n",
+    )
+    expect(result.edited).toEqual([{ file: 'vite.config.ts', change: 'registered remarq({ widget: true }) at the end of plugins' }])
+    expect(result.edits).toEqual([])
+    expect(result.claudeSettings).toEqual({ changed: true, defaultMode: 'acceptEdits', defaultModeSet: true })
+    expect(JSON.parse(readFileSync(join(dir, '.claude', 'settings.local.json'), 'utf8')).enabledMcpjsonServers).toEqual(['web-remarq'])
+    expect(result.sessionCommand).toBe('claude --dangerously-load-development-channels server:web-remarq')
   })
 
-  it('is idempotent - a second run does not rewrite .mcp.json or .remarq/config.json', () => {
+  it('is idempotent - a second run changes no file and installs nothing once the packages are listed', () => {
     copy('vue-vite')
     const first = runInit(dir, {}, deps)
     expect(first.ok && first.wroteLocalConfig).toBe(true)
-    const configBefore = readFileSync(join(dir, '.remarq', 'config.json'), 'utf8')
+    // The injected exec installs nothing, so list the packages the way the package manager would.
+    const pkgPath = join(dir, 'package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    pkg.devDependencies = { ...pkg.devDependencies, 'web-remarq': '^1.0.0', '@web-remarq/unplugin': '^1.0.0' }
+    writeFileSync(pkgPath, JSON.stringify(pkg))
+    const files = ['vite.config.ts', '.mcp.json', '.remarq/config.json', '.claude/settings.local.json', 'package.json']
+    const before = files.map((f) => readFileSync(join(dir, f), 'utf8'))
+    calls.length = 0
+
     const second = runInit(dir, {}, deps)
     expect(second.ok).toBe(true)
     if (!second.ok) return
+    expect(calls).toEqual([])
+    expect(second.installed).toEqual([])
     expect(second.wroteMcpConfig).toBe(false)
     expect(second.wroteLocalConfig).toBe(false)
-    expect(readFileSync(join(dir, '.remarq', 'config.json'), 'utf8')).toBe(configBefore)
+    expect(second.claudeSettings.changed).toBe(false)
+    expect(second.edited).toEqual([])
+    expect(second.edits).toEqual([])
+    expect(files.map((f) => readFileSync(join(dir, f), 'utf8'))).toEqual(before)
+  })
+
+  it('installs only the packages package.json does not list yet', () => {
+    copy('react-vite-wired')
+    const result = runInit(dir, {}, deps)
+    expect(result.ok && result.installed).toEqual(['web-remarq'])
+    expect(calls).toEqual(['npm install -D web-remarq'])
+  })
+
+  it('adds widget: true to an existing remarq() registration', () => {
+    copy('vue-vite-wired')
+    const result = runInit(dir, {}, deps)
+    expect(result.ok && result.edited[0].change).toBe('added widget: true to the remarq() call')
+    expect(readFileSync(join(dir, 'vite.config.ts'), 'utf8')).toContain('plugins: [vue(), remarq({ widget: true })]')
+  })
+
+  it('registers the plugin without widget: true when the entry already calls WebRemarq.init', () => {
+    copy('react-vite')
+    writeFileSync(join(dir, 'src/main.tsx'), "import { WebRemarq } from 'web-remarq'\nWebRemarq.init({})\n")
+    const result = runInit(dir, {}, deps)
+    expect(result.ok && result.edited[0].change).toContain('without widget: true because src/main.tsx already calls WebRemarq.init')
+    const config = readFileSync(join(dir, 'vite.config.ts'), 'utf8')
+    expect(config).toContain("plugins: [remarq({ include: ['src/**/*.jsx', 'src/**/*.tsx'] })]")
+  })
+
+  it('leaves a config it cannot read untouched and returns the manual edit with the reason', () => {
+    copy('vue-vite-wired-shared-preset')
+    const before = readFileSync(join(dir, 'vite.config.ts'), 'utf8')
+    const result = runInit(dir, {}, deps)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(readFileSync(join(dir, 'vite.config.ts'), 'utf8')).toBe(before)
+    expect(result.edited).toEqual([])
+    expect(result.edits).toHaveLength(1)
+    expect(result.edits[0].note).toContain('shared')
+  })
+
+  it('keeps the manual Next.js edits', () => {
+    copy('next-app')
+    const result = runInit(dir, {}, deps)
+    expect(result.ok && result.edits.map((e) => e.kind)).toEqual(['build-config', 'entry'])
   })
 
   it('creates a gitignored .remarq/config.json with a project id and a token that never appears in the result', () => {

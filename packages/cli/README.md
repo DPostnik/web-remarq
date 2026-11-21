@@ -1,8 +1,10 @@
 # @web-remarq/cli
 
 Installer and doctor for [web-remarq](https://github.com/DPostnik/web-remarq) -
-detects your stack, installs the right packages, prints the manual edits an
-agent (or you) still need to apply, and verifies the result.
+detects your stack, installs the right packages, wires the build plugin and
+Claude Code, and verifies the result. For Vite apps one `init` is the whole
+setup: start the dev server, run the printed `claude ...` command, and marks
+you leave in the browser reach Claude Code and get fixed without typing.
 
 ## Commands
 
@@ -11,14 +13,29 @@ npx @web-remarq/cli init [--app <dir>] [--json]
 npx @web-remarq/cli doctor [--app <dir>] [--json]
 ```
 
-- `init` - installs packages, writes `.mcp.json` and `.remarq/config.json`
-  (project id + local token, gitignored) at the repo root, and prints the
-  remaining edits (build config + entry point) for your stack.
+- `init` - in the repository root writes `.mcp.json`, `.remarq/config.json`
+  (project id + local token, gitignored) and `.claude/settings.local.json`;
+  in the app installs the packages its `package.json` does not list yet and,
+  for Vite, registers the build plugin in the config file (see below). It
+  then prints what it did and the next steps, including the command that
+  starts the session:
+
+  ```bash
+  claude --dangerously-load-development-channels server:web-remarq
+  ```
+
+  The flag lets the web-remarq MCP server push marks into the open session
+  (Claude Code shows a one-time warning about development channels). Run
+  `init` again at any time: a run with nothing to do changes no file.
 - `doctor` - checks the setup and explains what is wrong. Its `mcp-server`
   check authenticates with the token from `.remarq/config.json`: `ok` means
   the server answered AND accepted the token; a refused token, an older
   server (protocol 1) or a missing token are `fail` with a hint; nothing
   listening is `blocked` (the server starts with your agent).
+
+  Its `widget-init` check is `ok` when the `remarq()` call in the Vite config
+  has `widget: true` (or the entry calls `WebRemarq.init`), and the probe uses
+  `port` from `.remarq/config.json` when set (default 1817).
 
 `--app <dir>` points at the app package inside a monorepo, relative to the
 repository root - use it when more than one app is detected, or when the
@@ -26,6 +43,37 @@ command is not run from the app directory. `--json` prints machine-readable
 output instead of the human-readable report.
 
 Supported stacks: Next.js, Vite (Vue/React/vanilla), and plain HTML pages.
+
+## What `init` changes
+
+**Vite config** (Vue, React, vanilla). The config is edited as text and never
+executed. `init` adds `import remarq from '@web-remarq/unplugin/vite'` after
+the last import (`const remarq = require('@web-remarq/unplugin/vite').default`
+in a CommonJS config) and appends `remarq({ widget: true, include: [...] })`
+at the end of the `plugins` array; in dev the plugin then injects the widget
+into `index.html`, so the entry file is not touched. When `remarq()` is already
+registered with no options or an inline options object, only `widget: true` is
+added. When `widget` is already set, nothing changes. When the entry already
+calls `WebRemarq.init`, the plugin is registered without `widget: true`, so the
+widget does not start twice.
+
+Nothing is written, and the edit is printed for you (with the reason) instead,
+when the file is not clear enough to edit safely: no config file, no inline
+`plugins: [...]` array or more than one, the plugin coming from a shared
+preset, options passed as a variable, unbalanced brackets, or an edited text
+that does not read back as expected. Only the inserted text is new; line
+endings, quotes, semicolons and indentation follow the file.
+
+**`.claude/settings.local.json`** (personal, not committed). `permissions.allow`
+gains the web-remarq tools (`claim_fix`, `dismiss`, `get_annotation`,
+`list_annotations`, `acknowledge`) plus `Read`, `Glob` and `Grep`;
+`enabledMcpjsonServers` gains `web-remarq`; `permissions.defaultMode` is set to
+`acceptEdits`, so the session applies fixes without asking, only when you have
+not set a mode yourself. Existing entries and keys are kept. A file that is
+not valid JSON is never overwritten: `init` stops and says so.
+
+Next.js and plain HTML pages work as before: Next.js gets two printed edits
+(wrap the config, render a client component); plain HTML gets a script tag.
 
 ## Doctor statuses
 
@@ -46,7 +94,7 @@ checks, in order:
 2. The `include` option written in the config admits one of your own source
    files - evaluated by the *installed* `@web-remarq/unplugin`'s own filter,
    not by a guess about what the option "should" match. Brace groups such as
-   `src/**/*.{jsx,tsx}` need `@web-remarq/unplugin` >= 0.2.0; `init` prints
+   `src/**/*.{jsx,tsx}` need `@web-remarq/unplugin` >= 0.2.0; `init` writes
    one plain pattern per extension so either version works.
 3. The installed transform stamps that file with `data-remarq-source`.
 

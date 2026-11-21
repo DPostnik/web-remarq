@@ -16,23 +16,47 @@ const detection: Detection = {
 }
 
 describe('renderInit', () => {
-  it('lists the remaining edits and points at doctor', () => {
-    const text = renderInit({
-      ok: true,
-      detected: detection,
-      installed: ['web-remarq', '@web-remarq/unplugin'],
-      wroteMcpConfig: true,
-      wroteLocalConfig: true,
-      edits: [
-        { file: 'packages/web/vite.config.ts', kind: 'build-config', snippet: 'plugins: []', note: 'after vue()' },
-        { file: 'packages/web/src/main.ts', kind: 'entry', snippet: 'WebRemarq.init({})' },
-      ],
-      next: 'doctor',
-    })
+  const base = {
+    ok: true as const,
+    detected: detection,
+    installed: ['web-remarq', '@web-remarq/unplugin'],
+    wroteMcpConfig: true,
+    wroteLocalConfig: true,
+    claudeSettings: { changed: true, defaultMode: 'acceptEdits', defaultModeSet: true },
+    edited: [{ file: 'packages/web/vite.config.ts', change: 'registered remarq({ widget: true }) at the end of plugins' }],
+    edits: [],
+    sessionCommand: 'claude --dangerously-load-development-channels server:web-remarq',
+    next: 'doctor' as const,
+  }
+
+  it('reports what was done, then the ordered next steps with the session command', () => {
+    const text = renderInit(base)
     expect(text).toContain('vue + vite')
-    expect(text).toContain('Two edits remain')
-    expect(text).toContain('[1] packages/web/vite.config.ts')
+    expect(text).toContain('✔ edited       packages/web/vite.config.ts - registered')
+    expect(text).toContain('.claude/settings.local.json')
+    expect(text).not.toContain('remain')
+    expect(text).toContain('1. Start your dev server (pnpm run dev).')
+    expect(text).toContain('2. In the repository root, start Claude Code:\n     claude --dangerously-load-development-channels server:web-remarq')
+    expect(text).toContain('one-time warning about development channels')
+    expect(text).toContain('accepts file edits without asking')
+    expect(text).toContain('3. Open the app')
     expect(text).toContain('npx @web-remarq/cli doctor')
+  })
+
+  it('lists only the manual edits left, puts them first in the steps, and says when a defaultMode was kept', () => {
+    const text = renderInit({
+      ...base,
+      installed: [],
+      edited: [],
+      claudeSettings: { changed: false, defaultMode: 'plan', defaultModeSet: false },
+      edits: [{ file: 'packages/web/vite.config.ts', kind: 'build-config', snippet: 'plugins: []', note: 'Not edited automatically: x' }],
+    })
+    expect(text).toContain('nothing to install')
+    expect(text).toContain('One edit remains')
+    expect(text).toContain('[1] packages/web/vite.config.ts')
+    expect(text).toContain('1. Apply the edits above.')
+    expect(text).toContain('kept your permissions.defaultMode "plan"')
+    expect(text).not.toContain('accepts file edits without asking')
   })
 
   it('reports a stop without pretending anything was installed', () => {

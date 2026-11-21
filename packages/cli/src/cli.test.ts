@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { main } from './cli'
@@ -98,6 +98,22 @@ describe('main - init non-install failure', () => {
       process.chdir(prevCwd)
       rmSync(plainDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('main - init failure after a successful install', () => {
+  it('reports a setup failure, not an install failure, when the settings file is malformed', async () => {
+    mkdirSync(join(dir, '.claude'))
+    writeFileSync(join(dir, '.claude', 'settings.local.json'), '{ not valid json', 'utf8')
+    const exec = vi.fn()
+    const code = await main(['init'], { exec })
+    expect(code).toBe(1)
+    expect(exec).toHaveBeenCalled()
+
+    const output = logSpy.mock.calls[0]?.[0] as string
+    expect(output).toContain('Setup failed')
+    expect(output).toContain('.claude/settings.local.json could not be parsed')
+    expect(output).not.toContain('Install failed')
   })
 })
 

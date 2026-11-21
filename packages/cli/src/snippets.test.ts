@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildEdits } from './snippets'
+import { nextEdits, viteConfigEdit } from './snippets'
 import type { Detection } from './types'
 
 const vueDetection: Detection = {
@@ -15,61 +15,48 @@ const vueDetection: Detection = {
   includeGlob: ['src/**/*.vue'],
 }
 
-describe('buildEdits', () => {
-  it('emits two edits with repo-relative paths for vue + vite', () => {
-    const edits = buildEdits(vueDetection)
-    expect(edits).toHaveLength(2)
-    expect(edits[0].file).toBe('packages/web/vite.config.ts')
-    expect(edits[0].kind).toBe('build-config')
-    expect(edits[0].snippet).toContain("include: ['src/**/*.vue']")
-    expect(edits[0].note).toContain('after')
-    expect(edits[1].file).toBe('packages/web/src/main.ts')
-    expect(edits[1].snippet).toContain('import.meta.env.DEV')
-    expect(edits[1].snippet).toContain('HttpStorageAdapter')
+describe('viteConfigEdit', () => {
+  it('prints a repo-relative manual edit with widget: true, the include globs and the reason', () => {
+    const edit = viteConfigEdit(vueDetection, true, 'no inline `plugins: [...]` array found')
+    expect(edit.file).toBe('packages/web/vite.config.ts')
+    expect(edit.kind).toBe('build-config')
+    expect(edit.snippet).toContain("remarq({ widget: true, include: ['src/**/*.vue'] })")
+    expect(edit.note).toContain('no inline `plugins: [...]` array found')
+    expect(edit.note).toContain('after')
   })
 
-  it('prints one plain include pattern per extension for react (no brace groups)', () => {
-    const edits = buildEdits({
-      ...vueDetection,
-      framework: 'react',
-      entry: 'src/main.tsx',
-      includeGlob: ['src/**/*.jsx', 'src/**/*.tsx'],
-    })
-    expect(edits[0].snippet).toContain("include: ['src/**/*.jsx', 'src/**/*.tsx']")
-    expect(edits[0].snippet).not.toContain('{jsx,tsx}')
+  it('prints one plain include pattern per extension for react (no brace groups), and no widget for manual wiring', () => {
+    const edit = viteConfigEdit({ ...vueDetection, framework: 'react', includeGlob: ['src/**/*.jsx', 'src/**/*.tsx'] }, false, 'x')
+    expect(edit.snippet).toContain("remarq({ include: ['src/**/*.jsx', 'src/**/*.tsx'] })")
+    expect(edit.snippet).not.toContain('{jsx,tsx}')
   })
 
-  it('emits the withRemarq wrapper for next', () => {
-    const edits = buildEdits({
-      ...vueDetection,
-      framework: 'next',
-      bundler: 'next',
-      appDir: '/repo',
-      configFile: 'next.config.ts',
-      entry: 'app/layout.tsx',
-      plugin: '@web-remarq/next',
-      includeGlob: null,
-    })
+  it('says so when there is no config file', () => {
+    expect(viteConfigEdit({ ...vueDetection, configFile: null }, true, 'no Vite config file found').file).toBe('<vite config not found>')
+  })
+})
+
+describe('nextEdits', () => {
+  const next: Detection = {
+    ...vueDetection,
+    framework: 'next',
+    bundler: 'next',
+    appDir: '/repo',
+    configFile: 'next.config.ts',
+    entry: 'app/layout.tsx',
+    plugin: '@web-remarq/next',
+    includeGlob: null,
+  }
+
+  it('emits the withRemarq wrapper and the client component', () => {
+    const edits = nextEdits(next)
     expect(edits[0].snippet).toContain('withRemarq')
     expect(edits[1].snippet).toContain("'use client'")
-  })
-
-  it('emits no edits in plain-html mode', () => {
-    const edits = buildEdits({
-      ...vueDetection,
-      framework: 'plain-html',
-      bundler: null,
-      configFile: null,
-      entry: 'index.html',
-      plugin: null,
-      includeGlob: null,
-    })
-    expect(edits).toEqual([])
+    expect(edits[1].file).toBe('app/layout.tsx')
   })
 
   it('says so when the entry point was not found', () => {
-    const edits = buildEdits({ ...vueDetection, entry: null })
-    expect(edits).toHaveLength(2)
+    const edits = nextEdits({ ...next, entry: null })
     expect(edits[1].file).toBe('<entry point not found>')
     expect(edits[1].note).toContain('locate the entry')
   })

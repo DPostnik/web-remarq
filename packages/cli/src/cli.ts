@@ -11,7 +11,9 @@ Usage:
   npx @web-remarq/cli init [--app <dir>] [--json]
   npx @web-remarq/cli doctor [--app <dir>] [--json]
 
-init    Install packages, write .mcp.json, print the remaining edits.
+init    Install missing packages, write .mcp.json, .remarq/config.json and
+        .claude/settings.local.json, register the build plugin in the Vite
+        config, and print the command that starts a Claude Code session.
 doctor  Check the setup and explain what is wrong.
 
 Options:
@@ -43,15 +45,17 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
   }
 
   if (command === 'init') {
-    // The install command is the one part of `runInit` that can throw
-    // (network failure, registry error, nonzero exit) - everything else it
-    // does is local file writes. Capture the attempted command so a failure
-    // can point the user at it, then run `runInit` itself inside try/catch:
-    // that call is what invokes `deps.exec` and is where the throw surfaces.
-    let attemptedCommand: string | null = null
+    // A failure inside the install command (network, registry, nonzero exit)
+    // must point the user at that command; any later failure (a malformed
+    // .mcp.json or settings file) is a setup failure, not an install failure.
+    let failedCommand: string | null = null
     const exec: InitDeps['exec'] = (cmd, cwd, quiet) => {
-      attemptedCommand = cmd
-      deps.exec(cmd, cwd, quiet)
+      try {
+        deps.exec(cmd, cwd, quiet)
+      } catch (err) {
+        failedCommand = cmd
+        throw err
+      }
     }
 
     try {
@@ -61,17 +65,14 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
 
-      // `attemptedCommand` stays null when `deps.exec` was never called - e.g.
-      // plain-HTML has nothing to install, so a throw there must be a later
-      // step (writeMcpConfig, injectScriptTag), not the install.
-      if (attemptedCommand === null) {
+      if (failedCommand === null) {
         console.log(
           json ? JSON.stringify({ ok: false, reason: 'Setup failed', hint: message }, null, 2) : renderSetupFailure(message),
         )
         return 1
       }
 
-      const failure: InstallFailure = { command: attemptedCommand, message }
+      const failure: InstallFailure = { command: failedCommand, message }
       console.log(
         json
           ? JSON.stringify({ ok: false, reason: 'Install failed', hint: failure.message, command: failure.command }, null, 2)

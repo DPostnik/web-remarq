@@ -1,10 +1,8 @@
 import { detect } from './detect'
 import { checkBuildPlugin, checkMcpConfig, checkMcpServer, checkPackages, checkWidgetInit } from './checks'
 import type { McpProbeResult } from './checks'
-import { readLocalToken } from './local-config'
+import { readLocalPort, readLocalToken } from './local-config'
 import type { CheckResult, Detection } from './types'
-
-export const MCP_PORT = 1817
 
 export interface DoctorOptions {
   app?: string
@@ -71,7 +69,7 @@ export async function runDoctor(
     await checkBuildPlugin(d),
     checkWidgetInit(d),
     checkMcpConfig(d),
-    await checkMcpServer(MCP_PORT, (port) => deps.probeMcpServer(port, readLocalToken(d.repoRoot))),
+    await checkMcpServer(readLocalPort(d.repoRoot), (port) => deps.probeMcpServer(port, readLocalToken(d.repoRoot))),
   ]
 
   return { ok: true, detected: d, checks }

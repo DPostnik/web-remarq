@@ -1,3 +1,4 @@
+import { CLAUDE_SETTINGS_PATH } from './claude-settings'
 import type { InitResult } from './init'
 import type { DoctorReport } from './doctor'
 import type { CheckStatus } from './types'
@@ -29,23 +30,30 @@ export function renderInit(result: InitResult): string {
 
   const d = result.detected
   const stack = d.bundler ? `${d.framework} + ${d.bundler}` : d.framework
+  const settings = result.claudeSettings
+  const autoAccept = settings.defaultMode === 'acceptEdits'
   const lines = [
     `✔ detected     ${stack} (${d.packageManager})`,
     result.installed.length > 0
       ? `✔ installed    ${result.installed.join(', ')}`
-      : '– installed    nothing to install',
+      : '– installed    nothing to install (already in package.json)',
     result.wroteMcpConfig
       ? '✔ wrote        .mcp.json (repo root)'
       : '✔ mcp config   already up to date',
     result.wroteLocalConfig
       ? '✔ wrote        .remarq/config.json (project id + local token, gitignored)'
       : '✔ local config already present (.remarq/config.json)',
+    settings.changed
+      ? `✔ wrote        ${CLAUDE_SETTINGS_PATH} (web-remarq tools allowed, server enabled)`
+      : `✔ claude       ${CLAUDE_SETTINGS_PATH} already up to date`,
+    ...result.edited.map((edit) => `✔ edited       ${edit.file} - ${edit.change}`),
   ]
+  if (!settings.defaultModeSet && !autoAccept) {
+    lines.push(`  kept your permissions.defaultMode "${settings.defaultMode}" - Claude Code will not accept fixes on its own`)
+  }
 
-  if (result.edits.length === 0) {
-    lines.push('', 'Setup is complete - no manual edits needed.')
-  } else {
-    lines.push('', `${countWord(result.edits.length)} edits remain:`, '')
+  if (result.edits.length > 0) {
+    lines.push('', `${countWord(result.edits.length)} ${result.edits.length === 1 ? 'edit remains' : 'edits remain'}:`, '')
     result.edits.forEach((edit, i) => {
       lines.push(`[${i + 1}] ${edit.file}`)
       lines.push(...edit.snippet.split('\n').map((l) => `    ${l}`))
@@ -54,7 +62,20 @@ export function renderInit(result: InitResult): string {
     })
   }
 
-  lines.push('Then: npx @web-remarq/cli doctor')
+  const steps = [
+    ...(result.edits.length > 0 ? ['Apply the edits above.'] : []),
+    d.bundler ? `Start your dev server (${d.packageManager} run dev).` : 'Serve the page locally and open it.',
+    [
+      'In the repository root, start Claude Code:',
+      `     ${result.sessionCommand}`,
+      '   The first start shows a one-time warning about development channels - confirm it.',
+      autoAccept ? '   This mode accepts file edits without asking (acceptEdits).' : null,
+    ]
+      .filter((l) => l !== null)
+      .join('\n'),
+    'Open the app, click an element and leave a mark - Claude Code receives it and fixes it.',
+  ]
+  lines.push('', 'Next:', ...steps.map((step, i) => `${i + 1}. ${step}`), '', 'Check the setup any time: npx @web-remarq/cli doctor')
   return lines.join('\n')
 }
 
@@ -94,9 +115,9 @@ export function renderInstallFailure(failure: InstallFailure): string {
 }
 
 /**
- * `runInit` does more than the install command: it always writes .mcp.json, and
- * for plain-HTML apps also injects the script tag. Neither of those is an
- * install, so a failure there must not be blamed on a command that never ran.
+ * `runInit` does more than the install command: it writes .mcp.json and the
+ * Claude Code settings and edits app files. None of those is an install, so a
+ * failure there must not be blamed on an install command that succeeded or never ran.
  */
 export function renderSetupFailure(message: string): string {
   return [`✖ Setup failed`, `  ${message}`].join('\n')

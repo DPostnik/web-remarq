@@ -1,10 +1,22 @@
-import { relative } from 'node:path'
+import { join, relative } from 'node:path'
+import { hasDep } from './detect'
+import type { PackageJson } from './detect'
+import { readJson } from './fs-utils'
 import type { Detection } from './types'
 
 /** Packages to install for a given stack. Plain HTML needs nothing from npm. */
-export function packagesFor(d: Detection): string[] {
+function packagesFor(d: Detection): string[] {
   if (d.framework === 'plain-html') return []
   return d.plugin ? ['web-remarq', d.plugin] : ['web-remarq']
+}
+
+/**
+ * The packages for this stack that the app's package.json does not list yet.
+ * Listed ones are left alone, so a re-run never reinstalls (or upgrades) them.
+ */
+export function missingPackages(d: Detection): string[] {
+  const pkg = readJson<PackageJson>(join(d.appDir, 'package.json'))
+  return packagesFor(d).filter((name) => !hasDep(pkg, name))
 }
 
 /**

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseEnv, ConfigError } from './config'
+import { effectivePort, parseEnv, ConfigError, type LocalConfig } from './config'
 
 describe('parseEnv', () => {
   it('returns local mode with defaults when no cloud vars are set', () => {
     expect(parseEnv({})).toEqual({
       mode: 'local',
-      port: 1817,
+      port: null,
       dataFile: '.remarq/annotations.json',
       channel: { enabled: true, settleMs: 3000, staleMs: 180000, redeliverMs: 2000 },
     })
@@ -37,6 +37,13 @@ describe('parseEnv', () => {
   it('rejects a non-numeric or out-of-range port', () => {
     expect(() => parseEnv({ REMARQ_PORT: 'abc' })).toThrow(ConfigError)
     expect(() => parseEnv({ REMARQ_PORT: '70000' })).toThrow(ConfigError)
+  })
+
+  it('effective port: REMARQ_PORT, then port from .remarq/config.json, then 1817', () => {
+    const local = (env: NodeJS.ProcessEnv) => parseEnv(env) as LocalConfig
+    expect(effectivePort(local({ REMARQ_PORT: '4000' }), { port: 5000 })).toBe(4000)
+    expect(effectivePort(local({}), { port: 5000 })).toBe(5000)
+    expect(effectivePort(local({}), {})).toBe(1817)
   })
 
   it('returns cloud mode when all three cloud vars are set', () => {

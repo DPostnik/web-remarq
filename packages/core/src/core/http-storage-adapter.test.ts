@@ -575,6 +575,72 @@ describe('HttpStorageAdapter degraded storage', () => {
   });
 });
 
+describe('HttpStorageAdapter dev-server config (token and port)', () => {
+  const CFG = '/__web-remarq/config.json';
+  const PORTED = 'http://127.0.0.1:4321';
+
+  function serve(config: unknown): Array<{ url: string; auth?: string }> {
+    const calls: Array<{ url: string; auth?: string }> = [];
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input);
+      calls.push({ url, auth: (init.headers as Record<string, string> | undefined)?.authorization });
+      if (url === CFG) return json(config);
+      if (url.endsWith('/store')) return json({ rev: 0, protocol: 2, projectId: 'prj_P', store: { version: 1, annotations: [] } });
+      return json({ error: 'not found', code: 'not_found' }, 404);
+    });
+    return calls;
+  }
+  const storeCall = (calls: Array<{ url: string; auth?: string }>) => calls.find((c) => c.url.endsWith('/store'));
+
+  it('without a port keeps the default URL and takes the token from the dev server', async () => {
+    const calls = serve({ projectId: 'prj_P', token: 'cfg-token' });
+    await new HttpStorageAdapter().load();
+    expect(storeCall(calls)).toEqual({ url: 'http://127.0.0.1:1817/store', auth: 'Bearer cfg-token' });
+  });
+
+  it('uses the reported port, even when a token for the default URL is already stored', async () => {
+    localStorage.setItem('remarq:http:token:http://127.0.0.1:1817', 'old-default-token');
+    const calls = serve({ projectId: 'prj_P', token: 'cfg-token', port: 4321 });
+    await new HttpStorageAdapter().load();
+    expect(storeCall(calls)).toEqual({ url: `${PORTED}/store`, auth: 'Bearer cfg-token' });
+  });
+
+  it('after the switch prefers a token paired for the new URL over the config token', async () => {
+    localStorage.setItem(`remarq:http:token:${PORTED}`, 'paired-token');
+    const calls = serve({ projectId: 'prj_P', token: 'cfg-token', port: 4321 });
+    await new HttpStorageAdapter().load();
+    expect(storeCall(calls)).toEqual({ url: `${PORTED}/store`, auth: 'Bearer paired-token' });
+  });
+
+  it('an explicit token never asks the dev server (manual wiring such as Next.js has no endpoint)', async () => {
+    const calls = serve({ projectId: 'prj_P', token: 'cfg-token', port: 4321 });
+    await new HttpStorageAdapter({ token: 'option-token' }).load();
+    expect(calls.some((c) => c.url === CFG)).toBe(false);
+    expect(storeCall(calls)).toEqual({ url: 'http://127.0.0.1:1817/store', auth: 'Bearer option-token' });
+  });
+
+  it('an explicit url wins over the reported port', async () => {
+    const calls = serve({ projectId: 'prj_P', token: 'cfg-token', port: 4321 });
+    await new HttpStorageAdapter({ url: URL_A }).load();
+    expect(storeCall(calls)).toEqual({ url: `${URL_A}/store`, auth: 'Bearer cfg-token' });
+  });
+
+  it('accepts only an integer port, never a host or URL from the reply', async () => {
+    for (const port of ['4321', 'evil.example', 'http://evil.example:80', 0, 70000, 43.5]) {
+      const calls = serve({ projectId: 'prj_P', token: 'cfg-token', port, url: 'http://evil.example', host: 'evil.example' });
+      await new HttpStorageAdapter().load();
+      expect(calls.every((c) => c.url === CFG || c.url.startsWith('http://127.0.0.1:1817/'))).toBe(true);
+    }
+  });
+
+  it('configUrl: false never asks the dev server', async () => {
+    const calls = serve({ projectId: 'prj_P', token: 'cfg-token', port: 4321 });
+    await new HttpStorageAdapter({ configUrl: false }).load();
+    expect(calls.some((c) => c.url === CFG)).toBe(false);
+    expect(storeCall(calls)?.url).toBe('http://127.0.0.1:1817/store');
+  });
+});
+
 describe('HttpStorageAdapter subscribe', () => {
   beforeEach(() => {
     vi.useFakeTimers();

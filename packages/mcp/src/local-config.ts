@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { isPort } from './config.js'
 
 /**
  * Local-mode project identity and HTTP credential, kept in `.remarq/config.json`
@@ -16,11 +17,14 @@ import { basename, join } from 'node:path'
  * - `allowedOrigins` is the exact list of browser origins the endpoint accepts.
  *   `http://host:*` means any port on that exact host. Remote/staging origins are
  *   never allowed unless listed here on purpose.
+ * - `port` (optional, never written by default) is the HTTP port when
+ *   REMARQ_PORT is not set. The Vite plugin hands it to the widget.
  */
 export interface LocalProjectConfig {
   projectId: string
   token: string
   allowedOrigins: string[]
+  port?: number
 }
 
 export const CONFIG_FILE = 'config.json'
@@ -64,7 +68,10 @@ function validate(raw: unknown, path: string): LocalProjectConfig {
   if (!Array.isArray(origins) || !origins.every((o) => typeof o === 'string')) {
     throw new LocalConfigError(`${path}: allowedOrigins must be an array of origin strings`)
   }
-  return { projectId: obj.projectId, token: obj.token, allowedOrigins: origins as string[] }
+  if (obj.port !== undefined && !isPort(obj.port)) {
+    throw new LocalConfigError(`${path}: port must be an integer between 1 and 65535`)
+  }
+  return { projectId: obj.projectId, token: obj.token, allowedOrigins: origins as string[], ...(obj.port !== undefined ? { port: obj.port } : {}) }
 }
 
 /**

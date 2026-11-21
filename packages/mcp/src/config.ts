@@ -18,7 +18,8 @@ export interface ChannelConfig {
 
 export interface LocalConfig {
   mode: 'local'
-  port: number
+  /** REMARQ_PORT; null when unset, so `port` in `.remarq/config.json` or DEFAULT_PORT applies. */
+  port: number | null
   dataFile: string
   channel: ChannelConfig
 }
@@ -41,6 +42,16 @@ function require_(env: NodeJS.ProcessEnv, key: string): string {
 }
 
 const DEFAULT_PORT = 1817
+
+export function isPort(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 65535
+}
+
+/** REMARQ_PORT wins over `port` in `.remarq/config.json`; 1817 when neither is set. */
+export function effectivePort(config: LocalConfig, local: { port?: number }): number {
+  return config.port ?? local.port ?? DEFAULT_PORT
+}
+
 const DEFAULT_DATA_FILE = '.remarq/annotations.json'
 
 function parseMs(env: NodeJS.ProcessEnv, key: string, fallback: number, min: number): number {
@@ -86,9 +97,9 @@ export function parseEnv(env: NodeJS.ProcessEnv): MCPConfig {
     return { mode: 'cloud', projectKey, supabaseUrl, supabaseAnonKey }
   }
 
-  const rawPort = env.REMARQ_PORT ?? String(DEFAULT_PORT)
-  const port = Number(rawPort)
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  const rawPort = env.REMARQ_PORT
+  const port = rawPort === undefined ? null : Number(rawPort)
+  if (port !== null && !isPort(port)) {
     throw new ConfigError(`REMARQ_PORT must be an integer between 1 and 65535, got "${rawPort}"`)
   }
 

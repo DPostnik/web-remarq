@@ -137,7 +137,7 @@ Annotations persist via a pluggable `StorageAdapter` interface. Default = `Local
 
 ### `HttpStorageAdapter`
 
-Talks to a local `npx @web-remarq/mcp` server (default `http://127.0.0.1:1817`) so an AI agent can read annotations and drive their lifecycle without any cloud account:
+Talks to a local `npx @web-remarq/mcp` server (default `http://127.0.0.1:1817`; in Vite dev the port reported by `@web-remarq/unplugin` is used unless `url` or `token` is passed) so an AI agent can read annotations and drive their lifecycle without any cloud account:
 
 ```typescript
 import { WebRemarq, HttpStorageAdapter } from 'web-remarq'

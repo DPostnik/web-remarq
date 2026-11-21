@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { StorageAdapter } from 'web-remarq'
-import { parseEnv, ConfigError } from './config.js'
+import { parseEnv, ConfigError, effectivePort } from './config.js'
 import { createStorage } from './storage-factory.js'
 import { FileStorageAdapter } from './file-storage-adapter.js'
 import { startHttpServer } from './http-server.js'
@@ -44,9 +44,11 @@ async function main(): Promise<void> {
   if (config.mode === 'local') {
     const storeDir = dirname(config.dataFile)
     let local
+    let port: number
     try {
       local = readOrCreateLocalConfig(storeDir)
-      acquireStoreLock(storeDir, config.port)
+      port = effectivePort(config, local)
+      acquireStoreLock(storeDir, port)
     } catch (err) {
       if (err instanceof LocalConfigError || err instanceof StoreLockedError) {
         console.error(`[web-remarq-mcp] ${err.message}`)
@@ -69,10 +71,10 @@ async function main(): Promise<void> {
       adapter.onChange(() => delivery?.onChange())
     }
     taskFolder.schedule() // project existing annotations on startup
-    await startHttpServer(adapter, config.port, local)
+    await startHttpServer(adapter, port, local)
     // The token itself is never logged: it lives only in the config file.
     console.error(
-      `[web-remarq-mcp] local mode — project ${local.projectId}, widget endpoint http://127.0.0.1:${config.port} (token in ${join(storeDir, 'config.json')}), store ${config.dataFile}, tasks ${tasksDir}`,
+      `[web-remarq-mcp] local mode — project ${local.projectId}, widget endpoint http://127.0.0.1:${port} (token in ${join(storeDir, 'config.json')}), store ${config.dataFile}, tasks ${tasksDir}`,
     )
     storage = adapter
     waitForChange = (ms) => adapter.waitForChange(ms)

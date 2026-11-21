@@ -1,7 +1,7 @@
 import { createUnplugin } from 'unplugin'
 import { relative } from 'path'
 import { createFilter, DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './filter'
-import { CONFIG_ENDPOINT, readLocalConfig } from './local-config'
+import { CONFIG_ENDPOINT, readLocalConfig, resolveAgentRoot } from './local-config'
 import { transformJSX, transformVueSFC } from './transform'
 import { WIDGET_MODULE_ID, WIDGET_RESOLVED_ID, WIDGET_SCRIPT_SRC, canResolveWidgetPackage, widgetModuleSource, type WidgetOptions } from './widget'
 
@@ -30,6 +30,8 @@ const unplugin = createUnplugin((options: Options = {}) => {
   const filter = createFilter(include, exclude)
   const widgetOn = (): boolean => !!options.widget && process.env.NODE_ENV !== 'production'
   let warnedMissing = false
+  let viteRoot: string | undefined
+  let agentRoot: string | undefined
 
   return {
     name: 'web-remarq',
@@ -42,8 +44,10 @@ const unplugin = createUnplugin((options: Options = {}) => {
     },
 
     transform(code, id) {
-      const cwd = process.cwd()
-      const filePath = relative(cwd, id).split('\\').join('/')
+      // Paths are relative to where the agent works (the `.remarq/` or git root),
+      // not to where the bundler was launched, so they resolve in a monorepo too.
+      agentRoot ??= resolveAgentRoot(viteRoot ?? process.cwd())
+      const filePath = relative(agentRoot, id).split('\\').join('/')
 
       if (id.endsWith('.vue')) {
         return transformVueSFC(code, filePath) ?? undefined
@@ -53,6 +57,10 @@ const unplugin = createUnplugin((options: Options = {}) => {
     },
 
     vite: {
+      configResolved(config: { root: string }) {
+        viteRoot = config.root
+      },
+
       resolveId(id: string) {
         return widgetOn() && id === WIDGET_MODULE_ID ? WIDGET_RESOLVED_ID : undefined
       },

@@ -54,6 +54,18 @@ describe('readOrCreateLocalConfig', () => {
     expect(() => readOrCreateLocalConfig(dir)).toThrow(/allowedOrigins/)
   })
 
+  it('accepts an optional integer port, never writes one, and refuses an invalid one', () => {
+    const created = readOrCreateLocalConfig(dir)
+    expect(created).not.toHaveProperty('port')
+    expect(JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8'))).not.toHaveProperty('port')
+    writeFileSync(join(dir, 'config.json'), JSON.stringify({ ...created, port: 4555 }))
+    expect(readOrCreateLocalConfig(dir).port).toBe(4555)
+    for (const port of [0, 70000, 1.5, '4555', null]) {
+      writeFileSync(join(dir, 'config.json'), JSON.stringify({ ...created, port }))
+      expect(() => readOrCreateLocalConfig(dir)).toThrow(/port/)
+    }
+  })
+
   it('does not write a wildcard .gitignore outside a .remarq directory', () => {
     readOrCreateLocalConfig(join(dir, 'data'))
     expect(existsSync(join(dir, 'data', '.gitignore'))).toBe(false)

@@ -41,7 +41,7 @@ small HTTP endpoint on `127.0.0.1`. No Supabase project, no project key.
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `REMARQ_PORT` | `1817` | Port for the widget-facing HTTP endpoint |
+| `REMARQ_PORT` | `port` in `.remarq/config.json`, else `1817` | Port for the widget-facing HTTP endpoint |
 | `REMARQ_DATA_FILE` | `.remarq/annotations.json` | Where annotations are persisted |
 
 `.remarq/` self-gitignores on first write - nothing to add to your project's
@@ -66,6 +66,8 @@ On first start the server writes `.remarq/config.json`:
 }
 ```
 
+An optional `"port": 4000` there sets the HTTP port when `REMARQ_PORT` is not
+set; the Vite plugin passes the port of the running server to the widget.
 `npx @web-remarq/cli init` creates the same file up front. It is owner-only
 and gitignored; the token never appears in source, URLs, ticket files, logs or
 `doctor` output.

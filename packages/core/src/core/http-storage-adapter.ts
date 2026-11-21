@@ -63,7 +63,11 @@ export interface UnsentSummary {
 }
 
 export interface HttpStorageAdapterOptions {
-  /** Base URL of the local MCP server. Default: http://127.0.0.1:1817 */
+  /**
+   * Base URL of the local MCP server. Default: http://127.0.0.1:1817, or
+   * http://127.0.0.1:<port> when the dev server's `configUrl` reports a port
+   * (looked up only when `token` is not given).
+   */
   url?: string;
   /**
    * Bearer token from `.remarq/config.json`. When omitted the adapter looks for
@@ -71,7 +75,7 @@ export interface HttpStorageAdapterOptions {
    * `configUrl` (served by @web-remarq/unplugin in development only).
    */
   token?: string;
-  /** Same-origin endpoint that serves `{ token }` in development. `false` disables the lookup. Default: /__web-remarq/config.json */
+  /** Same-origin endpoint that serves `{ token, port? }` in development. `false` disables the lookup. Default: /__web-remarq/config.json */
   configUrl?: string | false;
 }
 
@@ -121,6 +125,9 @@ export class HttpStorageAdapter implements StorageAdapter {
   private url: string;
   private token: string | null;
   private configUrl: string | false;
+  private readonly urlGiven: boolean;
+  private readonly tokenGiven: boolean;
+  private devConfigLoaded = false;
 
   private namespace: string;
   private online = true;
@@ -143,6 +150,8 @@ export class HttpStorageAdapter implements StorageAdapter {
 
   constructor(options: HttpStorageAdapterOptions = {}) {
     this.url = (options.url ?? DEFAULT_URL).replace(/\/+$/, '');
+    this.urlGiven = options.url !== undefined;
+    this.tokenGiven = options.token !== undefined;
     this.token = options.token ?? this.getItem(this.tokenKey());
     this.configUrl = options.configUrl ?? DEFAULT_CONFIG_PATH;
     this.migrateLegacyKeys();
@@ -153,7 +162,7 @@ export class HttpStorageAdapter implements StorageAdapter {
 
   async load(): Promise<AnnotationStore | null> {
     return this.run(async () => {
-      await this.ensureToken();
+      await this.loadDevConfig();
       const first = await this.fetchStore();
       if (first.kind !== 'store') {
         this.emitStatus();
@@ -425,14 +434,32 @@ export class HttpStorageAdapter implements StorageAdapter {
     return h;
   }
 
-  private async ensureToken(): Promise<void> {
-    if (this.token || this.configUrl === false) return;
+  /**
+   * Ask the dev server for the token and the MCP server port. Only a port is
+   * taken from the reply, never a host or URL, so the token cannot be sent
+   * anywhere but 127.0.0.1. An explicit `url` always wins. An explicit `token`
+   * means manual wiring (e.g. Next.js) with no dev endpoint, so nothing is asked.
+   */
+  private async loadDevConfig(): Promise<void> {
+    if (this.configUrl === false || this.devConfigLoaded) return;
+    if (this.tokenGiven || (this.token && this.urlGiven)) return;
     if (typeof location === 'undefined') return;
     try {
       const res = await fetch(this.configUrl, { headers: { accept: 'application/json' } });
       if (!res.ok) return;
-      const body = (await res.json()) as { token?: unknown };
-      if (typeof body.token === 'string' && body.token.length > 0) this.token = body.token;
+      const body = (await res.json()) as { token?: unknown; port?: unknown };
+      this.devConfigLoaded = true;
+      const port = body.port;
+      if (!this.urlGiven && Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535) {
+        const url = `http://127.0.0.1:${port}`;
+        if (url !== this.url) {
+          // Keys for the token, last project and unknown namespace are per URL.
+          this.url = url;
+          this.token = this.getItem(this.tokenKey());
+          this.namespace = this.getItem(this.lastProjectKey()) ?? this.unknownNamespace();
+        }
+      }
+      if (!this.token && typeof body.token === 'string' && body.token.length > 0) this.token = body.token;
     } catch {
       // no dev-server config endpoint: pairing has to happen through pair()
     }

@@ -77,6 +77,8 @@ Injects the widget into `index.html` in `vite dev`, in simple mode with `HttpSto
 
 Never injected in production builds, and it does not apply to SSR frameworks (SPA `index.html` only, e.g. Vue and React Vite apps). Default is off, so an existing manual `init` keeps working.
 
+The dev server serves `{ projectId, token, port? }` at `/__web-remarq/config.json` from `.remarq/config.json`. `port` is the running MCP server's port from `.remarq/server.lock` (else `port` from the config), so a server started with `REMARQ_PORT` is found without extra setup. The config is looked up from the Vite root up to the git root, never above it; outside a git repository only the Vite root itself is checked.
+
 ## What it does
 
 Transforms this:
@@ -96,6 +98,8 @@ function LoginForm() {
     data-remarq-component="LoginForm">Log in</button>
 }
 ```
+
+Paths are relative to the directory that holds `.remarq/config.json` (where the agent works), else the git root, else the current directory, so in a monorepo they match the agent's working directory rather than the app package.
 
 Vue SFC templates are also transformed:
 

@@ -36,26 +36,34 @@ export const TOKEN_ENV = "NEXT_PUBLIC_WEB_REMARQ_TOKEN";
 
 /**
  * Read the local MCP token from `.remarq/config.json`, walking up from `from`
- * (an app inside a monorepo finds the repo-root config). `withRemarq` calls
- * this in development only; see `isProductionBuild`.
+ * to the nearest directory with `.git` and never above it: an app inside a
+ * monorepo finds the repo-root config, while an app without its own `.remarq/`
+ * never picks up an unrelated project's token from a parent directory. Outside
+ * a git repository only `from` counts. Same rule as `locateRemarq` in
+ * `@web-remarq/unplugin`. `withRemarq` calls this in development only; see
+ * `isProductionBuild`.
  */
 export function readLocalToken(from: string = process.cwd()): string | null {
-  let dir = from;
-  for (let i = 0; i < 12; i++) {
-    const file = path.join(dir, ".remarq", "config.json");
-    if (fs.existsSync(file)) {
-      try {
-        const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { token?: unknown };
-        return typeof parsed.token === "string" ? parsed.token : null;
-      } catch {
-        return null;
-      }
-    }
+  const start = path.resolve(from);
+  const configAt = (dir: string) => path.join(dir, ".remarq", "config.json");
+  let found: string | null = null;
+  for (let dir = start; ; ) {
+    if (!found && fs.existsSync(configAt(dir))) found = configAt(dir);
+    if (fs.existsSync(path.join(dir, ".git"))) break;
     const parent = path.dirname(dir);
-    if (parent === dir) break;
+    if (parent === dir) {
+      found = fs.existsSync(configAt(start)) ? configAt(start) : null;
+      break;
+    }
     dir = parent;
   }
-  return null;
+  if (!found) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(found, "utf8")) as { token?: unknown };
+    return typeof parsed.token === "string" ? parsed.token : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -22,10 +22,26 @@ afterEach(() => {
 
 describe('local token pairing', () => {
   it('readLocalToken walks up from an app dir to the repo-root config', () => {
+    mkdirSync(join(dir, '.git'));
     const app = join(dir, 'apps', 'web');
     mkdirSync(app, { recursive: true });
     expect(readLocalToken(app)).toBe('tok-abcdefghijklmnop');
     expect(readLocalToken(mkdtempSync(join(tmpdir(), 'remarq-none-')))).toBeNull();
+  });
+
+  it('readLocalToken never reads a config above the git root', () => {
+    const project = join(dir, 'other-project');
+    mkdirSync(join(project, '.git'), { recursive: true });
+    mkdirSync(join(project, 'src'));
+    expect(readLocalToken(project)).toBeNull();
+    expect(readLocalToken(join(project, 'src'))).toBeNull();
+  });
+
+  it('readLocalToken outside a git repository reads only the start directory', () => {
+    const app = join(dir, 'apps', 'web');
+    mkdirSync(app, { recursive: true });
+    expect(readLocalToken(app)).toBeNull();
+    expect(readLocalToken(dir)).toBe('tok-abcdefghijklmnop');
   });
 
   it('withRemarq exposes the token as a public env var in development only, without overriding a user value', () => {

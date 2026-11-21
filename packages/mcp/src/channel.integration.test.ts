@@ -99,6 +99,9 @@ describe('channel delivery over stdio', () => {
     const s = await start({})
     expect(client.getServerCapabilities()?.experimental).toHaveProperty('claude/channel')
     expect(client.getInstructions()).toContain('claim_fix')
+    // A shell edit is not pre-approved by `init`, so it stalls an unattended session.
+    expect(client.getInstructions()).toMatch(/Edit, Write, MultiEdit/)
+    expect(client.getInstructions()).toMatch(/never with shell commands/)
 
     expect((await put(s, mark('m1', 'Button too small'))).status).toBe(200)
     await waitFor(() => received.length === 1)

@@ -260,7 +260,9 @@ Limits:
 - Claude Code shows a warning dialog at start for development channels.
 - Events are delivered only while a session is open; there is no acknowledgement.
 - For unattended use the agent needs permission rules that allow `claim_fix`,
-  `dismiss` and file edits, otherwise it stops at a permission prompt.
+  `dismiss` and file edits, otherwise it stops at a permission prompt. The
+  channel instructions tell it to edit with the file editing tools, not shell
+  commands such as `sed -i`, which would need a separate approval.
 - Clients that are not channels ignore the notifications.
 
 `watch_annotations` and the prompts keep working as before: they are the

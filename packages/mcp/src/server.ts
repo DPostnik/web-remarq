@@ -21,6 +21,9 @@ const CHANNEL_INSTRUCTIONS =
   'Marks come one batch at a time. Fix each mark in the code, then call claim_fix for each id ' +
   '(or dismiss with a reason if it cannot or should not be fixed). ' +
   'Do not ask the user to confirm receipt or whether to proceed. ' +
+  'Find code with Read, Grep and Glob, and change files only with the file editing tools (Edit, Write, MultiEdit), ' +
+  'never with shell commands (sed, awk, perl -i, echo or cat redirection): the user is in the browser, not the terminal, ' +
+  'so a command that needs approval blocks the fix. ' +
   'The next batch is sent only after every mark of the current batch is reported.'
 
 async function main(): Promise<void> {

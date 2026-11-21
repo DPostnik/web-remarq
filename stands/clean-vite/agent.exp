@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+# Runs ONE Claude Code session in work/app with exactly the command `init` prints,
+# answers the startup dialogs, then stays idle (no input) for up to 15 minutes.
+set dir [file dirname [file normalize [info script]]]
+set work "$dir/work"
+set app "$work/app"
+set claude "$env(HOME)/.local/bin/claude"
+if {![file executable $claude]} { set claude claude }
+set stty_init "rows 50 cols 160"
+set timeout 5
+match_max 200000
+log_file -noappend "$work/agent.log"
+cd $app
+spawn $claude --dangerously-load-development-channels server:web-remarq
+set claude_pid [exp_pid]
+set f [open "$work/claude.pid" w]; puts $f $claude_pid; close $f
+
+proc stamp {} { return [clock format [clock seconds] -format %H:%M:%S] }
+set ready 0
+set start [clock seconds]
+while {!$ready && [clock seconds] - $start < 120} {
+  expect {
+    -re {shortcuts|shift.{1,6}tab} { set ready 1 }
+    -re {Press.*Enter.*continue} { send "\r"; exp_continue }
+    -re {No,.{1,12}disable.{1,12}external.{1,12}imports} { after 500; send "\r"; exp_continue }
+    -re {No,.{1,12}exit.{1,60}Yes,.{1,12}I.{1,12}trust} { after 500; send "\x1b\[B"; after 300; send "\r"; exp_continue }
+    -re {❯.{0,60}Continue.{0,40}without} { after 400; send "\x1b\[A"; after 300; send "\x1b\[A"; after 300; send "\r"; exp_continue }
+    -re {Use.*this.*MCP.*server} { after 400; send "\r"; exp_continue }
+    -re {development} { send "\r"; exp_continue }
+    -re {keep.*browser.*tools.*off} { send "\r"; exp_continue }
+    -re {fullscreen} { send "\x1b\[B"; after 300; send "\r"; exp_continue }
+    -re {text.*style|Choose.*theme} { send "\r"; exp_continue }
+    eof { puts "\nEOF during startup"; exit 1 }
+    timeout { }
+  }
+}
+if {!$ready} { puts "\nSTARTUP FAILED"; catch {exec kill $claude_pid}; exit 2 }
+puts "\n[stamp] READY"
+set f [open "$work/agent.ready" w]; puts $f [stamp]; close $f
+# idle, no input, up to 15 minutes; consume output so the log keeps filling
+set start [clock seconds]
+while {[clock seconds] - $start < 900} {
+  expect {
+    eof { puts "\n[stamp] EOF"; exit 0 }
+    timeout { }
+  }
+}
+puts "\n[stamp] IDLE LIMIT"
+catch {send "/exit\r"}
+catch {expect -timeout 15 eof}
+catch {exec kill $claude_pid}
+exit 0

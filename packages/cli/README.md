@@ -121,7 +121,10 @@ runs `init`, applies the edits it printed, and asserts through doctor and a
 real Vite dev server that a specific element is stamped `file:line:col`.
 Without flags it installs this checkout's packed tarballs and proves nothing
 about npm. `npm run e2e:install -- --registry` installs the published packages
-instead - run it after publishing.
+instead - run it after publishing. Both modes also fail when an installed
+package's version differs from this checkout's `package.json` (npm can still
+serve the previous release for a few minutes) or when the Vite dev server does
+not inject the widget. `--only react-vite` (repeatable or comma list) runs a subset.
 
 ## More
 

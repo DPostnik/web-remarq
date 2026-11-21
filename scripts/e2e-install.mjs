@@ -10,6 +10,13 @@
 //   node scripts/e2e-install.mjs             local tarballs: this checkout's code
 //   node scripts/e2e-install.mjs --registry  published packages: what `npm install` gives users
 //
+// `--only <name>` (repeatable or comma-separated) runs a subset of SCAFFOLDS,
+// e.g. `--only react-vite`.
+//
+// Both modes require every installed web-remarq package to carry the version in
+// its workspace package.json: right after a release npm can still serve the
+// previous version, and a run against it must fail rather than pass.
+//
 // Local mode: build the workspace packages, `npm pack` them, let `init` run its
 // normal registry install (so the flow matches a real user end to end), then
 // reinstall those same package names from the tarballs - overwriting what
@@ -42,7 +49,7 @@ const TARBALL_WORKSPACES = [
 // Vite scaffolds keep the config `init` edited itself (see applyBuildConfigEdit),
 // so a drift between what the CLI writes and what the plugin accepts fails this
 // run instead of only failing users. Next applies the printed edit verbatim.
-const SCAFFOLDS = [
+const ALL_SCAFFOLDS = [
   {
     name: 'vue-vite',
     cmd: 'npm create vite@latest app -- --template vue-ts',
@@ -61,6 +68,44 @@ const SCAFFOLDS = [
     tarballNames: ['web-remarq', '@web-remarq/next'],
   },
 ]
+
+/** `--only a --only b,c` -> ['a', 'b', 'c']; empty when the flag is absent. */
+function onlyArgs(argv) {
+  const names = []
+  argv.forEach((arg, i) => {
+    if (arg === '--only') names.push(argv[i + 1] ?? '')
+    else if (arg.startsWith('--only=')) names.push(arg.slice('--only='.length))
+  })
+  return names.flatMap((v) => v.split(',')).map((v) => v.trim()).filter(Boolean)
+}
+
+const ONLY = onlyArgs(process.argv.slice(2))
+const unknownOnly = ONLY.filter((n) => !ALL_SCAFFOLDS.some((s) => s.name === n))
+if (process.argv.includes('--only') && ONLY.length === 0) {
+  console.error(`--only needs a scaffold name: ${ALL_SCAFFOLDS.map((s) => s.name).join(', ')}`)
+  process.exit(2)
+}
+if (unknownOnly.length > 0) {
+  console.error(`unknown --only scaffold(s): ${unknownOnly.join(', ')}; known: ${ALL_SCAFFOLDS.map((s) => s.name).join(', ')}`)
+  process.exit(2)
+}
+const SCAFFOLDS = ONLY.length > 0 ? ALL_SCAFFOLDS.filter((s) => ONLY.includes(s.name)) : ALL_SCAFFOLDS
+
+// What every scaffold must end up with installed: the versions in this
+// checkout's manifests (the ones a release publishes).
+const EXPECTED_VERSIONS = Object.fromEntries(
+  TARBALL_WORKSPACES.map((pkg) => [
+    pkg.name,
+    JSON.parse(readFileSync(join(REPO, pkg.workspace, 'package.json'), 'utf8')).version,
+  ]),
+)
+
+// Widget injection by the unplugin `widget` option (packages/unplugin/src/
+// widget.ts, index.ts transformIndexHtml): on the dev server Vite's index.html
+// gets <script type="module" src=WIDGET_SCRIPT_SRC>, and that virtual module
+// calls WebRemarq.init. Kept literal: the script must not import plugin source.
+const WIDGET_SCRIPT_SRC = '/@id/__x00__virtual:web-remarq/widget'
+const WIDGET_INIT_MARKER = 'WebRemarq.init('
 
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' })
 const runCapture = (cmd, cwd) => execSync(cmd, { cwd, encoding: 'utf8' })
@@ -236,6 +281,7 @@ async function devServerSmoke(appDir, relFile) {
   try {
     const base = `http://127.0.0.1:${port}`
     await waitFor(async () => (await fetch(`${base}/`)).ok, 60_000)
+    const widget = await checkWidgetInjected(base, log)
     const res = await fetch(`${base}/${relFile}`)
     const served = await res.text()
     const stamp = expectedStamp(appDir, relFile)
@@ -249,12 +295,29 @@ async function devServerSmoke(appDir, relFile) {
         `Vite served ${relFile} stamped, but not the expected element ${stamp}; stamps seen: ${[...new Set(found)].slice(0, 6).join(', ') || 'none'}`,
       )
     }
-    return stamp
+    return { stamp, widget }
   } finally {
     child.kill('SIGTERM')
     await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000))])
     if (child.exitCode === null) child.kill('SIGKILL')
   }
+}
+
+/**
+ * The page Vite serves must carry the widget script tag, and that URL must
+ * serve the generated module that starts the widget.
+ */
+async function checkWidgetInjected(base, log) {
+  const html = await (await fetch(`${base}/`)).text()
+  if (!html.includes(`src="${WIDGET_SCRIPT_SRC}"`)) {
+    throw new Error(`Vite served / without the widget script ${WIDGET_SCRIPT_SRC} (unplugin widget option not applied?)\n--- vite log ---\n${log}`)
+  }
+  const res = await fetch(`${base}${WIDGET_SCRIPT_SRC}`)
+  const body = await res.text()
+  if (res.status !== 200 || !body.includes(WIDGET_INIT_MARKER)) {
+    throw new Error(`widget module ${WIDGET_SCRIPT_SRC} answered ${res.status}${res.status === 200 ? ` without ${WIDGET_INIT_MARKER}` : ''}`)
+  }
+  return `index.html has <script src="${WIDGET_SCRIPT_SRC}">, module 200 with ${WIDGET_INIT_MARKER}`
 }
 
 // doctor's build-plugin check for Next only greps next.config.* for the
@@ -307,6 +370,7 @@ function checkNextLoaderStamps(appDir, scriptPath) {
 }
 
 console.log(`MODE: ${MODE_LABEL}`)
+console.log(`scaffolds: ${SCAFFOLDS.map((s) => s.name).join(', ')}`)
 console.log(`node ${process.version}`)
 
 console.log('\n=== Building the CLI ===')
@@ -343,6 +407,47 @@ function installedVersions(appDir, names) {
     .join(', ')
 }
 
+/**
+ * Installed vs expected version for each name; mismatches only. Reads
+ * node_modules directly: that is what the app resolves, whatever npm reported.
+ */
+function versionMismatches(appDir, names, expected) {
+  return names
+    .map((name) => {
+      const pkg = join(appDir, 'node_modules', name, 'package.json')
+      const installed = existsSync(pkg) ? JSON.parse(readFileSync(pkg, 'utf8')).version : 'missing'
+      return { name, expected: expected[name], installed }
+    })
+    .filter((v) => v.installed !== v.expected)
+}
+
+/** dist-tags.latest straight from the registry; `npm view` answers from its cache. */
+async function registryLatest(name) {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2f')}`, {
+      headers: { accept: 'application/vnd.npm.install-v1+json' },
+    })
+    if (!res.ok) return `unknown (registry answered ${res.status})`
+    return (await res.json())['dist-tags']?.latest ?? 'unknown (no latest tag)'
+  } catch (err) {
+    return `unknown (${err.message})`
+  }
+}
+
+async function checkVersions(appDir, names) {
+  const mismatches = versionMismatches(appDir, names, EXPECTED_VERSIONS)
+  if (mismatches.length === 0) return
+  const lines = []
+  for (const m of mismatches) {
+    const latest = REGISTRY_MODE ? `; registry dist-tags.latest is ${await registryLatest(m.name)}` : ''
+    lines.push(`${m.name}: expected ${m.expected}, installed ${m.installed}${latest}`)
+  }
+  const hint = REGISTRY_MODE
+    ? '\n  If latest already shows the expected version, npm is still propagating the release: rerun in a few minutes.'
+    : ''
+  throw new Error(`installed versions differ from the workspace:\n  ${lines.join('\n  ')}${hint}`)
+}
+
 const failures = []
 
 for (const scaffold of SCAFFOLDS) {
@@ -369,13 +474,18 @@ for (const scaffold of SCAFFOLDS) {
       (n, i, all) => all.indexOf(n) === i && (i < scaffold.tarballNames.length || existsSync(join(appDir, 'node_modules', n))),
     ))
     console.log(`  versions: ${tooling}`)
+    await checkVersions(appDir, scaffold.tarballNames)
+    console.log(`  versions match the workspace: ${scaffold.tarballNames.map((n) => `${n}@${EXPECTED_VERSIONS[n]}`).join(', ')}`)
 
     const detail = checkStamping(appDir)
     console.log(`  doctor build-plugin: ${detail}`)
 
     if (scaffold.devServerFile) {
-      const stamp = await devServerSmoke(appDir, scaffold.devServerFile)
+      const { stamp, widget } = await devServerSmoke(appDir, scaffold.devServerFile)
       console.log(`  vite dev server: served ${scaffold.devServerFile} with data-remarq-source="${stamp}"`)
+      console.log(`  widget: ${widget}`)
+    } else {
+      console.log('  widget: skipped - not auto-injected outside Vite (known limitation)')
     }
 
     if (scaffold.name === 'next-app') {
@@ -398,7 +508,7 @@ if (failures.length > 0) {
   console.error(`\n${failures.length} scaffold(s) failed [${MODE_LABEL}]: ${failures.join(', ')}`)
   process.exit(1)
 }
-console.log(`\nAll scaffolds stamped data-remarq-source [${MODE_LABEL}].`)
+console.log(`\nAll scaffolds (${SCAFFOLDS.map((s) => s.name).join(', ')}) passed versions, stamping and widget checks [${MODE_LABEL}].`)
 if (!REGISTRY_MODE) {
   console.log('This verifies this checkout only. After publishing, run again with --registry to verify the published packages.')
 }

@@ -55,12 +55,21 @@ describe('channel delivery over stdio', () => {
     client.fallbackNotificationHandler = async (n) => {
       received.push(n as (typeof received)[number])
     }
+    // The vite-node CLI copies every variable of `.env` in its root (default: cwd)
+    // into process.env when unset, so a repo-root `.env` with REMARQ_PROJECT_KEY
+    // switched the server to cloud mode. Pin the root to this package (it has no
+    // `.env`; outside it the server's imports do not resolve) and drop inherited
+    // REMARQ_* so only this test's variables apply.
+    const inherited = Object.fromEntries(
+      Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !e[0].startsWith('REMARQ_')),
+    )
     await client.connect(
       new StdioClientTransport({
         command: process.execPath,
         args: [viteNode, join(here, 'server.ts')],
+        cwd: join(here, '..'),
         env: {
-          ...(process.env as Record<string, string>),
+          ...inherited,
           REMARQ_PORT: String(port),
           REMARQ_DATA_FILE: join(store, 'annotations.json'),
           REMARQ_CHANNEL_SETTLE_MS: '150',

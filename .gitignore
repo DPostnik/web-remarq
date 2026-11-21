@@ -12,3 +12,7 @@ AGENTS.md
 !.env.example
 packages/cloud/test/
 packages/core/test/
+.DS_Store
+.claude/
+spikes/
+hyperframes-videos/

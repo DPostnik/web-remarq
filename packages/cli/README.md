@@ -39,7 +39,8 @@ npx @web-remarq/cli doctor [--app <dir>] [--json]
   listening is `blocked` (the server starts with your agent).
 
   Its `widget-init` check is `ok` when the `remarq()` call in the Vite config
-  has `widget: true` (or the entry calls `WebRemarq.init`), and the probe uses
+  has `widget: true` (or the entry calls `WebRemarq.init`) and the installed
+  packages are new enough for it (`fail` names the minimum), and the probe uses
   `port` from `.remarq/config.json` when set (default 1817).
 
 `--app <dir>` points at the app package inside a monorepo, relative to the
@@ -61,6 +62,11 @@ registered with no options or an inline options object, only `widget: true` is
 added. When `widget` is already set, nothing changes. When the entry already
 calls `WebRemarq.init`, the plugin is registered without `widget: true`, so the
 widget does not start twice.
+
+Packages the app's `package.json` already lists are not reinstalled, except on
+Vite when the installed `web-remarq` is below 0.10.0 or `@web-remarq/unplugin`
+below 0.3.0: older versions ignore `widget: true`, so `init` installs the
+latest ones.
 
 Nothing is written, and the edit is printed for you (with the reason) instead,
 when the file is not clear enough to edit safely: no config file, no inline

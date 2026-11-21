@@ -1,4 +1,5 @@
 import { join, relative } from 'node:path'
+import { belowWidgetMinimum } from './checks'
 import { hasDep } from './detect'
 import type { PackageJson } from './detect'
 import { readJson } from './fs-utils'
@@ -12,11 +13,14 @@ function packagesFor(d: Detection): string[] {
 
 /**
  * The packages for this stack that the app's package.json does not list yet.
- * Listed ones are left alone, so a re-run never reinstalls (or upgrades) them.
+ * Listed ones are left alone, so a re-run never reinstalls them - except, on Vite,
+ * an installed version too old for remarq({ widget: true }), which init is about to write.
  */
 export function missingPackages(d: Detection): string[] {
   const pkg = readJson<PackageJson>(join(d.appDir, 'package.json'))
-  return packagesFor(d).filter((name) => !hasDep(pkg, name))
+  return packagesFor(d).filter(
+    (name) => !hasDep(pkg, name) || (d.bundler === 'vite' && belowWidgetMinimum(d.appDir, name) !== null),
+  )
 }
 
 /**

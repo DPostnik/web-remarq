@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { buildInstallCommand } from './install'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { buildInstallCommand, missingPackages } from './install'
 import type { Detection } from './types'
 
 const base: Detection = {
@@ -96,5 +99,50 @@ describe('buildInstallCommand', () => {
     expect(buildInstallCommand(d, pkgs)).toBe(
       "yarn workspace 'o'\\''brien' add -D web-remarq @web-remarq/unplugin",
     )
+  })
+})
+
+describe('missingPackages', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'remarq-install-'))
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ devDependencies: { 'web-remarq': '^0.9.0', '@web-remarq/unplugin': '^0.2.0' } }),
+    )
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  function fakeInstall(name: string, version: string) {
+    const pkgDir = join(dir, 'node_modules', name)
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, version, main: 'index.js' }))
+    writeFileSync(join(pkgDir, 'index.js'), '')
+  }
+
+  const vite = () => ({ ...base, repoRoot: dir, appDir: dir })
+
+  it('reinstalls a listed package whose installed version is below the widget minimum', () => {
+    fakeInstall('web-remarq', '0.9.0')
+    fakeInstall('@web-remarq/unplugin', '0.2.5')
+    expect(missingPackages(vite())).toEqual(['web-remarq', '@web-remarq/unplugin'])
+  })
+
+  it('skips listed packages at or above the minimum', () => {
+    fakeInstall('web-remarq', '0.10.0')
+    fakeInstall('@web-remarq/unplugin', '1.0.0')
+    expect(missingPackages(vite())).toEqual([])
+  })
+
+  it('skips a listed package whose installed version cannot be read', () => {
+    fakeInstall('@web-remarq/unplugin', '0.2.0')
+    expect(missingPackages(vite())).toEqual(['@web-remarq/unplugin'])
+  })
+
+  it('applies no minimum outside Vite', () => {
+    fakeInstall('web-remarq', '0.9.0')
+    expect(missingPackages({ ...vite(), framework: 'next', bundler: 'next', plugin: '@web-remarq/next' })).toEqual([
+      '@web-remarq/next',
+    ])
   })
 })

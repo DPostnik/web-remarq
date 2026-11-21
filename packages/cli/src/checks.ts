@@ -51,6 +51,24 @@ function resolveInstalled(appDir: string, name: string): { version: string } | n
   }
 }
 
+/** Oldest versions that know remarq({ widget: true }); an older unplugin ignores the option, so no widget appears. */
+export const WIDGET_MINIMUMS: Record<string, string> = { 'web-remarq': '0.10.0', '@web-remarq/unplugin': '0.3.0' }
+
+/** Numeric major.minor.patch comparison; a prerelease suffix is ignored, an unparsable version is never "below". */
+export function isBelow(version: string, minimum: string): boolean {
+  const a = version.split('-')[0].split('.').map(Number)
+  const b = minimum.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]
+  return false
+}
+
+/** The minimum `name` needs for the widget when its installed version is below it; null when fine or unreadable. */
+export function belowWidgetMinimum(appDir: string, name: string): string | null {
+  const minimum = WIDGET_MINIMUMS[name]
+  const installed = minimum ? resolveInstalled(appDir, name) : null
+  return installed && isBelow(installed.version, minimum) ? minimum : null
+}
+
 export function checkPackages(d: Detection): CheckResult {
   const wanted = d.plugin ? ['web-remarq', d.plugin] : ['web-remarq']
   const found: string[] = []
@@ -407,6 +425,18 @@ export function checkWidgetInit(d: Detection): CheckResult {
 
   // Vite stacks: the remarq plugin injects the widget in dev when its call has `widget: true`.
   if (d.configFile && readRemarqWidget(readFileSync(join(d.appDir, d.configFile), 'utf8')) === 'enabled') {
+    const outdated = Object.keys(WIDGET_MINIMUMS).flatMap((name) => {
+      const minimum = belowWidgetMinimum(d.appDir, name)
+      return minimum ? [`${name} >= ${minimum}`] : []
+    })
+    if (outdated.length > 0) {
+      return {
+        id: 'widget-init',
+        status: 'fail',
+        detail: `remarq({ widget: true }) in ${d.configFile} needs ${outdated.join(' and ')}; the installed versions ignore widget: true`,
+        hint: `Upgrade to ${outdated.join(' and ')}: run \`npx @web-remarq/cli init\` again, it installs the latest versions.`,
+      }
+    }
     return { id: 'widget-init', status: 'ok', detail: `remarq({ widget: true }) in ${d.configFile} injects the widget in dev` }
   }
 

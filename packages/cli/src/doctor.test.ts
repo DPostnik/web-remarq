@@ -21,6 +21,14 @@ const serverDown = { probeMcpServer: async () => 'down' as const }
 const find = (checks: CheckResult[], id: CheckResult['id']) =>
   checks.find((c) => c.id === id)!
 
+/** A resolvable node_modules/<name> at `version`, enough for the installed-version lookup. */
+function fakeInstall(appDir: string, name: string, version: string) {
+  const pkgDir = join(appDir, 'node_modules', name)
+  mkdirSync(pkgDir, { recursive: true })
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name, version, main: 'index.js' }))
+  writeFileSync(join(pkgDir, 'index.js'), '')
+}
+
 describe('runDoctor', () => {
   it('reports mcp-server as blocked, not failed, when nothing answers on the port', async () => {
     cpSync(fixture('vue-vite'), dir, { recursive: true })
@@ -84,6 +92,27 @@ describe('runDoctor', () => {
     const check = find(report.checks, 'widget-init')
     expect(check.status).toBe('ok')
     expect(check.detail).toContain('widget: true')
+  })
+
+  it('fails widget-init with widget: true when the installed packages predate it, and passes once they are new enough', async () => {
+    cpSync(fixture('vue-vite-wired'), dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'vite.config.ts'),
+      "import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\nimport remarq from '@web-remarq/unplugin/vite'\n" +
+        'export default defineConfig({ plugins: [vue(), remarq({ widget: true })] })\n',
+    )
+    fakeInstall(dir, 'web-remarq', '0.9.3')
+    fakeInstall(dir, '@web-remarq/unplugin', '0.3.0')
+    const old = await runDoctor(dir, {}, serverUp)
+    if (!old.ok) throw new Error('detection failed')
+    const failed = find(old.checks, 'widget-init')
+    expect(failed.status).toBe('fail')
+    expect(failed.hint).toContain('web-remarq >= 0.10.0')
+    expect(failed.hint).not.toContain('@web-remarq/unplugin >=')
+
+    fakeInstall(dir, 'web-remarq', '0.10.0-beta.1')
+    const fresh = await runDoctor(dir, {}, serverUp)
+    expect(fresh.ok && find(fresh.checks, 'widget-init').status).toBe('ok')
   })
 
   it('probes the port from .remarq/config.json, falling back to 1817', async () => {

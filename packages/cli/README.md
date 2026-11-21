@@ -24,9 +24,14 @@ npx @web-remarq/cli doctor [--app <dir>] [--json]
   claude --dangerously-load-development-channels server:web-remarq
   ```
 
-  The flag lets the web-remarq MCP server push marks into the open session
-  (Claude Code shows a one-time warning about development channels). Run
-  `init` again at any time: a run with nothing to do changes no file.
+  The flag lets the web-remarq MCP server push marks into the open session.
+  The first start shows two screens: "trust this folder", which warns that
+  `.claude/settings.local.json` pre-approves tool permissions and starts with
+  the cursor on "No, exit" - select "Yes, I trust this folder" and press
+  Enter; then the development channels warning - press Enter on the default
+  "I am using this for local development". There is no separate approval
+  prompt for the MCP server. Run `init` again at any time: a run with nothing
+  to do changes no file.
 - `doctor` - checks the setup and explains what is wrong. Its `mcp-server`
   check authenticates with the token from `.remarq/config.json`: `ok` means
   the server answered AND accepted the token; a refused token, an older

@@ -28,6 +28,11 @@ user `reason` and `hint`.
 
 ## 2. Apply the edits
 
+For Vite apps `init` registers the build plugin in the Vite config itself and
+lists that change in `edited` - do not apply it again. `edits` holds only what
+is left by hand: the Next.js edits, or a Vite config edit when the file was not
+clear enough to edit safely (its `note` says why).
+
 For each entry in `edits`, open `file` (path is relative to the repository root)
 and integrate `snippet`.
 
@@ -40,8 +45,8 @@ If `file` is `<entry point not found>`, `<vite config not found>`, or
 `<next config not found>`, locate the right file yourself and apply the
 snippet there.
 
-If `edits` is an empty array, there is nothing to apply (plain HTML with no
-bundler is fully set up by `init` itself) - continue straight to step 3. On
+If `edits` is an empty array, there is nothing to apply (Vite apps and plain
+HTML with no bundler are fully set up by `init` itself) - continue straight to step 3. On
 plain HTML there is no dev server to hand the widget its token: tell the user
 to run `WebRemarq.pair('<token>')` once in the browser console, with the
 token from `.remarq/config.json` (never paste the token into a committed file).
@@ -88,7 +93,8 @@ Finish with the concrete next actions, not with "done":
 Setup complete. Two things left for you:
 
 1. Restart the dev server: <their dev command>
-2. Restart Claude Code so it picks up the web-remarq MCP server.
+2. Restart Claude Code from the repository root with: <sessionCommand from init>
+   Confirm "Yes, I trust this folder", then Enter on the development channels warning.
 
 Then: open your app - the web-remarq toolbar appears in the bottom-right.
 Hit Inspect, click a broken element, describe what's wrong, hit Submit.

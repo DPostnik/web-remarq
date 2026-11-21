@@ -33,11 +33,11 @@ config and entry point, and verifies the result with `doctor`.
 Prefer to drive yourself:
 
 ```bash
-npx @web-remarq/cli init      # installs packages, writes .mcp.json, prints the remaining edits
+npx @web-remarq/cli init      # installs packages, writes .mcp.json and Claude Code settings, edits vite.config, prints any remaining edits
 npx @web-remarq/cli doctor    # checks the setup and explains what is wrong
 ```
 
-On a plain HTML page with no bundler, `init` completes the whole setup on its own.
+For Vite apps and plain HTML pages with no bundler, `init` completes the whole setup on its own and prints the `claude ...` command that starts the session.
 
 See each package's README for detailed docs.
 

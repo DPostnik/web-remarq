@@ -39,25 +39,20 @@ const TARBALL_WORKSPACES = [
   { workspace: 'packages/next', name: '@web-remarq/next' },
 ]
 
-// Each scaffold applies the build-config edit exactly as `init --json` printed
-// it (see applyBuildConfigEdit) - the include option is taken from the printed
-// snippet, never retyped here, so a drift between what the CLI prints and what
-// the plugin accepts fails this run instead of only failing users.
+// Vite scaffolds keep the config `init` edited itself (see applyBuildConfigEdit),
+// so a drift between what the CLI writes and what the plugin accepts fails this
+// run instead of only failing users. Next applies the printed edit verbatim.
 const SCAFFOLDS = [
   {
     name: 'vue-vite',
     cmd: 'npm create vite@latest app -- --template vue-ts',
     tarballNames: ['web-remarq', '@web-remarq/unplugin'],
-    frameworkImport: `import vue from '@vitejs/plugin-vue'`,
-    frameworkPlugin: 'vue()',
     devServerFile: 'src/App.vue',
   },
   {
     name: 'react-vite',
     cmd: 'npm create vite@latest app -- --template react-ts',
     tarballNames: ['web-remarq', '@web-remarq/unplugin'],
-    frameworkImport: `import react from '@vitejs/plugin-react'`,
-    frameworkPlugin: 'react()',
     devServerFile: 'src/App.tsx',
   },
   {
@@ -113,17 +108,17 @@ function runInitJson(appDir) {
 }
 
 /**
- * Apply the build-config edit the way an agent following SKILL.md would: take
- * the printed snippet as given and place it into a complete config file.
- * For Vite the snippet is a fragment (`plugins: [..., remarq({ include: [...] })]`),
- * so the `remarq(...)` call is lifted out of it verbatim; for Next the snippet
- * is the whole file.
+ * Vite: `init` edits a fresh scaffold's config itself and reports it in
+ * `edited`; a printed build-config edit (the manual fallback) means the
+ * automatic edit regressed, so it fails here. Next: the printed snippet is
+ * the whole config file and is applied as given, the way an agent following
+ * SKILL.md would.
  */
 function applyBuildConfigEdit(scaffold, appDir, initResult) {
   const edit = initResult.edits.find((e) => e.kind === 'build-config')
-  if (!edit) throw new Error('init printed no build-config edit')
 
   if (scaffold.name === 'next-app') {
+    if (!edit) throw new Error('init printed no build-config edit')
     const cfg = existsSync(join(appDir, 'next.config.ts'))
       ? join(appDir, 'next.config.ts')
       : join(appDir, 'next.config.mjs')
@@ -131,16 +126,10 @@ function applyBuildConfigEdit(scaffold, appDir, initResult) {
     return edit.snippet
   }
 
-  const call = edit.snippet.match(/remarq\(\{[^}]*\}\)/)
-  if (!call) throw new Error(`could not find the remarq(...) call in the printed snippet:\n${edit.snippet}`)
-  writeFileSync(
-    join(appDir, 'vite.config.ts'),
-    `import { defineConfig } from 'vite'\n` +
-      `${scaffold.frameworkImport}\n` +
-      `import remarq from '@web-remarq/unplugin/vite'\n` +
-      `export default defineConfig({ plugins: [${scaffold.frameworkPlugin}, ${call[0]}] })\n`,
-  )
-  return call[0]
+  if (edit) throw new Error(`init did not edit the Vite config itself: ${edit.note ?? edit.file}`)
+  const auto = initResult.edited.find((e) => /vite\.config\./.test(e.file))
+  if (!auto) throw new Error('init reported no Vite config edit')
+  return `${auto.file} - ${auto.change}`
 }
 
 /**
@@ -150,8 +139,9 @@ function applyBuildConfigEdit(scaffold, appDir, initResult) {
  * "the stack was detected", not "every check passed").
  *
  * `doctor` exits non-zero whenever ANY check fails (see exitCode() in
- * doctor.ts), which this script's never-applied widget-init edit triggers
- * regardless of build-plugin. execSync throws on a non-zero exit even with a
+ * doctor.ts), which an unrelated check (the Next widget edit this script never
+ * applies, or the MCP server that is not running) triggers regardless of
+ * build-plugin. execSync throws on a non-zero exit even with a
  * captured encoding, but still attaches stdout to the thrown error - so recover
  * the JSON from there rather than treating a non-zero exit as "could not run".
  */
@@ -365,7 +355,7 @@ for (const scaffold of SCAFFOLDS) {
     const initResult = runInitJson(appDir)
     console.log(`  init: installed ${initResult.installed.join(', ')}`)
 
-    // Apply the printed edit the way the agent would - from init's own output.
+    // Vite: check init's own config edit. Next: apply the printed edit.
     const applied = applyBuildConfigEdit(scaffold, appDir, initResult)
     console.log(`  applied: ${applied.split('\n')[0]}${applied.includes('\n') ? ' ...' : ''}`)
 

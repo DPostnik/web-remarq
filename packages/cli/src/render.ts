@@ -68,7 +68,10 @@ export function renderInit(result: InitResult): string {
     [
       'In the repository root, start Claude Code:',
       `     ${result.sessionCommand}`,
-      '   The first start shows a one-time warning about development channels - confirm it.',
+      '   The first start asks two questions:',
+      `   - trust this folder (it pre-approves tool permissions in ${CLAUDE_SETTINGS_PATH}):`,
+      '     the cursor starts on "No, exit" - select "Yes, I trust this folder" and press Enter;',
+      '   - development channels warning: press Enter on "I am using this for local development".',
       autoAccept ? '   This mode accepts file edits without asking (acceptEdits).' : null,
     ]
       .filter((l) => l !== null)

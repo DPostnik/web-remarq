@@ -67,6 +67,16 @@ module.exports = {
 }
 ```
 
+### Widget auto-injection (Vite dev, optional)
+
+```js
+plugins: [remarq({ widget: true })]
+```
+
+Injects the widget into `index.html` in `vite dev`, in simple mode with `HttpStorageAdapter` (the plugin already serves the local MCP token), so no `WebRemarq.init` is needed. Marks go to the agent through the local MCP server (`npx @web-remarq/mcp`), disappear from the page once delivered, and the toolbar shows an "In work" counter. `web-remarq` must be installed in the project; if it cannot be resolved the plugin logs one warning and injects nothing. Pass an object to tune it: `widget: { simple: false, position: 'bottom-left', theme: 'dark' }`.
+
+Never injected in production builds, and it does not apply to SSR frameworks (SPA `index.html` only, e.g. Vue and React Vite apps). Default is off, so an existing manual `init` keeps working.
+
 ## What it does
 
 Transforms this:
@@ -118,6 +128,7 @@ Becomes:
 | `include` | `string[]` | `['**/*.jsx', '**/*.tsx', '**/*.vue']` | Glob patterns for files to transform |
 | `exclude` | `string[]` | `['node_modules/**']` | Glob patterns to skip |
 | `production` | `boolean` | `false` | Enable in production builds |
+| `widget` | `boolean \| { simple?, position?, theme? }` | `false` | Vite dev only: inject the widget (simple mode, local MCP server) |
 
 ```js
 remarq({

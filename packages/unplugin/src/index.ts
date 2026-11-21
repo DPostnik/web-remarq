@@ -3,6 +3,7 @@ import { relative } from 'path'
 import { createFilter, DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './filter'
 import { CONFIG_ENDPOINT, readLocalConfig } from './local-config'
 import { transformJSX, transformVueSFC } from './transform'
+import { WIDGET_MODULE_ID, WIDGET_RESOLVED_ID, WIDGET_SCRIPT_SRC, canResolveWidgetPackage, widgetModuleSource, type WidgetOptions } from './widget'
 
 export interface Options {
   /**
@@ -14,12 +15,21 @@ export interface Options {
   exclude?: string[]
   /** Enable in production builds. Default: false */
   production?: boolean
+  /**
+   * Vite dev only: inject the widget into index.html so no manual `init` is needed.
+   * `true` = simple mode with the local MCP server (`HttpStorageAdapter`).
+   * Pass an object to set `simple`, `position` or `theme`. Default: false.
+   * Never injected in builds, whatever `production` says. SPA index.html only (no SSR).
+   */
+  widget?: boolean | WidgetOptions
 }
 
 const unplugin = createUnplugin((options: Options = {}) => {
   const include = options.include ?? DEFAULT_INCLUDE
   const exclude = options.exclude ?? DEFAULT_EXCLUDE
   const filter = createFilter(include, exclude)
+  const widgetOn = (): boolean => !!options.widget && process.env.NODE_ENV !== 'production'
+  let warnedMissing = false
 
   return {
     name: 'web-remarq',
@@ -43,6 +53,32 @@ const unplugin = createUnplugin((options: Options = {}) => {
     },
 
     vite: {
+      resolveId(id: string) {
+        return widgetOn() && id === WIDGET_MODULE_ID ? WIDGET_RESOLVED_ID : undefined
+      },
+
+      load(id: string) {
+        return widgetOn() && id === WIDGET_RESOLVED_ID ? widgetModuleSource(options.widget) : undefined
+      },
+
+      // `ctx.server` exists only on the dev server, so a build never injects.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transformIndexHtml(_html: string, ctx: any) {
+        const server = ctx?.server
+        if (!widgetOn() || !server) return undefined
+        const root: string = server.config?.root ?? process.cwd()
+        if (!canResolveWidgetPackage(root)) {
+          if (!warnedMissing) {
+            warnedMissing = true
+            const message = '[web-remarq] widget: the "web-remarq" package is not installed in this project, so the widget was not injected. Run: npm install web-remarq'
+            if (server.config?.logger?.warn) server.config.logger.warn(message)
+            else console.warn(message)
+          }
+          return undefined
+        }
+        return [{ tag: 'script', attrs: { type: 'module', src: WIDGET_SCRIPT_SRC }, injectTo: 'body' as const }]
+      },
+
       /**
        * Development-only pairing endpoint. The widget (HttpStorageAdapter) asks
        * the dev server for the local MCP token at GET /__web-remarq/config.json
@@ -85,4 +121,5 @@ export const esbuildPlugin = unplugin.esbuild
 export const rspackPlugin = unplugin.rspack
 
 export { transformJSX, transformVueSFC } from './transform'
+export type { WidgetOptions } from './widget'
 export { createFilter, DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from './filter'

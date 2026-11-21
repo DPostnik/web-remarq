@@ -96,7 +96,7 @@ export class Popup {
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null
   private pendingEditFlush: (() => void) | null = null
 
-  constructor(private container: HTMLElement) {}
+  constructor(private container: HTMLElement, private simple = false) {}
 
   show(
     info: ElementInfo,
@@ -228,7 +228,7 @@ export class Popup {
     body.appendChild(makeCommentEl())
     const quality = this.buildQualitySection(info, callbacks)
     if (quality) body.appendChild(quality)
-    body.appendChild(this.buildLifecycleViewer(info.lifecycle))
+    if (!this.simple) body.appendChild(this.buildLifecycleViewer(info.lifecycle))
 
     const actions = document.createElement('div')
     actions.className = 'remarq-popup-actions'
@@ -380,7 +380,7 @@ export class Popup {
     const transitions = document.createElement('div')
     transitions.className = 'remarq-popup-actions-row remarq-popup-actions-row--transitions'
 
-    for (const def of actionsForStatus(info.status)) {
+    for (const def of this.simple ? [] : actionsForStatus(info.status)) {
       const btn = document.createElement('button')
       btn.textContent = def.label
       if (def.primary) btn.className = 'remarq-primary'

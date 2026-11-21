@@ -46,6 +46,9 @@ let mutationObserver: MutationObserver | null = null
 let unsubRoute: (() => void) | null = null
 let refreshScheduled = false
 let savedCursor = ''
+// Simple mode: ids whose first save has not resolved yet (kept visible), and the last seen status per id (to detect agent claims).
+const unconfirmed = new Set<string>()
+let statusSnapshot: Map<string, Annotation['status']> | null = null
 
 // WeakRef cache: annotation id → element (survives GC of element)
 const elementCache = new Map<string, WeakRef<HTMLElement>>()
@@ -115,6 +118,8 @@ function persist(operation: Promise<unknown>, what: string): void {
 
 function handleSyncStatus(status: StorageStatus): void {
   toolbar?.setSyncStatus(status)
+  // Queued writes leaving the outbox change which marks the backend has.
+  if (options.simple && initialized) scheduleRefresh()
   const changed = status.state !== lastSyncState
   lastSyncState = status.state
   if (!changed || status.state === 'synced' || !themeManager) return
@@ -165,13 +170,38 @@ function resolveElement(ann: Annotation): HTMLElement | null {
   return el
 }
 
+const IN_WORK = (a: Annotation): boolean => a.status === 'pending' || a.status === 'in_progress'
+
+/** Simple mode: a mark stays on the page only while the backend does not have it yet. */
+function isWaiting(ann: Annotation): boolean {
+  return unconfirmed.has(ann.id) || !storage.isDelivered(ann.id)
+}
+
+function isSimpleVisible(ann: Annotation): boolean {
+  return (ann.status === 'draft' || IN_WORK(ann)) && isWaiting(ann)
+}
+
+function updateSimpleStatus(): void {
+  const all = storage.getAll()
+  const inWork = all.filter((a) => IN_WORK(a) && !isWaiting(a)).length
+  const waiting = all.filter((a) => IN_WORK(a) && !unconfirmed.has(a.id) && !storage.isDelivered(a.id)).length
+  toolbar.setSimpleStatus(inWork, waiting)
+
+  const previous = statusSnapshot
+  statusSnapshot = new Map(all.map((a) => [a.id, a.status]))
+  if (!previous) return
+  const claimed = all.filter((a) => a.status === 'fixed_unverified' && (previous.get(a.id) === 'pending' || previous.get(a.id) === 'in_progress'))
+  if (claimed.length === 1) showToast(themeManager.container, `Fixed: ${claimed[0].comment.slice(0, 40)}`)
+  else if (claimed.length > 1) showToast(themeManager.container, `Fixed: ${claimed.length} marks`)
+}
+
 function refreshMarkers(): void {
   markers.clear()
   const attached: { ann: Annotation; el: HTMLElement }[] = []
   const otherBreakpoint: Annotation[] = []
   const detached: Annotation[] = []
   const route = currentRoute()
-  const anns = storage.getByRoute(route)
+  const anns = options.simple ? storage.getByRoute(route).filter(isSimpleVisible) : storage.getByRoute(route)
   const bucket = toBucket(window.innerWidth)  // always read fresh
 
   for (const ann of anns) {
@@ -192,6 +222,11 @@ function refreshMarkers(): void {
   qualityBubbles?.syncVisible(new Set(attached.map(({ ann }) => ann.id)))
 
   detachedPanel.update(otherBreakpoint, detached)
+
+  if (options.simple) {
+    updateSimpleStatus()
+    return
+  }
 
   const needsAttention = anns.filter(
     (a) => a.status === 'pending' || a.status === 'in_progress',
@@ -269,12 +304,21 @@ function handleInspectClick(e: MouseEvent): void {
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         viewportBucket: toBucket(window.innerWidth),
         timestamp: now,
-        status: options.submitFlow ? 'draft' : 'pending',
+        status: options.submitFlow && !options.simple ? 'draft' : 'pending',
         lifecycle: [{ type: 'created', actor: 'designer', timestamp: now }],
       }
       // Cache the element immediately — no need to re-match
       cacheElement(ann.id, target)
-      persist(storage.add(ann), 'Saving annotation')
+      const saving = storage.add(ann)
+      persist(saving, 'Saving annotation')
+      if (options.simple) {
+        unconfirmed.add(ann.id)
+        const settled = (): void => {
+          unconfirmed.delete(ann.id)
+          if (initialized) refreshMarkers()
+        }
+        saving.then(settled, settled)
+      }
       refreshMarkers()
       showToast(themeManager.container, 'Annotation added')
       qualityRunner.run(ann.id, qualityInput(ann))
@@ -664,7 +708,7 @@ export const WebRemarq = {
       themeManager = new ThemeManager(document.body, options.theme)
       overlay = new Overlay(themeManager.container)
       spacingOverlay = new SpacingOverlay(themeManager.container)
-      popup = new Popup(themeManager.container)
+      popup = new Popup(themeManager.container, options.simple)
       markers = new MarkerManager(themeManager.container, handleMarkerClick, (id, top, left) =>
         qualityBubbles?.updatePosition(id, top, left),
       )
@@ -713,8 +757,8 @@ export const WebRemarq = {
         onThemeToggle: () => themeManager.toggle(),
         onHelp: () => showShortcutsModal(themeManager.container),
         onVerificationBadgeClick: jumpToFirstUnverified,
-        ...(options.submitFlow ? { onSubmit: () => submitAllDrafts() } : {}),
-      }, position)
+        ...(options.submitFlow && !options.simple ? { onSubmit: () => submitAllDrafts() } : {}),
+      }, position, options.simple)
 
       routeObserver = new RouteObserver()
       unsubRoute = routeObserver.onChange(() => refreshMarkers())
@@ -777,6 +821,8 @@ export const WebRemarq = {
       inspecting = false
       spacingMode = false
       lastSyncState = null
+      unconfirmed.clear()
+      statusSnapshot = null
       initialized = false
     } catch (err) {
       console.error('[web-remarq] Destroy failed:', err)

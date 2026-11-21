@@ -161,6 +161,20 @@ describe('HttpStorageAdapter online (protocol 2)', () => {
 });
 
 describe('HttpStorageAdapter offline queue', () => {
+  it('isDelivered() is false while a write is queued and true once the server confirmed it', async () => {
+    const adapter = make();
+    await adapter.load();
+    await adapter.save(ann('ok'));
+    expect(adapter.isDelivered('ok')).toBe(true);
+    server.down = true;
+    await adapter.save(ann('later'));
+    expect(adapter.isDelivered('later')).toBe(false);
+    expect(adapter.isDelivered('ok')).toBe(true);
+    server.down = false;
+    await adapter.load();
+    expect(adapter.isDelivered('later')).toBe(true);
+  });
+
   it('offline add/edit/remove -> reload -> reconnect converges to the expected store and empties the queue only after confirmation', async () => {
     // Session 1: connected once (learns the project), then the server goes away.
     const first = make();

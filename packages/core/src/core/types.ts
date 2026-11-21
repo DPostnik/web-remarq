@@ -133,6 +133,14 @@ export interface WebRemarqOptions {
   storage?: StorageAdapter
   qualityGate?: QualityGateOptions
   submitFlow?: boolean
+  /**
+   * Simple mode (default false): the user only marks things in the browser.
+   * New marks are created `pending` (`submitFlow` is ignored), a mark disappears
+   * from the page once the backend has it, and the toolbar shows only a counter
+   * of marks in work. No submit button, verification section, lifecycle actions
+   * or history viewer. Stored data and lifecycle history are untouched.
+   */
+  simple?: boolean
 }
 
 export interface ImportResult {
@@ -276,5 +284,11 @@ export interface StorageAdapter {
   mutate?(id: string, apply: (current: Annotation) => Annotation): Promise<Annotation>
   /** Sync-state notifications (v0.9.0, optional). Fires on every state change. */
   onStatus?(callback: (status: StorageStatus) => void): () => void
+  /**
+   * Whether the backend holds the latest copy of this annotation (false while
+   * a write is queued or parked). Optional: adapters without the notion are
+   * treated as delivered as soon as `save` resolves.
+   */
+  isDelivered?(id: string): boolean
   readonly isMemoryOnly?: boolean
 }

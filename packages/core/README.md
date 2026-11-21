@@ -56,6 +56,7 @@ WebRemarq.init({
   shortcuts: true,                   // enable keyboard shortcuts (default true)
   storage: new LocalStorageAdapter(), // pluggable storage backend (default)
   submitFlow: false,                 // opt-in draft mode (default false)
+  simple: false,                     // opt-in simple mode (default false)
   qualityGate: {                     // optional AI pre-flight check on comments
     mode: 'suggest',                 // 'off' | 'suggest' (default 'suggest')
     check: async (input) => ({ /* QualityCheck */ }),
@@ -72,6 +73,18 @@ WebRemarq.submitDrafts() // number of drafts submitted for the current route
 ```
 
 Pairs naturally with `HttpStorageAdapter` and `npx @web-remarq/mcp` in local mode, so an agent only sees feedback once a designer has actually submitted it.
+
+#### `simple`
+
+Opt-in (default `false`) zero-config mode for working only in the browser. Marks are created `pending` directly (`submitFlow` is ignored) and go to the agent on their own; the toolbar has no Submit button.
+
+- A mark stays on the page only until the backend has it. With `HttpStorageAdapter` that means the write was accepted by the local server (it is no longer queued or parked); other adapters count as delivered as soon as `save` resolves. Marks waiting for an unreachable or unpaired server stay visible, and can still be edited or deleted.
+- Marks with status `fixed_unverified`, `verified` or `dismissed` show no marker.
+- The toolbar shows a counter: `In work: n` (pending or in-progress marks the backend has, all routes) and `Waiting for agent: n` while marks are undelivered. Hidden at 0.
+- When the agent claims a fix, a short toast shows `Fixed: <comment>`.
+- The verification badge, lifecycle action buttons and history viewer are not rendered. Stored data and lifecycle history are unchanged: this is a UI mode only.
+
+Pairs with the local MCP server (`npx @web-remarq/mcp`, which pushes every `pending` mark into the open Claude Code session). With Vite, `remarq({ widget: true })` from `@web-remarq/unplugin` turns this on without any init code.
 
 #### `qualityGate`
 

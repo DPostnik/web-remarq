@@ -251,6 +251,12 @@ export class HttpStorageAdapter implements StorageAdapter {
     return this.memoryOnly;
   }
 
+  /** False while a write for this annotation is queued (offline, not paired) or parked (rejected). */
+  isDelivered(id: string): boolean {
+    const target = (op: OutboxOp): string | null => (op.kind === 'clear' ? null : op.kind === 'save' ? op.annotation.id : op.id);
+    return !this.readOutbox().ops.some((op) => target(op) === id) && !this.readParked().some((p) => target(p.op) === id);
+  }
+
   // ---------------------------------------------------------------- public extras
 
   getStatus(): StorageStatus {

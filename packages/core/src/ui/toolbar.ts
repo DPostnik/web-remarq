@@ -64,6 +64,7 @@ export class Toolbar {
   private exportMenu: HTMLElement | null = null
   private fileInput: HTMLInputElement
   private syncEl: HTMLElement | null = null
+  private simpleEl: HTMLElement | null = null
   private minimized = false
   private buttons: HTMLElement[] = []
 
@@ -71,6 +72,7 @@ export class Toolbar {
     private container: HTMLElement,
     private callbacks: ToolbarCallbacks,
     private position: ToolbarPosition = 'bottom-right',
+    private simple = false,
   ) {
     this.toolbarEl = document.createElement('div')
     this.toolbarEl.className = `remarq-toolbar remarq-pos-${position}`
@@ -90,7 +92,7 @@ export class Toolbar {
       e.stopPropagation()
       callbacks.onVerificationBadgeClick?.()
     })
-    this.inspectBtn.appendChild(this.verificationBadgeEl)
+    if (!simple) this.inspectBtn.appendChild(this.verificationBadgeEl)
 
     this.spacingBtn = this.createButton('spacing', ICONS.spacing, () => callbacks.onSpacingToggle()) as HTMLButtonElement
     this.spacingBtn.disabled = true
@@ -137,6 +139,13 @@ export class Toolbar {
     this.toolbarEl.appendChild(minimizeBtn)
     this.toolbarEl.appendChild(this.fileInput)
 
+    if (simple) {
+      this.simpleEl = document.createElement('span')
+      this.simpleEl.className = 'remarq-simple-status'
+      this.simpleEl.style.display = 'none'
+      this.toolbarEl.insertBefore(this.simpleEl, this.inspectBtn)
+    }
+
     container.appendChild(this.toolbarEl)
   }
 
@@ -170,6 +179,18 @@ export class Toolbar {
     this.submitBtn.disabled = count === 0
     this.submitBadgeEl.textContent = String(count)
     this.submitBadgeEl.style.display = count > 0 ? 'flex' : 'none'
+  }
+
+  /** Simple mode: "In work: n" (backend has them) or "Waiting for agent: n" (backend not reached yet). Hidden at 0. */
+  setSimpleStatus(inWork: number, waiting: number): void {
+    const el = this.simpleEl
+    if (!el) return
+    const parts = []
+    if (inWork > 0) parts.push(`In work: ${inWork}`)
+    if (waiting > 0) parts.push(`Waiting for agent: ${waiting}`)
+    el.textContent = parts.join(' | ')
+    el.setAttribute('data-state', waiting > 0 ? 'waiting' : 'in-work')
+    el.style.display = parts.length ? '' : 'none'
   }
 
   getFileInput(): HTMLInputElement {

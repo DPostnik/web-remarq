@@ -414,6 +414,16 @@ const CSS = `
   opacity: 0;
 }
 
+.remarq-simple-status {
+  align-self: center;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--remarq-text);
+}
+.remarq-simple-status[data-state="waiting"] { color: var(--remarq-pending); }
+
 .remarq-sync {
   width: 8px;
   height: 8px;

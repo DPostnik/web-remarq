@@ -56,6 +56,11 @@ export class AnnotationStorage {
     return this.adapter.isMemoryOnly ?? false
   }
 
+  /** Whether the backend has the latest copy (true for adapters without the notion). */
+  isDelivered(id: string): boolean {
+    return this.adapter.isDelivered?.(id) ?? true
+  }
+
   getAll(): Annotation[] {
     return [...this.cache]
   }

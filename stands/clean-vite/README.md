@@ -7,6 +7,14 @@ a mark in the browser, and Claude Code fixes the code with nobody typing.
 repository, `web-remarq`, `@web-remarq/unplugin` and `@web-remarq/mcp` installed from tarballs packed from this
 checkout, then `init` run in it. `work/` is disposable and ignored by git; `./setup.sh --fresh` recreates it.
 
+`./setup.sh --registry` checks what a user gets from npm instead: no tarballs and no `dist/` prerequisite; after
+`npm install` it runs `npx -y @web-remarq/cli@latest init`, which installs `web-remarq` and `@web-remarq/unplugin`
+itself. Extra PASS/FAIL lines compare the installed versions with `dist-tags.latest` fetched from
+registry.npmjs.org (not `npm view`, which can serve stale metadata), and do the same for the versions
+`npx -y @web-remarq/mcp` (the command in the generated `.mcp.json`; mcp is not installed in the app, so the session
+runs the npx-resolved copy) and `npx @web-remarq/cli@latest` resolve. The mode is stored in `work/mode`;
+`./status.sh` prints it with the installed versions.
+
 ## Prerequisites
 
 - `npm install` and `npm run build` in the repo root (`setup.sh` builds nothing, it only checks the `dist/`
@@ -16,7 +24,7 @@ checkout, then `init` run in it. `work/` is disposable and ignored by git; `./se
 
 ## Order
 
-1. `./setup.sh [--fresh] [--port <n>]` - packs the tarballs, scaffolds `work/app`, runs `init` and prints
+1. `./setup.sh [--registry] [--fresh] [--port <n>]` - packs the tarballs, scaffolds `work/app`, runs `init` and prints
    PASS/FAIL: `widget: true` in the Vite config, `.mcp.json`, `.claude/settings.local.json` and
    `.remarq/config.json` in `work/app`, no `.mcp.json` in the repo root, a second `init` changes nothing.
    `--port <n>` then writes `"port": n` to `work/app/.remarq/config.json` to check a custom MCP port.

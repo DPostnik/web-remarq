@@ -5,10 +5,22 @@ export interface CloudConfig {
   supabaseAnonKey: string
 }
 
+export interface ChannelConfig {
+  /** Claude Code channel delivery of pending marks (REMARQ_CHANNEL). */
+  enabled: boolean
+  /** Quiet time after a batch is fully reported before the next one is sent. */
+  settleMs: number
+  /** A batch in flight this long without progress is re-pushed once. */
+  staleMs: number
+  /** Delay after MCP initialization before the unfinished batch is re-pushed. */
+  redeliverMs: number
+}
+
 export interface LocalConfig {
   mode: 'local'
   port: number
   dataFile: string
+  channel: ChannelConfig
 }
 
 export type MCPConfig = CloudConfig | LocalConfig
@@ -30,6 +42,29 @@ function require_(env: NodeJS.ProcessEnv, key: string): string {
 
 const DEFAULT_PORT = 1817
 const DEFAULT_DATA_FILE = '.remarq/annotations.json'
+
+function parseMs(env: NodeJS.ProcessEnv, key: string, fallback: number, min: number): number {
+  const raw = env[key]
+  if (raw === undefined || raw.trim() === '') return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < min) {
+    throw new ConfigError(`${key} must be an integer >= ${min} (milliseconds), got "${raw}"`)
+  }
+  return n
+}
+
+function parseChannel(env: NodeJS.ProcessEnv): ChannelConfig {
+  const mode = (env.REMARQ_CHANNEL ?? 'on').trim().toLowerCase()
+  if (mode !== 'on' && mode !== 'off') {
+    throw new ConfigError(`REMARQ_CHANNEL must be "on" or "off", got "${env.REMARQ_CHANNEL}"`)
+  }
+  return {
+    enabled: mode === 'on',
+    settleMs: parseMs(env, 'REMARQ_CHANNEL_SETTLE_MS', 3000, 0),
+    staleMs: parseMs(env, 'REMARQ_CHANNEL_STALE_MS', 180000, 1),
+    redeliverMs: parseMs(env, 'REMARQ_CHANNEL_REDELIVER_MS', 2000, 0),
+  }
+}
 
 export function parseEnv(env: NodeJS.ProcessEnv): MCPConfig {
   const cloudRequested = Boolean(
@@ -57,5 +92,5 @@ export function parseEnv(env: NodeJS.ProcessEnv): MCPConfig {
     throw new ConfigError(`REMARQ_PORT must be an integer between 1 and 65535, got "${rawPort}"`)
   }
 
-  return { mode: 'local', port, dataFile: env.REMARQ_DATA_FILE ?? DEFAULT_DATA_FILE }
+  return { mode: 'local', port, dataFile: env.REMARQ_DATA_FILE ?? DEFAULT_DATA_FILE, channel: parseChannel(env) }
 }

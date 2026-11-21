@@ -3,12 +3,35 @@ import { parseEnv, ConfigError } from './config'
 
 describe('parseEnv', () => {
   it('returns local mode with defaults when no cloud vars are set', () => {
-    expect(parseEnv({})).toEqual({ mode: 'local', port: 1817, dataFile: '.remarq/annotations.json' })
+    expect(parseEnv({})).toEqual({
+      mode: 'local',
+      port: 1817,
+      dataFile: '.remarq/annotations.json',
+      channel: { enabled: true, settleMs: 3000, staleMs: 180000, redeliverMs: 2000 },
+    })
   })
 
   it('respects REMARQ_PORT and REMARQ_DATA_FILE overrides', () => {
     expect(parseEnv({ REMARQ_PORT: '4000', REMARQ_DATA_FILE: 'tmp/a.json' }))
-      .toEqual({ mode: 'local', port: 4000, dataFile: 'tmp/a.json' })
+      .toMatchObject({ mode: 'local', port: 4000, dataFile: 'tmp/a.json' })
+  })
+
+  it('parses the channel switches', () => {
+    expect(parseEnv({
+      REMARQ_CHANNEL: 'off',
+      REMARQ_CHANNEL_SETTLE_MS: '0',
+      REMARQ_CHANNEL_STALE_MS: '500',
+      REMARQ_CHANNEL_REDELIVER_MS: '10',
+    })).toMatchObject({ channel: { enabled: false, settleMs: 0, staleMs: 500, redeliverMs: 10 } })
+    expect(parseEnv({ REMARQ_CHANNEL: 'ON' })).toMatchObject({ channel: { enabled: true } })
+  })
+
+  it('rejects invalid channel values', () => {
+    expect(() => parseEnv({ REMARQ_CHANNEL: 'maybe' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CHANNEL_SETTLE_MS: '-1' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CHANNEL_STALE_MS: '0' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CHANNEL_REDELIVER_MS: '1.5' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CHANNEL_SETTLE_MS: 'abc' })).toThrow(ConfigError)
   })
 
   it('rejects a non-numeric or out-of-range port', () => {

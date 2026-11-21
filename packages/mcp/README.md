@@ -225,6 +225,46 @@ locks: the first thing any executor does is `acknowledge` with a fresh
 the annotation and the file should be skipped; if the call fails without an
 answer, retry with the same `operationId`.
 
+## Channel delivery (Claude Code, research preview)
+
+In local mode the server is also a Claude Code *channel*: a mark you submit in
+the browser reaches your open Claude Code session by itself and is fixed
+without you typing anything. The agent fixes each mark, then calls `claim_fix`
+(or `dismiss` with a reason); a human still verifies in the widget.
+
+Start the session with the development-channel flag:
+
+```bash
+claude --dangerously-load-development-channels server:web-remarq
+```
+
+How it works: pending marks (never drafts) are pushed as one batch at a time.
+The next batch is sent only after every mark of the current one was reported
+(`claim_fix`, `dismiss`, or deleted) plus a short settle delay, because Claude
+Code acts on an event that starts a turn but treats one arriving mid-turn as
+untrusted. A batch that stays unreported is re-pushed once after the stale
+timeout, and after a session restart the unfinished batch is re-pushed shortly
+after initialization. The in-flight ledger is `.remarq/delivery.json`.
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `REMARQ_CHANNEL` | `on` | `off` turns channel delivery off entirely (no capability, no ledger, no notifications) |
+| `REMARQ_CHANNEL_SETTLE_MS` | `3000` | Quiet time after a batch is fully reported before the next one |
+| `REMARQ_CHANNEL_STALE_MS` | `180000` | A batch in flight this long without progress is re-pushed once |
+| `REMARQ_CHANNEL_REDELIVER_MS` | `2000` | Delay after MCP initialization before the unfinished batch is re-pushed |
+
+Limits:
+
+- Claude Code shows a warning dialog at start for development channels.
+- Events are delivered only while a session is open; there is no acknowledgement.
+- For unattended use the agent needs permission rules that allow `claim_fix`,
+  `dismiss` and file edits, otherwise it stops at a permission prompt.
+- Clients that are not channels ignore the notifications.
+
+`watch_annotations` and the prompts keep working as before: they are the
+fallback and the path for other agents (Cursor, Codex, Windsurf). Channel
+delivery is local mode only; cloud mode is unchanged.
+
 ## Cloud mode prerequisites
 
 1. A Supabase project provisioned with `@web-remarq/cloud` (≥0.4.0). Run

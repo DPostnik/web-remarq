@@ -6,6 +6,7 @@ wiki/
 .obsidian/
 *.tsbuildinfo
 CLAUDE.md
+AGENTS.md
 .env
 .env.*
 !.env.example

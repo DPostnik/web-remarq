@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { Annotation, StorageAdapter } from 'web-remarq'
-import { handleListAnnotations } from './list-annotations'
+import { handleListAnnotations, listAnnotationsInputSchema } from './list-annotations'
 
 function fp(overrides: Partial<Annotation['fingerprint']> = {}): Annotation['fingerprint'] {
   return {
@@ -193,5 +193,11 @@ describe('list_annotations', () => {
     const payload = JSON.parse(result.content[0].text)
     expect(payload.code).toBe('storage_error')
     expect(payload.message).toContain('network down')
+  })
+
+  it('rejects invalid statuses and status arrays longer than the status set', () => {
+    expect(listAnnotationsInputSchema.safeParse({ status: ['pending', 'verified'] }).success).toBe(true)
+    expect(listAnnotationsInputSchema.safeParse({ status: 'bogus' }).success).toBe(false)
+    expect(listAnnotationsInputSchema.safeParse({ status: Array(7).fill('pending') }).success).toBe(false)
   })
 })

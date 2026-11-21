@@ -6,7 +6,7 @@ const STATUS_VALUES = ['draft', 'pending', 'in_progress', 'fixed_unverified', 'v
 
 export const listAnnotationsInputSchema = z.object({
   route: z.string().optional(),
-  status: z.union([z.enum(STATUS_VALUES), z.array(z.enum(STATUS_VALUES))]).optional(),
+  status: z.union([z.enum(STATUS_VALUES), z.array(z.enum(STATUS_VALUES)).max(STATUS_VALUES.length)]).optional(),
   viewportBucket: z.number().int().optional(),
   file: z.string().optional(),
   limit: z.number().int().min(1).max(200).optional(),

@@ -1,6 +1,6 @@
 {
   "name": "@web-remarq/mcp",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "MCP server for web-remarq - gives AI agents access to annotations via a local file store or Supabase cloud backend",
   "type": "module",
   "main": "dist/server.js",
@@ -44,8 +44,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "zod": "^3.23.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "zod": "^4.6.6",
     "@web-remarq/cloud": "^0.4.0"
   },
   "peerDependencies": {

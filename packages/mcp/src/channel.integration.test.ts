@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -34,7 +34,7 @@ function mark(id: string, comment: string): Annotation {
   }
 }
 
-describe('channel delivery over stdio', () => {
+describe('local delivery over stdio', () => {
   let dir: string
   let client: Client
   let received: Array<{ method: string; params?: { content?: string; meta?: Record<string, string> } }>
@@ -129,5 +129,78 @@ describe('channel delivery over stdio', () => {
     await sleep(800)
     expect(received).toHaveLength(0)
     expect(existsSync(join(dir, '.remarq', 'delivery.json'))).toBe(false)
+  }, 30000)
+
+  it('queues pending Codex marks while work is open and retains ambiguous receipts across threads', async () => {
+    const executable = join(dir, 'codex-stub')
+    const calls = join(dir, 'calls.jsonl')
+    const ledger = join(dir, '.remarq', 'codex-delivery.json')
+    const thread = '019abc12-3456-7890-abcd-0123456789ab'
+    const nextThread = '019abc12-3456-7890-abcd-0123456789ac'
+    const remote = 'unix:///tmp/codex socket'
+    writeFileSync(executable, `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
+const message = args.at(-1);
+if (message.includes('Mark unknown')) {
+  console.error('connection closed');
+  process.exitCode = 17;
+} else {
+  console.log('Queued message receipt-id for thread ' + args[args.indexOf('--thread') + 1] + '.');
+  if (message.includes('Mark waiting')) console.error('warning: failed to resume session');
+}
+`, { mode: 0o700 })
+    const readReceipts = () => existsSync(ledger) ? JSON.parse(readFileSync(ledger, 'utf8')).receipts : []
+    const startCodex = (id: string) => start({
+      REMARQ_CODEX_BIN: executable, REMARQ_CODEX_THREAD: id, REMARQ_CODEX_REMOTE: remote,
+    })
+
+    let s = await startCodex(thread)
+    expect(client.getServerCapabilities()?.experimental).toBeUndefined()
+    expect((await put(s, { ...mark('draft', 'Keep in drafts'), status: 'draft' })).status).toBe(200)
+    expect((await put(s, mark('first', 'Change the price'))).status).toBe(200)
+    await waitFor(() => readReceipts().some((r: { status: string }) => r.status === 'accepted'))
+    const ack = await client.callTool({ name: 'acknowledge', arguments: { id: 'first', operationId: 'ack-first' } })
+    expect(ack.isError).not.toBe(true)
+
+    expect((await put(s, mark('waiting', 'Rename the button'))).status).toBe(200)
+    expect((await put(s, mark('unknown', 'Change the hero'))).status).toBe(200)
+    await waitFor(() => readReceipts().some((r: { exitCode?: number }) => r.exitCode === 17))
+    expect(readReceipts()).toEqual([
+      expect.objectContaining({ thread, annotationId: 'first', status: 'accepted', submissionId: 'receipt-id' }),
+      expect.objectContaining({ thread, annotationId: 'waiting', status: 'waiting_for_session', submissionId: 'receipt-id' }),
+      expect.objectContaining({ thread, annotationId: 'unknown', status: 'unknown', stderr: 'connection closed\n' }),
+    ])
+    const claim = await client.callTool({ name: 'claim_fix', arguments: { id: 'first', operationId: 'fix-first' } })
+    expect(claim.isError).not.toBe(true)
+    expect(await (await fetch(`${s.base}/store`, { headers: { authorization: `Bearer ${s.token()}` } })).json())
+      .toMatchObject({ store: { annotations: expect.arrayContaining([
+        expect.objectContaining({ id: 'first', status: 'fixed_unverified' }),
+        expect.objectContaining({ id: 'waiting', status: 'pending' }),
+      ]) } })
+
+    expect((await put(s, mark('accepted', 'Await the next turn'))).status).toBe(200)
+    await waitFor(() => readReceipts().some((r: { annotationId: string; status: string }) =>
+      r.annotationId === 'accepted' && r.status === 'accepted'))
+
+    await client.close()
+    s = await startCodex(thread)
+    expect((await put(s, mark('same', 'New mark on the original thread'))).status).toBe(200)
+    await waitFor(() => readReceipts().some((r: { annotationId: string; status: string }) =>
+      r.annotationId === 'same' && r.status === 'accepted'))
+
+    await client.close()
+    s = await startCodex(nextThread)
+    expect((await put(s, mark('new', 'Fresh mark'))).status).toBe(200)
+    await waitFor(() => readReceipts().some((r: { thread: string; status: string }) => r.thread === nextThread && r.status === 'accepted'))
+    const queued = readFileSync(calls, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    expect(queued).toHaveLength(6)
+    expect(queued[0].slice(0, -1)).toEqual(['queue', '--remote', remote, '--thread', thread, '--resume', '--message'])
+    expect(queued[0].at(-1)).toContain('source: src/Pricing.tsx:42:7')
+    expect(queued[0].at(-1)).toMatch(/acknowledge[\s\S]+claim_fix/)
+    expect(queued[4].at(-1)).toContain('Mark same')
+    expect(queued[5]).toContain(nextThread)
+    expect(received).toHaveLength(0)
   }, 30000)
 })

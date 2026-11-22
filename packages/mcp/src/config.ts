@@ -16,12 +16,19 @@ export interface ChannelConfig {
   redeliverMs: number
 }
 
+export interface CodexConfig {
+  thread: string
+  executable: string
+  remote?: string
+}
+
 export interface LocalConfig {
   mode: 'local'
   /** REMARQ_PORT; null when unset, so `port` in `.remarq/config.json` or DEFAULT_PORT applies. */
   port: number | null
   dataFile: string
   channel: ChannelConfig
+  codex?: CodexConfig
 }
 
 export type MCPConfig = CloudConfig | LocalConfig
@@ -64,11 +71,29 @@ function parseMs(env: NodeJS.ProcessEnv, key: string, fallback: number, min: num
   return n
 }
 
-function parseChannel(env: NodeJS.ProcessEnv): ChannelConfig {
-  const mode = (env.REMARQ_CHANNEL ?? 'on').trim().toLowerCase()
+export const THREAD_UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
+
+function parseCodex(env: NodeJS.ProcessEnv): CodexConfig | undefined {
+  const { REMARQ_CODEX_THREAD: thread, REMARQ_CODEX_BIN: executable, REMARQ_CODEX_REMOTE: remote } = env
+  if (thread === undefined && executable === undefined && remote === undefined) return
+  if (!thread || !THREAD_UUID.test(thread)) {
+    throw new ConfigError('REMARQ_CODEX_THREAD must be the exact Codex thread UUID')
+  }
+  if (executable !== undefined && !executable.trim()) {
+    throw new ConfigError('REMARQ_CODEX_BIN must name a Codex executable')
+  }
+  if (remote !== undefined && !/^unix:\/\/\/[^\0\r\n]+$/.test(remote)) {
+    throw new ConfigError('REMARQ_CODEX_REMOTE must be a unix:/// endpoint')
+  }
+  return { thread: thread.toLowerCase(), executable: executable ?? 'codex', remote }
+}
+
+function parseChannel(env: NodeJS.ProcessEnv, codexEnabled: boolean): ChannelConfig {
+  const mode = (env.REMARQ_CHANNEL ?? (codexEnabled ? 'off' : 'on')).trim().toLowerCase()
   if (mode !== 'on' && mode !== 'off') {
     throw new ConfigError(`REMARQ_CHANNEL must be "on" or "off", got "${env.REMARQ_CHANNEL}"`)
   }
+  if (codexEnabled && mode === 'on') throw new ConfigError('Codex delivery requires REMARQ_CHANNEL=off')
   return {
     enabled: mode === 'on',
     settleMs: parseMs(env, 'REMARQ_CHANNEL_SETTLE_MS', 3000, 0),
@@ -78,11 +103,13 @@ function parseChannel(env: NodeJS.ProcessEnv): ChannelConfig {
 }
 
 export function parseEnv(env: NodeJS.ProcessEnv): MCPConfig {
+  const codex = parseCodex(env)
   const cloudRequested = Boolean(
     env.REMARQ_PROJECT_KEY || env.REMARQ_SUPABASE_URL || env.REMARQ_SUPABASE_ANON_KEY,
   )
 
   if (cloudRequested) {
+    if (codex) throw new ConfigError('Codex delivery requires a local store')
     const projectKey = require_(env, 'REMARQ_PROJECT_KEY')
     const supabaseUrl = require_(env, 'REMARQ_SUPABASE_URL')
     const supabaseAnonKey = require_(env, 'REMARQ_SUPABASE_ANON_KEY')
@@ -103,5 +130,11 @@ export function parseEnv(env: NodeJS.ProcessEnv): MCPConfig {
     throw new ConfigError(`REMARQ_PORT must be an integer between 1 and 65535, got "${rawPort}"`)
   }
 
-  return { mode: 'local', port, dataFile: env.REMARQ_DATA_FILE ?? DEFAULT_DATA_FILE, channel: parseChannel(env) }
+  return {
+    mode: 'local',
+    port,
+    dataFile: env.REMARQ_DATA_FILE ?? DEFAULT_DATA_FILE,
+    channel: parseChannel(env, !!codex),
+    ...(codex && { codex }),
+  }
 }

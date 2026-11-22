@@ -8,6 +8,7 @@ import { FileStorageAdapter } from './file-storage-adapter.js'
 import { startHttpServer } from './http-server.js'
 import { acquireStoreLock, LocalConfigError, readOrCreateLocalConfig, StoreLockedError } from './local-config.js'
 import { ChannelDelivery } from './channel-delivery.js'
+import { CodexDelivery } from './codex-delivery.js'
 import { TaskFolder } from './task-folder.js'
 import { registerPrompts } from './prompts.js'
 import { registerTools, type WaitForChange } from './tools/index.js'
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   let storage: StorageAdapter
   let waitForChange: WaitForChange
   let delivery: ChannelDelivery | null = null
+  let codex: CodexDelivery | null = null
   // Built after the McpServer exists; the channel callbacks below close over it.
   let sendChannel: (content: string, meta: Record<string, string>) => Promise<void> = async () => {}
 
@@ -73,8 +75,24 @@ async function main(): Promise<void> {
       })
       adapter.onChange(() => delivery?.onChange())
     }
+    if (config.codex) {
+      codex = new CodexDelivery({
+        storage: adapter,
+        projectId: local.projectId,
+        ledgerPath: join(storeDir, 'codex-delivery.json'),
+        config: config.codex,
+      })
+      adapter.onChange(() => codex?.onChange())
+    }
     taskFolder.schedule() // project existing annotations on startup
-    await startHttpServer(adapter, port, local)
+    const http = await startHttpServer(adapter, port, local)
+    if (codex) {
+      const delivery = codex
+      process.stdin.once('end', () => {
+        delivery.stop()
+        http.close()
+      })
+    }
     // The token itself is never logged: it lives only in the config file.
     console.error(
       `[web-remarq-mcp] local mode — project ${local.projectId}, widget endpoint http://127.0.0.1:${port} (token in ${join(storeDir, 'config.json')}), store ${config.dataFile}, tasks ${tasksDir}`,
@@ -88,7 +106,7 @@ async function main(): Promise<void> {
   }
 
   const server = new McpServer(
-    { name: 'web-remarq', version: '0.6.2' },
+    { name: 'web-remarq', version: '0.7.0' },
     delivery
       ? { capabilities: { experimental: { 'claude/channel': {} } }, instructions: CHANNEL_INSTRUCTIONS }
       : undefined,
@@ -100,6 +118,10 @@ async function main(): Promise<void> {
         params: { content, meta },
       } as unknown as Parameters<typeof server.server.notification>[0])
     const d = delivery
+    server.server.oninitialized = () => d.onInitialized()
+  }
+  if (codex) {
+    const d = codex
     server.server.oninitialized = () => d.onInitialized()
   }
 

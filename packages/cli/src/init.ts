@@ -5,15 +5,18 @@ import { SESSION_COMMAND, writeClaudeSettings } from './claude-settings'
 import { detect } from './detect'
 import { buildInstallCommand, missingPackages } from './install'
 import { writeMcpConfig } from './mcp-config'
-import { ensureLocalConfig } from './local-config'
+import { ensureLocalConfig, readLocalAgent } from './local-config'
 import { repoRelative, viteConfigEdit } from './snippets'
 import { setUpNextConfig } from './next-config'
 import { injectScriptTag } from './vanilla'
 import { editViteConfig } from './vite-config'
-import type { Detection, Edit } from './types'
+import type { Agent, Detection, Edit } from './types'
+
+export const CODEX_SESSION_COMMAND = 'npx @web-remarq/cli start --agent codex'
 
 export interface InitOptions {
   app?: string
+  agent?: Agent
   /** Stdout carries a JSON payload: install output must go to stderr only. */
   quiet?: boolean
 }
@@ -42,18 +45,19 @@ export type InitResult =
       /** Packages this run installed; ones already in package.json are skipped. */
       installed: string[]
       wroteMcpConfig: boolean
-      /** True when .remarq/config.json (project id + local token) was created by this run. */
+      /** True when .remarq/config.json was created or the active agent changed. */
       wroteLocalConfig: boolean
-      /** .claude/settings.local.json: changed by this run, and the permission mode sessions start in. */
-      claudeSettings: { changed: boolean; defaultMode: string; defaultModeSet: boolean }
       /** App files this run edited itself. */
       edited: AutoEdit[]
       /** Edits init could not apply - only these are left to do by hand. */
       edits: Edit[]
-      /** Run in the repo root to start a Claude Code session that receives marks. */
+      /** Run in the repo root to start an agent session that receives marks. */
       sessionCommand: string
       next: 'doctor'
-    }
+    } & (
+      | { agent: 'claude'; claudeSettings: ReturnType<typeof writeClaudeSettings> }
+      | { agent: 'codex' }
+    )
   | { ok: false; reason: string; hint: string; candidates?: string[] }
 
 /** Register the plugin in the Vite config, or explain why that is left to do by hand. */
@@ -82,13 +86,14 @@ export function runInit(cwd: string, opts: InitOptions, deps: InitDeps): InitRes
   if (!detection.ok) return detection
 
   const d = detection.detection
+  const agent = opts.agent ?? readLocalAgent(d.repoRoot) ?? 'claude'
   const packages = missingPackages(d)
   if (packages.length > 0) {
     deps.exec(buildInstallCommand(d, packages), d.repoRoot, opts.quiet ?? false)
   }
 
-  const wroteMcpConfig = writeMcpConfig(d.repoRoot)
-  const wroteLocalConfig = ensureLocalConfig(d.repoRoot)
+  const wroteMcpConfig = agent === 'claude' && writeMcpConfig(d.repoRoot)
+  const wroteLocalConfig = ensureLocalConfig(d.repoRoot, opts.agent)
 
   let setup: { edited: AutoEdit[]; edits: Edit[] }
   if (d.framework === 'next') {
@@ -96,24 +101,24 @@ export function runInit(cwd: string, opts: InitOptions, deps: InitDeps): InitRes
   } else if (d.framework === 'plain-html') {
     // Inserting a script tag before </body> is deterministic, so plain HTML needs no manual edit.
     setup = {
-      edited: injectScriptTag(d) ? [{ file: repoRelative(d, d.entry ?? 'index.html'), change: 'added the widget script tag before </body>' }] : [],
+      edited: injectScriptTag(d, agent)
+        ? [{ file: repoRelative(d, d.entry ?? 'index.html'), change: 'configured the widget script tag before </body>' }]
+        : [],
       edits: [],
     }
   } else {
     setup = setUpViteConfig(d)
   }
 
-  const claudeSettings = writeClaudeSettings(d.repoRoot)
-
-  return {
-    ok: true,
+  const result = {
+    ok: true as const,
     detected: d,
     installed: packages,
     wroteMcpConfig,
     wroteLocalConfig,
-    claudeSettings,
     ...setup,
-    sessionCommand: SESSION_COMMAND,
-    next: 'doctor',
+    sessionCommand: agent === 'codex' ? CODEX_SESSION_COMMAND : SESSION_COMMAND,
+    next: 'doctor' as const,
   }
+  return agent === 'claude' ? { ...result, agent, claudeSettings: writeClaudeSettings(d.repoRoot) } : { ...result, agent }
 }

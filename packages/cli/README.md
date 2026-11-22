@@ -2,23 +2,33 @@
 
 Installer and doctor for [web-remarq](https://github.com/DPostnik/web-remarq) -
 detects your stack, installs the right packages, wires the build plugin and
-Claude Code, and verifies the result. For Vite and standard Next.js 15.3+ apps one `init` is the whole
-setup: start the dev server, run the printed `claude ...` command, and marks
-you leave in the browser reach Claude Code and get fixed without typing.
+your selected agent, and verifies the result. For Vite and standard Next.js 15.3+ apps,
+run `init`, start the dev server, and run the printed session command.
 
 ## Commands
 
 ```bash
-npx @web-remarq/cli init [--app <dir>] [--json]
-npx @web-remarq/cli doctor [--app <dir>] [--json]
+npx @web-remarq/cli init [--agent <codex|claude>] [--app <dir>] [--json]
+npx @web-remarq/cli doctor [--agent <codex|claude>] [--app <dir>] [--json]
+npx @web-remarq/cli start --agent codex
 ```
 
-- `init` - in the repository root writes `.mcp.json`, `.remarq/config.json`
-  (project id + local token, gitignored) and `.claude/settings.local.json`;
-  in the app installs the packages its `package.json` does not list yet and,
-  for Vite and Next.js, registers the build plugin in the config file (see below). It
-  then prints what it did and the next steps, including the command that
-  starts the session:
+- `init` writes the repository's local project settings in `.remarq/config.json`
+  (gitignored), installs missing packages, and wires the widget. It prints
+  the session command. For Claude Code it also writes `.mcp.json` and
+  `.claude/settings.local.json`. For Codex the launcher configures the MCP
+  server for that session.
+- `start --agent codex` opens the project's Codex session. Run it from the
+  repository root with the new CLI. It needs queue, resume, and Unix app-server
+  support. On macOS it checks PATH first, then the CLI bundled with the
+  ChatGPT app. On Windows use WSL. Sign in with ChatGPT before starting.
+  The launcher uses your existing Codex configuration, including
+  `CODEX_HOME` when set.
+  Keep the terminal open while you add marks. Running the command again
+  from the same repository resumes the saved thread. Review the edits and
+  verify each fix in the browser if your widget has verification enabled.
+
+  For Claude Code, run the command printed by `init`:
 
   ```bash
   claude --dangerously-load-development-channels server:web-remarq
@@ -37,6 +47,7 @@ npx @web-remarq/cli doctor [--app <dir>] [--json]
   the server answered AND accepted the token; a refused token, an older
   server (protocol 1) or a missing token are `fail` with a hint; nothing
   listening is `blocked` (the server starts with your agent).
+  For Codex it also checks CLI capabilities and ChatGPT sign-in.
 
   Its `widget-init` check is `ok` when the `remarq()` call in the Vite config
   has `widget: true` (or the entry calls `WebRemarq.init`) and the installed
@@ -47,6 +58,12 @@ npx @web-remarq/cli doctor [--app <dir>] [--json]
 repository root - use it when more than one app is detected, or when the
 command is not run from the app directory. `--json` prints machine-readable
 output instead of the human-readable report.
+
+`--agent codex` or `--agent claude` chooses the agent. `init` saves that choice
+for later runs. A new interactive setup prompts for a choice. New
+non-interactive and JSON setups default to Claude Code. To switch, run
+`init` with the other agent and close the previous agent session before
+starting the new one.
 
 Supported stacks: Next.js, Vite (Vue/React/vanilla), and plain HTML pages.
 
@@ -90,7 +107,9 @@ Open the dev app on localhost. `init` preserves existing widget wiring and
 provides manual instructions for older Next.js, static exports, custom
 route extensions, and conflicts.
 
-**Plain HTML**. `init` inserts a widget script tag.
+**Plain HTML**. `init` inserts a widget script tag. Pair it once by running
+`WebRemarq.pair('<token>')` in the browser console with the token from
+`.remarq/config.json`.
 
 ## Doctor statuses
 

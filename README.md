@@ -33,19 +33,22 @@ config and entry point, and verifies the result with `doctor`.
 Prefer to drive yourself:
 
 ```bash
-npx @web-remarq/cli init      # installs packages, writes .mcp.json and Claude Code settings, configures the dev widget, prints any remaining edits
-npx @web-remarq/cli doctor    # checks the setup and explains what is wrong
+npx @web-remarq/cli init --agent codex    # use --agent claude for Claude Code
+npx @web-remarq/cli doctor
 ```
 
-For Vite, standard Next.js 15.3+ projects, and plain HTML, `init` wires the widget and prints the `claude ...` command. In Next.js, start `next dev` and open the app on localhost.
+For Vite, standard Next.js 15.3+ projects, and plain HTML, `init` wires the widget and prints the session command. It remembers the selected agent for this repository. In Next.js, start `next dev` and open the app on localhost.
+
+- **Codex.** Use a recent Codex CLI with queue and Unix app-server support. Sign in to the CLI with ChatGPT. On macOS the launcher can also use the CLI bundled with the ChatGPT app. Run `npx @web-remarq/cli start --agent codex` in the repository root. Keep that terminal open. Click **Add** in the browser widget to send feedback to that session.
+- **Claude Code.** Run the printed Claude Code command and accept the project trust and development channel prompts.
 
 See each package's README for detailed docs.
 
 ## Usage scenarios
 
-### 1. You + an AI agent (local, zero-config)
+### 1. Local setup with Claude Code and draft review
 
-The flagship flow: you point at what's wrong on the page, your agent fixes it, you verify with one click. No account, no cloud, no env vars.
+This manual setup collects drafts for review before you send them. The widget and MCP server keep annotations on this machine.
 
 One-time setup (a Vue + Vite project as the example; React/Next work the same via the matching plugin):
 

@@ -266,9 +266,41 @@ Limits:
   commands such as `sed -i`, which would need a separate approval.
 - Clients that are not channels ignore the notifications.
 
-`watch_annotations` and the prompts keep working as before: they are the
-fallback and the path for other agents (Cursor, Codex, Windsurf). Channel
-delivery is local mode only; cloud mode is unchanged.
+`watch_annotations` and the prompts also work with clients such as Cursor
+and Windsurf. Channel delivery is local mode only.
+
+## Codex queue delivery
+
+Start one local stdio MCP server for the project in a Codex CLI session that
+supports `codex queue` and uses your existing ChatGPT sign-in. Configure the
+server with the exact thread UUID and the project directory as its working
+directory. Codex queue delivery disables Claude channel delivery for that
+server.
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `REMARQ_CODEX_THREAD` | Unset | Selects Codex delivery for one local thread UUID |
+| `REMARQ_CODEX_BIN` | `codex` | CLI executable name or absolute path |
+| `REMARQ_CODEX_REMOTE` | Unset | Dedicated local app-server endpoint in `unix:///path/to/socket` form |
+
+The same MCP process serves the widget, owns the store and queues each pending
+mark. With the simple widget flow, **Add** makes the mark pending. Drafts
+become eligible after submission. Codex can accept the next mark while its
+thread is busy. The agent calls `acknowledge` before editing and
+`claim_fix` or `dismiss` afterward. A fix claim still needs human
+verification in the widget.
+
+The store's `codex-delivery.json` records an intent before each CLI call and
+saves the receipt for the specific project, thread and mark. A resume warning
+with a receipt means Codex accepted the mark and is waiting for the session.
+Resume the recorded thread to let it process the mark. If a call ends without
+a receipt, inspect that thread's queue and transcript before taking action.
+If the original attempt cannot proceed, fetch the pending mark with
+`list_annotations` and handle it in the current session through the MCP
+lifecycle tools. Restarting the server or selecting a different thread does
+not automatically dispatch a mark with an existing receipt or intent.
+If the CLI executable could not start, fix its path and restart the server
+to retry pending work.
 
 ## Cloud mode prerequisites
 

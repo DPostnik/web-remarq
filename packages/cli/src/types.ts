@@ -2,6 +2,7 @@ export type Framework = 'next' | 'vue' | 'react' | 'vanilla-vite' | 'plain-html'
 export type Bundler = 'next' | 'vite' | null
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
 export type PluginName = '@web-remarq/unplugin' | '@web-remarq/next'
+export type Agent = 'claude' | 'codex'
 
 export interface Detection {
   framework: Framework
@@ -38,7 +39,7 @@ export interface Edit {
 export type CheckStatus = 'ok' | 'fail' | 'blocked' | 'skipped'
 
 export interface CheckResult {
-  id: 'packages' | 'build-plugin' | 'widget-init' | 'mcp-config' | 'mcp-server'
+  id: 'packages' | 'build-plugin' | 'widget-init' | 'mcp-config' | 'mcp-server' | 'codex-cli'
   status: CheckStatus
   detail: string
   hint?: string

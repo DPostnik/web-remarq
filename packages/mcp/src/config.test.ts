@@ -34,6 +34,22 @@ describe('parseEnv', () => {
     expect(() => parseEnv({ REMARQ_CHANNEL_SETTLE_MS: 'abc' })).toThrow(ConfigError)
   })
 
+  it('opts into exclusive local Codex delivery with an exact thread UUID', () => {
+    const thread = '019ABC12-3456-7890-ABCD-0123456789AB'
+    expect(parseEnv({
+      REMARQ_CODEX_THREAD: thread, REMARQ_CODEX_BIN: '/tmp/my codex', REMARQ_CODEX_REMOTE: 'unix:///tmp/remarq.sock',
+    })).toMatchObject({
+      mode: 'local',
+      channel: { enabled: false },
+      codex: { thread: thread.toLowerCase(), executable: '/tmp/my codex', remote: 'unix:///tmp/remarq.sock' },
+    })
+    expect(() => parseEnv({ REMARQ_CODEX_THREAD: 'thread name' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CODEX_BIN: 'codex' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CODEX_THREAD: thread, REMARQ_CODEX_REMOTE: 'ws://remote' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CODEX_THREAD: thread, REMARQ_CHANNEL: 'on' })).toThrow(ConfigError)
+    expect(() => parseEnv({ REMARQ_CODEX_THREAD: thread, REMARQ_PROJECT_KEY: 'pk_abc' })).toThrow(ConfigError)
+  })
+
   it('rejects a non-numeric or out-of-range port', () => {
     expect(() => parseEnv({ REMARQ_PORT: 'abc' })).toThrow(ConfigError)
     expect(() => parseEnv({ REMARQ_PORT: '70000' })).toThrow(ConfigError)

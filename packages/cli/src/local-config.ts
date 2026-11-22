@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readJson } from './fs-utils'
+import type { Agent } from './types'
 
 /**
  * `.remarq/config.json` at the repository root: the local project identity and
@@ -19,13 +20,28 @@ export interface LocalConfig {
   projectId: string
   token: string
   allowedOrigins: string[]
+  agent?: Agent
 }
 
 /** Create the config (and `.remarq/.gitignore`) when absent. Returns true when a file was written. */
-export function ensureLocalConfig(repoRoot: string): boolean {
+export function ensureLocalConfig(repoRoot: string, agent?: Agent): boolean {
   const dir = join(repoRoot, '.remarq')
   const path = join(dir, 'config.json')
-  if (existsSync(path)) return false
+  if (existsSync(path)) {
+    if (agent === undefined) return false
+    let config: unknown
+    try {
+      config = JSON.parse(readFileSync(path, 'utf8'))
+    } catch {
+      throw new Error(`${LOCAL_CONFIG_PATH} could not be read as JSON`)
+    }
+    if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+      throw new Error(`${LOCAL_CONFIG_PATH} must contain a JSON object`)
+    }
+    if ('agent' in config && config.agent === agent) return false
+    writeFileSync(path, `${JSON.stringify({ ...config, agent }, null, 2)}\n`)
+    return true
+  }
   mkdirSync(dir, { recursive: true })
   const gitignore = join(dir, '.gitignore')
   if (!existsSync(gitignore)) writeFileSync(gitignore, '*\n')
@@ -33,9 +49,15 @@ export function ensureLocalConfig(repoRoot: string): boolean {
     projectId: `prj_${randomBytes(8).toString('hex')}`,
     token: randomBytes(24).toString('hex'),
     allowedOrigins: [...DEFAULT_ALLOWED_ORIGINS],
+    ...(agent === undefined ? {} : { agent }),
   }
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
   return true
+}
+
+export function readLocalAgent(repoRoot: string): Agent | undefined {
+  const agent = readJson<{ agent?: unknown }>(join(repoRoot, LOCAL_CONFIG_PATH))?.agent
+  return agent === 'codex' || agent === 'claude' ? agent : undefined
 }
 
 /** The token from the repo-root config, or null when the file is absent or unreadable. */

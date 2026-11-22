@@ -18,6 +18,7 @@ const detection: Detection = {
 describe('renderInit', () => {
   const base = {
     ok: true as const,
+    agent: 'claude' as const,
     detected: detection,
     installed: ['web-remarq', '@web-remarq/unplugin'],
     wroteMcpConfig: true,
@@ -103,6 +104,12 @@ describe('renderDoctor', () => {
 })
 
 describe('parseArgs', () => {
+  it('accepts both agent flag forms and rejects other values', () => {
+    expect(parseArgs(['init', '--agent', 'codex', '--json'])).toMatchObject({ agent: 'codex', json: true })
+    expect(parseArgs(['doctor', '--agent=claude'])).toMatchObject({ agent: 'claude' })
+    expect(parseArgs(['init', '--agent', '--json'])).toMatchObject({ json: true, error: '--agent requires codex or claude' })
+  })
+
   it('reads the command, --json and --app', () => {
     expect(parseArgs(['init', '--json', '--app', 'apps/web'])).toEqual({
       command: 'init',

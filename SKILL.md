@@ -12,8 +12,13 @@ Work through these steps in order. Do not skip the verification step.
 ## 1. Run the installer
 
 ```bash
-npx @web-remarq/cli init --json
+npx @web-remarq/cli init --agent codex --json
 ```
+
+Pass `--agent claude` for Claude Code. Use the agent requested by the user,
+or the current agent when it is Codex or Claude Code. Without an explicit
+choice, the installer reuses the saved project choice and defaults to
+Claude Code for a new non-interactive setup.
 
 Read the JSON. If `ok` is `false`, **stop**. Do not improvise a setup. Show the
 user `reason` and `hint`.
@@ -93,12 +98,15 @@ Finish with the concrete next actions, not with "done":
 Setup complete. Two things left for you:
 
 1. Restart the dev server: <their dev command>
-2. Restart Claude Code from the repository root with: <sessionCommand from init>
-   Confirm "Yes, I trust this folder", then Enter on the development channels warning.
+2. Start <agent from init> from the repository root with: <sessionCommand from init>
 
 Then: open your app - the web-remarq toolbar appears in the bottom-right.
-Hit Inspect, click a broken element, describe what's wrong, hit Submit.
-Then tell me /mcp__web-remarq__watch and I'll start working through them.
+Click an element, describe the issue, and click Add. If the widget uses
+draft mode, click Submit to send those drafts.
 
 Re-check the setup any time: npx @web-remarq/cli doctor
 ```
+
+For Codex, have the user sign in to a supported Codex CLI with ChatGPT and
+leave the launched terminal open. For Claude Code, relay the project trust
+and development channel prompts shown by the installer.

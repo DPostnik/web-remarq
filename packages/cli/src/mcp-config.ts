@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const MCP_ENTRY = { command: 'npx', args: ['-y', '@web-remarq/mcp'] } as const
+export const MCP_CODEX_ENTRY = { command: 'npx', args: ['-y', '@web-remarq/mcp@0.7.0'] } as const
 
 interface McpConfig {
   mcpServers?: Record<string, unknown>

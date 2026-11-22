@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { cpSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import * as http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runDoctor, exitCode, probeMcpServer } from './doctor'
+import { runInit } from './init'
 import { checkBuildPlugin, checkPackages, resolveTransformModule } from './checks'
 import type { ResolvedTransformModule } from './checks'
 import type { CheckResult, Detection } from './types'
@@ -30,6 +31,20 @@ function fakeInstall(appDir: string, name: string, version: string) {
 }
 
 describe('runDoctor', () => {
+  it('uses the saved Codex selection and reports the launcher for a blocked MCP connection', async () => {
+    cpSync(fixture('plain-html'), dir, { recursive: true })
+    runInit(dir, { agent: 'codex' }, { exec: vi.fn() })
+    const checkCodex = vi.fn(async () => { throw new Error('Sign in with ChatGPT') })
+    const report = await runDoctor(dir, {}, { ...serverDown, checkCodex })
+    expect(report.ok).toBe(true)
+    if (!report.ok) return
+
+    expect(report.agent).toBe('codex')
+    expect(checkCodex).toHaveBeenCalledWith(dir)
+    expect(find(report.checks, 'mcp-config').status).toBe('ok')
+    expect(find(report.checks, 'codex-cli')).toMatchObject({ status: 'blocked', detail: 'Sign in with ChatGPT' })
+    expect(find(report.checks, 'mcp-server').hint).toContain('start --agent codex')
+  })
   it('reports mcp-server as blocked, not failed, when nothing answers on the port', async () => {
     cpSync(fixture('vue-vite'), dir, { recursive: true })
     const report = await runDoctor(dir, {}, serverDown)

@@ -1,20 +1,23 @@
 import { detect } from './detect'
 import { checkBuildPlugin, checkMcpConfig, checkMcpServer, checkPackages, checkWidgetInit } from './checks'
 import type { McpProbeResult } from './checks'
-import { readLocalPort, readLocalToken } from './local-config'
-import type { CheckResult, Detection } from './types'
+import { CODEX_SESSION_COMMAND } from './init'
+import { readLocalAgent, readLocalPort, readLocalToken } from './local-config'
+import type { Agent, CheckResult, Detection } from './types'
 
 export interface DoctorOptions {
   app?: string
+  agent?: Agent
 }
 
 export interface DoctorDeps {
   probeMcpServer(port: number, token: string | null): Promise<McpProbeResult>
+  checkCodex?(cwd: string): Promise<void>
 }
 
 export type DoctorReport =
   | { ok: false; reason: string; hint: string; candidates?: string[] }
-  | { ok: true; detected: Detection; checks: CheckResult[] }
+  | { ok: true; detected: Detection; agent?: Agent; checks: CheckResult[] }
 
 /**
  * Live probe of the local MCP server. Injected in tests so they never open
@@ -64,15 +67,33 @@ export async function runDoctor(
   if (!detection.ok) return detection
 
   const d = detection.detection
+  const agent = opts.agent ?? readLocalAgent(d.repoRoot) ?? 'claude'
+  const token = readLocalToken(d.repoRoot)
   const checks: CheckResult[] = [
     checkPackages(d),
     await checkBuildPlugin(d),
     checkWidgetInit(d),
-    checkMcpConfig(d),
-    await checkMcpServer(readLocalPort(d.repoRoot), (port) => deps.probeMcpServer(port, readLocalToken(d.repoRoot))),
+    agent === 'claude'
+      ? checkMcpConfig(d)
+      : token
+        ? { id: 'mcp-config', status: 'ok', detail: 'web-remarq MCP is configured at Codex launch' }
+        : { id: 'mcp-config', status: 'fail', detail: 'no local token for Codex setup', hint: 'Run `npx @web-remarq/cli init --agent codex`.' },
   ]
+  if (agent === 'codex' && deps.checkCodex) {
+    try {
+      await deps.checkCodex(d.repoRoot)
+      checks.push({ id: 'codex-cli', status: 'ok', detail: 'Codex CLI supports queue delivery and is signed in' })
+    } catch (err) {
+      checks.push({ id: 'codex-cli', status: 'blocked', detail: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  checks.push(await checkMcpServer(
+    readLocalPort(d.repoRoot),
+    (port) => deps.probeMcpServer(port, token),
+    agent === 'codex' ? `Start the Codex session from the repository root with \`${CODEX_SESSION_COMMAND}\`.` : undefined,
+  ))
 
-  return { ok: true, detected: d, checks }
+  return { ok: true, detected: d, agent, checks }
 }
 
 /** Exit 1 only on a real failure - `blocked` and `skipped` must not break the loop. */

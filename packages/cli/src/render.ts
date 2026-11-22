@@ -1,7 +1,7 @@
 import { CLAUDE_SETTINGS_PATH } from './claude-settings'
 import type { InitResult } from './init'
 import type { DoctorReport } from './doctor'
-import type { CheckStatus } from './types'
+import type { Agent, CheckStatus } from './types'
 
 const SYMBOL: Record<CheckStatus, string> = {
   ok: '✔',
@@ -30,25 +30,25 @@ export function renderInit(result: InitResult): string {
 
   const d = result.detected
   const stack = d.bundler ? `${d.framework} + ${d.bundler}` : d.framework
-  const settings = result.claudeSettings
-  const autoAccept = settings.defaultMode === 'acceptEdits'
+  const settings = result.agent === 'claude' ? result.claudeSettings : undefined
+  const autoAccept = settings?.defaultMode === 'acceptEdits'
   const lines = [
     `✔ detected     ${stack} (${d.packageManager})`,
     result.installed.length > 0
       ? `✔ installed    ${result.installed.join(', ')}`
       : '– installed    nothing to install (already in package.json)',
-    result.wroteMcpConfig
-      ? '✔ wrote        .mcp.json (repo root)'
-      : '✔ mcp config   already up to date',
+    ...(result.agent === 'codex'
+      ? ['✔ mcp config   loaded by the Codex launcher']
+      : [result.wroteMcpConfig ? '✔ wrote        .mcp.json (repo root)' : '✔ mcp config   already up to date']),
     result.wroteLocalConfig
-      ? '✔ wrote        .remarq/config.json (project id + local token, gitignored)'
+      ? '✔ wrote        .remarq/config.json (local project settings)'
       : '✔ local config already present (.remarq/config.json)',
-    settings.changed
+    ...(settings ? [settings.changed
       ? `✔ wrote        ${CLAUDE_SETTINGS_PATH} (web-remarq tools allowed, server enabled)`
-      : `✔ claude       ${CLAUDE_SETTINGS_PATH} already up to date`,
+      : `✔ claude       ${CLAUDE_SETTINGS_PATH} already up to date`] : []),
     ...result.edited.map((edit) => `✔ edited       ${edit.file} - ${edit.change}`),
   ]
-  if (!settings.defaultModeSet && !autoAccept) {
+  if (settings && !settings.defaultModeSet && !autoAccept) {
     lines.push(`  kept your permissions.defaultMode "${settings.defaultMode}" - Claude Code will not accept fixes on its own`)
   }
 
@@ -65,7 +65,12 @@ export function renderInit(result: InitResult): string {
   const steps = [
     ...(result.edits.length > 0 ? ['Apply the edits above.'] : []),
     d.bundler ? `Start your dev server (${d.packageManager} run dev).` : 'Serve the page locally and open it.',
-    [
+    result.agent === 'codex' ? [
+      'In the repository root, start a Codex session for this project.',
+      `     ${result.sessionCommand}`,
+      '   Use a Codex CLI with queue support and sign in with ChatGPT first.',
+      '   Keep the launched terminal open while reviewing marks.',
+    ].join('\n') : [
       'In the repository root, start Claude Code:',
       `     ${result.sessionCommand}`,
       '   The first start asks two questions:',
@@ -76,7 +81,12 @@ export function renderInit(result: InitResult): string {
     ]
       .filter((l) => l !== null)
       .join('\n'),
-    'Open the app, click an element and leave a mark - Claude Code receives it and fixes it.',
+    ...(d.framework === 'plain-html'
+      ? ["In the browser console, run WebRemarq.pair('<token>') once with the token from .remarq/config.json."]
+      : []),
+    result.agent === 'codex'
+      ? 'Open the app, mark an element, and click Add to send feedback to this Codex session.'
+      : 'Open the app, click an element and leave a mark - Claude Code receives it and fixes it.',
   ]
   lines.push('', 'Next:', ...steps.map((step, i) => `${i + 1}. ${step}`), '', 'Check the setup any time: npx @web-remarq/cli doctor')
   return lines.join('\n')
@@ -130,20 +140,30 @@ export function renderArgError(message: string): string {
   return [`✖ Argument error`, `  ${message}`].join('\n')
 }
 
-/** Recognized flags: --json and --app (space or equals form). Anything else starting with -- is an error. */
+/** Recognized flags: --json, --app and --agent. */
 export function parseArgs(
   argv: string[],
-): { command: string | null; json: boolean; app?: string; error?: string } {
+): { command: string | null; json: boolean; app?: string; agent?: Agent; error?: string } {
   // Computed up front, independent of the loop below: --json takes no value, so its
   // position relative to a malformed --app never changes whether it was passed.
   const json = argv.includes('--json')
   const positional: string[] = []
   let app: string | undefined
+  let agent: Agent | undefined
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
 
     if (arg === '--json') continue
+
+    if (arg === '--agent' || arg.startsWith('--agent=')) {
+      const value = arg === '--agent' ? argv[++i] : arg.slice('--agent='.length)
+      if (value !== 'codex' && value !== 'claude') {
+        return { command: positional[0] ?? null, json, error: '--agent requires codex or claude' }
+      }
+      agent = value
+      continue
+    }
 
     if (arg.startsWith('--app=')) {
       const value = arg.slice('--app='.length)
@@ -171,7 +191,5 @@ export function parseArgs(
     positional.push(arg)
   }
 
-  return app === undefined
-    ? { command: positional[0] ?? null, json }
-    : { command: positional[0] ?? null, json, app }
+  return { command: positional[0] ?? null, json, app, ...(agent === undefined ? {} : { agent }) }
 }

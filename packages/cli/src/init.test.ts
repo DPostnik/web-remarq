@@ -27,7 +27,7 @@ describe('runInit', () => {
     const result = runInit(dir, {}, deps)
 
     expect(result.ok).toBe(true)
-    if (!result.ok) return
+    if (!result.ok || result.agent !== 'claude') throw new Error('Expected Claude setup')
     expect(calls).toEqual(['npm install -D web-remarq @web-remarq/unplugin'])
     expect(result.wroteMcpConfig).toBe(true)
     expect(existsSync(join(dir, '.mcp.json'))).toBe(true)
@@ -57,7 +57,7 @@ describe('runInit', () => {
 
     const second = runInit(dir, {}, deps)
     expect(second.ok).toBe(true)
-    if (!second.ok) return
+    if (!second.ok || second.agent !== 'claude') throw new Error('Expected Claude setup')
     expect(calls).toEqual([])
     expect(second.installed).toEqual([])
     expect(second.wroteMcpConfig).toBe(false)
@@ -73,6 +73,28 @@ describe('runInit', () => {
     const result = runInit(dir, {}, deps)
     expect(result.ok && result.installed).toEqual(['web-remarq'])
     expect(calls).toEqual(['npm install -D web-remarq'])
+  })
+
+  it('switches an existing setup to Codex without changing its Claude files or local credentials', () => {
+    copy('plain-html')
+    runInit(dir, {}, deps)
+    const settings = join(dir, '.claude', 'settings.local.json')
+    const mcp = join(dir, '.mcp.json')
+    const config = join(dir, '.remarq', 'config.json')
+    const claudeBefore = [settings, mcp].map((path) => readFileSync(path, 'utf8'))
+    const original = { ...JSON.parse(readFileSync(config, 'utf8')), port: 3817, custom: 'keep' }
+    writeFileSync(config, JSON.stringify(original))
+
+    const codex = runInit(dir, { agent: 'codex' }, deps)
+    expect(codex).toMatchObject({ ok: true, agent: 'codex', sessionCommand: 'npx @web-remarq/cli start --agent codex' })
+    expect(codex).not.toHaveProperty('claudeSettings')
+    expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('WebRemarq.init({ simple: true')
+    expect([settings, mcp].map((path) => readFileSync(path, 'utf8'))).toEqual(claudeBefore)
+    expect(JSON.parse(readFileSync(config, 'utf8'))).toEqual({ ...original, agent: 'codex' })
+    expect(runInit(dir, {}, deps)).toMatchObject({ agent: 'codex', edited: [], wroteLocalConfig: false })
+
+    expect(runInit(dir, { agent: 'claude' }, deps)).toMatchObject({ agent: 'claude' })
+    expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('WebRemarq.init({ submitFlow: true')
   })
 
   it('adds widget: true to an existing remarq() registration', () => {

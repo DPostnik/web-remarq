@@ -1,23 +1,30 @@
 import { execSync } from 'node:child_process'
+import { createInterface } from 'node:readline/promises'
+import { checkCodex, runCodex } from './codex'
+import { detect } from './detect'
 import { runInit } from './init'
 import type { InitDeps } from './init'
 import { exitCode, probeMcpServer, runDoctor } from './doctor'
 import { parseArgs, renderArgError, renderDoctor, renderInit, renderInstallFailure, renderSetupFailure } from './render'
 import type { InstallFailure } from './render'
+import { readLocalAgent } from './local-config'
+import type { Agent } from './types'
 
 const USAGE = `web-remarq installer
 
 Usage:
-  npx @web-remarq/cli init [--app <dir>] [--json]
-  npx @web-remarq/cli doctor [--app <dir>] [--json]
+  npx @web-remarq/cli init [--agent <codex|claude>] [--app <dir>] [--json]
+  npx @web-remarq/cli doctor [--agent <codex|claude>] [--app <dir>] [--json]
+  npx @web-remarq/cli start --agent codex
 
-init    Install missing packages, write .mcp.json, .remarq/config.json and
-        .claude/settings.local.json, register the build plugin in the Vite
-        config, and print the command that starts a Claude Code session.
+init    Install missing packages, configure the widget and selected agent,
+        and print the command to start the session.
 doctor  Check the setup and explain what is wrong.
+start   Launch the Codex session from the repository root.
 
 Options:
   --app <dir>  App package to target inside a monorepo, relative to the repo root.
+  --agent      codex or claude. Default for new non-interactive setups is claude.
   --json       Machine-readable output.`
 
 export interface CliDeps {
@@ -34,8 +41,23 @@ const defaultDeps: CliDeps = {
   },
 }
 
+async function chooseAgent(cwd: string, app?: string): Promise<Agent | undefined> {
+  const detection = detect(cwd, { app })
+  if (!detection.ok || readLocalAgent(detection.detection.repoRoot)) return undefined
+  const prompt = createInterface({ input: process.stdin, output: process.stderr })
+  try {
+    for (;;) {
+      const answer = (await prompt.question('Choose an agent (codex or claude) [claude]: ')).trim().toLowerCase()
+      if (answer === '' || answer === 'claude') return 'claude'
+      if (answer === 'codex') return 'codex'
+    }
+  } finally {
+    prompt.close()
+  }
+}
+
 export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise<number> {
-  const { command, json, app, error } = parseArgs(argv)
+  const { command, json, app, agent, error } = parseArgs(argv)
 
   if (error) {
     console.log(
@@ -59,7 +81,10 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
     }
 
     try {
-      const result = runInit(process.cwd(), { app, quiet: json }, { exec })
+      const cwd = process.cwd()
+      const interactive = !json && !process.env.CI && process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY
+      const selection = agent ?? (interactive ? await chooseAgent(cwd, app) : undefined)
+      const result = runInit(cwd, { app, agent: selection, quiet: json }, { exec })
       console.log(json ? JSON.stringify(result, null, 2) : renderInit(result))
       return result.ok ? 0 : 1
     } catch (err) {
@@ -83,10 +108,24 @@ export async function main(argv: string[], deps: CliDeps = defaultDeps): Promise
   }
 
   if (command === 'doctor') {
-    const report = await runDoctor(process.cwd(), { app }, { probeMcpServer })
+    const report = await runDoctor(process.cwd(), { app, agent }, { probeMcpServer, checkCodex })
     console.log(json ? JSON.stringify(report, null, 2) : renderDoctor(report))
     if (!report.ok) return 1
     return exitCode(report.checks)
+  }
+
+  if (command === 'start') {
+    if (agent !== 'codex' || json || app !== undefined) {
+      const message = 'Run `npx @web-remarq/cli start --agent codex` in the repository root'
+      console.log(json ? JSON.stringify({ ok: false, reason: 'Argument error', hint: message }, null, 2) : renderArgError(message))
+      return 1
+    }
+    try {
+      return await runCodex(process.cwd())
+    } catch (err) {
+      console.error(renderSetupFailure(err instanceof Error ? err.message : String(err)))
+      return 1
+    }
   }
 
   if (command !== null) {

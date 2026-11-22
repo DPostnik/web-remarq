@@ -513,6 +513,7 @@ export type McpProbeResult =
 export async function checkMcpServer(
   port: number,
   probe: (port: number) => Promise<McpProbeResult>,
+  restartHint = 'The server starts with your agent - restart Claude Code (or your MCP client) to pick it up.',
 ): Promise<CheckResult> {
   const result = await probe(port)
   switch (result) {
@@ -548,7 +549,7 @@ export async function checkMcpServer(
         id: 'mcp-server',
         status: 'blocked',
         detail: `no response on 127.0.0.1:${port}`,
-        hint: 'The server starts with your agent - restart Claude Code (or your MCP client) to pick it up.',
+        hint: restartHint,
       }
   }
 }

@@ -13,6 +13,15 @@ describe('ReviewPanel', () => {
     Reflect.deleteProperty(document, 'scrollingElement')
   })
 
+  it('shows a single ordinary comment once and keeps distinct target details', () => {
+    const review = new ReviewPanel(callbacks)
+    const single = { ...item, label: 'make just release', comment: 'make just release' }
+    review.update([single], single, true, undefined, false, 1500)
+    expect(review.element.textContent?.match(/make just release/g)).toHaveLength(1)
+    review.update([item], item, true, undefined, false, 1500)
+    expect(review.element.querySelector('.remarq-review-mark')?.textContent).toBe(item.label)
+  })
+
   it('anchors below the selected target and flips above it after scrolling', () => {
     const review = new ReviewPanel(callbacks)
     const target = document.createElement('div')

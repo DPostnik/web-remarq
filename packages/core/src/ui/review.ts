@@ -97,11 +97,13 @@ export class ReviewPanel {
   }
 
   update(items: ReviewItem[], active: ReviewItem, current: boolean, target: HTMLElement | undefined, busy: boolean, reasonLimit: number): void {
-    const key = JSON.stringify(items.map(({ id, label }) => [id, label]))
+    const choices = items.length === 1 && (active.label === active.comment || active.label === active.fixNote) ? [] : items
+    this.list.hidden = choices.length === 0
+    const key = JSON.stringify(choices.map(({ id, label }) => [id, label]))
     if (key !== this.listKey) {
       this.listKey = key
       this.marks.clear()
-      this.list.replaceChildren(...items.map(({ id, label }) => {
+      this.list.replaceChildren(...choices.map(({ id, label }) => {
         const row = document.createElement('li')
         const button = this.button(label, () => this.callbacks.select(id))
         button.className = 'remarq-review-mark'

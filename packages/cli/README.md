@@ -2,7 +2,7 @@
 
 Installer and doctor for [web-remarq](https://github.com/DPostnik/web-remarq) -
 detects your stack, installs the right packages, wires the build plugin and
-Claude Code, and verifies the result. For Vite apps one `init` is the whole
+Claude Code, and verifies the result. For Vite and standard Next.js 15.3+ apps one `init` is the whole
 setup: start the dev server, run the printed `claude ...` command, and marks
 you leave in the browser reach Claude Code and get fixed without typing.
 
@@ -16,7 +16,7 @@ npx @web-remarq/cli doctor [--app <dir>] [--json]
 - `init` - in the repository root writes `.mcp.json`, `.remarq/config.json`
   (project id + local token, gitignored) and `.claude/settings.local.json`;
   in the app installs the packages its `package.json` does not list yet and,
-  for Vite, registers the build plugin in the config file (see below). It
+  for Vite and Next.js, registers the build plugin in the config file (see below). It
   then prints what it did and the next steps, including the command that
   starts the session:
 
@@ -83,8 +83,14 @@ gains the web-remarq tools (`claim_fix`, `dismiss`, `get_annotation`,
 not set a mode yourself. Existing entries and keys are kept. A file that is
 not valid JSON is never overwritten: `init` stops and says so.
 
-Next.js and plain HTML pages work as before: Next.js gets two printed edits
-(wrap the config, render a client component); plain HTML gets a script tag.
+**Next.js**. `init` wraps the existing config with `withRemarq()` or creates
+`next.config.mjs`. On standard Next.js 15.3+ App and Pages Router projects it
+adds client instrumentation and a local development pairing route.
+Open the dev app on localhost. `init` preserves existing widget wiring and
+provides manual instructions for older Next.js, static exports, custom
+route extensions, and conflicts.
+
+**Plain HTML**. `init` inserts a widget script tag.
 
 ## Doctor statuses
 

@@ -84,8 +84,9 @@ How the widget gets the token, in development only:
 
 - **Vite**: `@web-remarq/unplugin` serves it at `/__web-remarq/config.json`
   on your dev server; `HttpStorageAdapter` fetches it same-origin.
-- **Next.js**: `withRemarq()` exposes it as `NEXT_PUBLIC_WEB_REMARQ_TOKEN`;
-  the `RemarqDevTools` snippet passes it as `new HttpStorageAdapter({ token })`.
+- **Next.js**: `init` adds `/api/web-remarq/config.json` for same-origin
+  requests on the local dev server. Existing manual setups can pass
+  `NEXT_PUBLIC_WEB_REMARQ_TOKEN` to `new HttpStorageAdapter({ token })`.
 - **Plain HTML / other bundlers**: paste it once in the browser console -
   `WebRemarq.pair('<token>')` - it is kept in localStorage for that endpoint.
 

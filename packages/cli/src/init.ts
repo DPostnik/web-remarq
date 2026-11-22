@@ -6,7 +6,8 @@ import { detect } from './detect'
 import { buildInstallCommand, missingPackages } from './install'
 import { writeMcpConfig } from './mcp-config'
 import { ensureLocalConfig } from './local-config'
-import { nextEdits, repoRelative, viteConfigEdit } from './snippets'
+import { repoRelative, viteConfigEdit } from './snippets'
+import { setUpNextConfig } from './next-config'
 import { injectScriptTag } from './vanilla'
 import { editViteConfig } from './vite-config'
 import type { Detection, Edit } from './types'
@@ -91,7 +92,7 @@ export function runInit(cwd: string, opts: InitOptions, deps: InitDeps): InitRes
 
   let setup: { edited: AutoEdit[]; edits: Edit[] }
   if (d.framework === 'next') {
-    setup = { edited: [], edits: nextEdits(d) }
+    setup = setUpNextConfig(d)
   } else if (d.framework === 'plain-html') {
     // Inserting a script tag before </body> is deterministic, so plain HTML needs no manual edit.
     setup = {

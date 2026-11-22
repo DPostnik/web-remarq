@@ -43,7 +43,8 @@ function classify(appDir: string): Omit<Detection, 'repoRoot' | 'appDir' | 'pack
       bundler: 'next' as Bundler,
       appPackageName,
       configFile: firstExisting(appDir, NEXT_CONFIGS),
-      entry: firstExisting(appDir, ['app/layout.tsx', 'app/layout.jsx', 'pages/_app.tsx', 'pages/_app.jsx']),
+      entry: firstExisting(appDir, ['app/layout.tsx', 'app/layout.jsx', 'app/layout.js', 'src/app/layout.tsx', 'src/app/layout.jsx', 'src/app/layout.js',
+        'pages/_app.tsx', 'pages/_app.jsx', 'pages/_app.js', 'src/pages/_app.tsx', 'src/pages/_app.jsx', 'src/pages/_app.js']),
       plugin: '@web-remarq/next' as PluginName,
       includeGlob: null,
     }

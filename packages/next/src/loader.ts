@@ -1,6 +1,7 @@
 import { transform } from '@swc/core'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { resolveAgentRoot } from './local-config'
 
 /** Source map in the object form webpack and Turbopack accept from a loader. */
 export type LoaderSourceMap = Record<string, unknown>
@@ -33,10 +34,10 @@ export function parseSourceMap(map: string | undefined): LoaderSourceMap | undef
 export default function remarqLoader(this: LoaderContext, source: string) {
   const callback = this.async()
 
-  const filePath = path.relative(this.rootContext, this.resourcePath).replace(/\\/g, '/')
+  const filePath = path.relative(resolveAgentRoot(this.rootContext ?? process.cwd()), this.resourcePath).replace(/\\/g, '/')
 
   transform(source, {
-    filename: this.resourcePath,
+    filename: filePath,
     sourceMaps: true,
     jsc: {
       target: 'esnext',

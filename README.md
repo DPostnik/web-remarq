@@ -33,11 +33,11 @@ config and entry point, and verifies the result with `doctor`.
 Prefer to drive yourself:
 
 ```bash
-npx @web-remarq/cli init      # installs packages, writes .mcp.json and Claude Code settings, edits vite.config, prints any remaining edits
+npx @web-remarq/cli init      # installs packages, writes .mcp.json and Claude Code settings, configures the dev widget, prints any remaining edits
 npx @web-remarq/cli doctor    # checks the setup and explains what is wrong
 ```
 
-For Vite apps and plain HTML pages with no bundler, `init` completes the whole setup on its own and prints the `claude ...` command that starts the session.
+For Vite, standard Next.js 15.3+ projects, and plain HTML, `init` wires the widget and prints the `claude ...` command. In Next.js, start `next dev` and open the app on localhost.
 
 See each package's README for detailed docs.
 

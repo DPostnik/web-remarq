@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, parse, relative } from 'node:path'
-import { readJson } from './fs-utils'
-import { readRemarqInclude, readRemarqWidget } from './vite-config'
+import { firstExisting, readJson } from './fs-utils'
+import { readRemarqInclude, readRemarqWidget, stripComments } from './vite-config'
 import type { CheckResult, Detection } from './types'
 
 /** How many parent directories to walk before giving up - defense in depth, real trees never get close. */
@@ -41,13 +41,24 @@ function findOwningPackageJson(startFile: string, name: string): { version: stri
  * `@web-remarq/next`) do not do. Resolving the main entry point instead works against
  * any correctly-installed package, published or not, because "." is always exposed.
  */
-function resolveInstalled(appDir: string, name: string): { version: string } | null {
+export function resolveInstalled(appDir: string, name: string): { version: string } | null {
   try {
     const require = createRequire(join(appDir, 'noop.js'))
     const entryFile = require.resolve(name)
     return findOwningPackageJson(entryFile, name)
   } catch {
     return null
+  }
+}
+
+/** An installed, older Next adapter still supports the manual token-based component. */
+export function hasLegacyNextAdapter(appDir: string): boolean {
+  if (!resolveInstalled(appDir, '@web-remarq/next')) return false
+  try {
+    createRequire(join(appDir, 'noop.js')).resolve('@web-remarq/next/config')
+    return false
+  } catch {
+    return true
   }
 }
 
@@ -97,7 +108,7 @@ function walkSourceTree(
   exts: string[],
   predicate: (path: string) => boolean = () => true,
 ): string | null {
-  const roots = [join(d.appDir, 'src'), join(d.appDir, 'app'), join(d.appDir, 'components')]
+  const roots = [join(d.appDir, 'src'), join(d.appDir, 'app'), join(d.appDir, 'components'), join(d.appDir, 'pages')]
 
   const walk = (dir: string, depth: number): string | null => {
     if (depth > 4 || !existsSync(dir)) return null
@@ -246,7 +257,7 @@ export async function checkBuildPlugin(
   if (d.framework === 'next') {
     const wrapped =
       d.configFile !== null &&
-      readFileSync(join(d.appDir, d.configFile), 'utf8').includes('withRemarq')
+      stripComments(readFileSync(join(d.appDir, d.configFile), 'utf8')).includes('withRemarq')
     return wrapped
       ? { id: 'build-plugin', status: 'ok', detail: `withRemarq() found in ${d.configFile}` }
       : {
@@ -388,6 +399,10 @@ export function checkWidgetInit(d: Detection): CheckResult {
   // correctly-wired app has it in the component file instead. Search the app source
   // tree for either file rather than grepping only d.entry.
   if (d.framework === 'next') {
+    const client = findNextClientInstrumentation(d.appDir)
+    if (client && stripComments(readFileSync(join(d.appDir, client), 'utf8')).includes('WebRemarq.init')) {
+      return { id: 'widget-init', status: 'ok', detail: `WebRemarq.init() found in ${client}` }
+    }
     const initFile = walkSourceTree(d, ['.tsx', '.jsx', '.ts', '.js'], (path) =>
       readFileSync(path, 'utf8').includes('WebRemarq.init'),
     )
@@ -457,6 +472,10 @@ export function checkWidgetInit(d: Detection): CheckResult {
         detail: `no widget: true on remarq() in ${d.configFile ?? 'the Vite config'}, and no WebRemarq.init() in ${d.entry}`,
         hint: 'Run `npx @web-remarq/cli init` again - it adds widget: true to the remarq() call in your Vite config.',
       }
+}
+
+export function findNextClientInstrumentation(appDir: string): string | null {
+  return firstExisting(appDir, ['instrumentation-client.ts', 'instrumentation-client.js', 'src/instrumentation-client.ts', 'src/instrumentation-client.js'])
 }
 
 /** True when the app entry starts the widget itself (manual wiring), not through the build plugin. */

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readLocalToken, TOKEN_ENV, withRemarq } from '../src/index';
+import { getLocalPairing } from "../src/local-config";
 
 const originalEnv = process.env.NODE_ENV;
 const originalCwd = process.cwd();
@@ -80,5 +81,26 @@ describe('local token pairing', () => {
     process.chdir(bare);
     expect(withRemarq({}).env).toBeUndefined();
     expect(withRemarq({ env: { OTHER: '1' } }).env).toEqual({ OTHER: '1' });
+  });
+});
+
+describe('development route pairing', () => {
+  it('returns the running port on a local same-origin request and never in production', () => {
+    process.env.NODE_ENV = 'development';
+    const settings = join(dir, '.remarq');
+    writeFileSync(join(settings, 'server.lock'), JSON.stringify({ port: 4170 }));
+    expect(getLocalPairing('127.0.0.1:3000', 'same-origin', dir)).toEqual({
+      projectId: 'prj_x', token: 'tok-abcdefghijklmnop', port: 4170,
+    });
+    expect(getLocalPairing('other.local:3000', 'same-origin', dir)).toBeNull();
+    expect(getLocalPairing('localhost:3000', 'cross-site', dir)).toBeNull();
+    process.env.NODE_ENV = 'production';
+    expect(getLocalPairing('localhost:3000', 'same-origin', dir)).toBeNull();
+  });
+
+  it('does not inline the token when using the route', () => {
+    process.env.NODE_ENV = 'development';
+    process.chdir(dir);
+    expect(withRemarq({}, { pairing: 'route' }).env).toBeUndefined();
   });
 });

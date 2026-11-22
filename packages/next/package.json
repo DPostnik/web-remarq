@@ -12,6 +12,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./config": {
+      "types": "./dist/local-config.d.ts",
+      "import": "./dist/local-config.js",
+      "require": "./dist/local-config.cjs"
+    },
     "./loader": {
       "types": "./dist/loader.d.ts",
       "import": "./dist/loader.js",

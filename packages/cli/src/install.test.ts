@@ -139,10 +139,18 @@ describe('missingPackages', () => {
     expect(missingPackages(vite())).toEqual(['@web-remarq/unplugin'])
   })
 
-  it('applies no minimum outside Vite', () => {
+  it('updates listed Next.js packages when they lack automatic widget support', () => {
+    const next = { ...vite(), framework: 'next', bundler: 'next', plugin: '@web-remarq/next' } as const
+    const pkgPath = join(dir, 'package.json')
+    writeFileSync(pkgPath, JSON.stringify({
+      devDependencies: { 'web-remarq': '^0.9.0', '@web-remarq/next': '^0.3.2' },
+    }))
     fakeInstall('web-remarq', '0.9.0')
-    expect(missingPackages({ ...vite(), framework: 'next', bundler: 'next', plugin: '@web-remarq/next' })).toEqual([
-      '@web-remarq/next',
-    ])
+    fakeInstall('@web-remarq/next', '0.3.2')
+    expect(missingPackages(next)).toEqual(['web-remarq', '@web-remarq/next'])
+
+    fakeInstall('web-remarq', '0.10.0')
+    writeFileSync(join(dir, 'node_modules/@web-remarq/next/config.js'), '')
+    expect(missingPackages(next)).toEqual([])
   })
 })

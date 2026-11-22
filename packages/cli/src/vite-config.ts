@@ -26,7 +26,7 @@ export function stripComments(src: string): string {
 }
 
 /** Like stripComments, but also blanks the contents of string literals (quotes stay). */
-function codeOnly(src: string): string {
+export function codeOnly(src: string): string {
   return mask(src, true)
 }
 

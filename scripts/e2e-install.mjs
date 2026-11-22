@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Level-3 verification: scaffold real projects, install web-remarq into them the
 // way `npx @web-remarq/cli init` tells a user to, and prove the build plugin
-// stamps data-remarq-source on a real element - through doctor AND through a
-// real Vite dev server. Network + minutes.
+// stamps data-remarq-source on a real element through doctor and real dev
+// servers. Next also verifies isolation in a production build. Network + minutes.
 //
 // Two modes, deliberately kept apart so a local pass is never mistaken for a
 // verified release:
@@ -17,12 +17,9 @@
 // its workspace package.json: right after a release npm can still serve the
 // previous version, and a run against it must fail rather than pass.
 //
-// Local mode: build the workspace packages, `npm pack` them, let `init` run its
-// normal registry install (so the flow matches a real user end to end), then
-// reinstall those same package names from the tarballs - overwriting what
-// `init` fetched with this checkout's build. `npm install <tarball>` rewrites
-// the app's dependency entry to a `file:` spec, so doctor and Vite resolve our
-// code exactly as they would resolve a real install.
+// Local mode: build the workspace packages and install their tarballs before
+// init. The installer makes setup decisions from the installed packages, so
+// it must read the local builds even when the published releases are older.
 //
 // Registry mode: no packing, no override. Whatever `init` installed from npm is
 // what gets verified. Run this after publishing; a failure here means the
@@ -46,9 +43,7 @@ const TARBALL_WORKSPACES = [
   { workspace: 'packages/next', name: '@web-remarq/next' },
 ]
 
-// Vite scaffolds keep the config `init` edited itself (see applyBuildConfigEdit),
-// so a drift between what the CLI writes and what the plugin accepts fails this
-// run instead of only failing users. Next applies the printed edit verbatim.
+// All scaffolds use the configuration written by the installer.
 const ALL_SCAFFOLDS = [
   {
     name: 'vue-vite',
@@ -64,7 +59,7 @@ const ALL_SCAFFOLDS = [
   },
   {
     name: 'next-app',
-    cmd: 'npx create-next-app@latest app --ts --app --no-eslint --no-tailwind --no-src-dir --no-import-alias --use-npm',
+    cmd: 'npx --yes create-next-app@16 app --ts --app --no-eslint --no-tailwind --no-src-dir --no-import-alias --use-npm --yes',
     tarballNames: ['web-remarq', '@web-remarq/next'],
   },
 ]
@@ -115,29 +110,6 @@ function shellQuote(value) {
   return `'${value.split("'").join("'\\''")}'`
 }
 
-/** First file under app/, src/ or components/ matching one of `exts`, depth-bounded. */
-function findSourceFile(appDir, exts) {
-  const roots = [join(appDir, 'app'), join(appDir, 'src'), join(appDir, 'components')]
-  const walk = (dir, depth) => {
-    if (depth > 4 || !existsSync(dir)) return null
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        const nested = walk(path, depth + 1)
-        if (nested) return nested
-      } else if (exts.some((ext) => entry.name.endsWith(ext))) {
-        return path
-      }
-    }
-    return null
-  }
-  for (const root of roots) {
-    const hit = walk(root, 0)
-    if (hit) return hit
-  }
-  return null
-}
-
 /** Run `init --json` and return the parsed result. Throws when init itself failed. */
 function runInitJson(appDir) {
   let out
@@ -152,43 +124,23 @@ function runInitJson(appDir) {
   return result
 }
 
-/**
- * Vite: `init` edits a fresh scaffold's config itself and reports it in
- * `edited`; a printed build-config edit (the manual fallback) means the
- * automatic edit regressed, so it fails here. Next: the printed snippet is
- * the whole config file and is applied as given, the way an agent following
- * SKILL.md would.
- */
-function applyBuildConfigEdit(scaffold, appDir, initResult) {
-  const edit = initResult.edits.find((e) => e.kind === 'build-config')
-
-  if (scaffold.name === 'next-app') {
-    if (!edit) throw new Error('init printed no build-config edit')
-    const cfg = existsSync(join(appDir, 'next.config.ts'))
-      ? join(appDir, 'next.config.ts')
-      : join(appDir, 'next.config.mjs')
-    writeFileSync(cfg, `${edit.snippet}\n`)
-    return edit.snippet
-  }
-
-  if (edit) throw new Error(`init did not edit the Vite config itself: ${edit.note ?? edit.file}`)
-  const auto = initResult.edited.find((e) => /vite\.config\./.test(e.file))
-  if (!auto) throw new Error('init reported no Vite config edit')
+/** Fail if a clean scaffold needs manual configuration. */
+function checkBuildConfigEdit(scaffold, initResult) {
+  const edit = initResult.edits.find((e) => e.kind === 'build-config' || e.kind === 'entry')
+  if (edit) throw new Error(`init requires a manual edit: ${edit.note ?? edit.file}`)
+  const configPattern = scaffold.name === 'next-app' ? /next\.config\./ : /vite\.config\./
+  const auto = initResult.edited.find((e) => configPattern.test(e.file))
+  if (!auto) throw new Error('init reported no build config edit')
   return `${auto.file} - ${auto.change}`
 }
 
 /**
  * Ask doctor: it runs the user's installed filter and transform over the user's
  * own file. Only the build-plugin check matters here - packages/widget-init/
- * mcp-config/mcp-server are out of scope for this script (doctor.ok only means
- * "the stack was detected", not "every check passed").
+ * mcp-config/mcp-server are not checked through doctor.
  *
- * `doctor` exits non-zero whenever ANY check fails (see exitCode() in
- * doctor.ts), which an unrelated check (the Next widget edit this script never
- * applies, or the MCP server that is not running) triggers regardless of
- * build-plugin. execSync throws on a non-zero exit even with a
- * captured encoding, but still attaches stdout to the thrown error - so recover
- * the JSON from there rather than treating a non-zero exit as "could not run".
+ * An unavailable MCP server can still make doctor exit non-zero. Read its
+ * JSON output in either case to inspect the build-plugin result.
  */
 function checkStamping(appDir) {
   let out
@@ -267,27 +219,47 @@ async function waitFor(check, timeoutMs) {
   throw new Error(`timed out after ${timeoutMs}ms${lastError ? `: ${lastError.message}` : ''}`)
 }
 
-async function devServerSmoke(appDir, relFile) {
+async function withServer(appDir, binary, args, check) {
   const port = await freePort()
-  const child = spawn('npx', ['vite', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
+  const child = spawn(process.execPath, [join(appDir, 'node_modules/.bin', binary), ...args(port)], {
     cwd: appDir,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let log = ''
-  child.stdout.on('data', (d) => { log += d })
-  child.stderr.on('data', (d) => { log += d })
-  const exited = new Promise((r) => child.once('exit', r))
+  let startupError
+  child.stdout.on('data', (data) => { log += data })
+  child.stderr.on('data', (data) => { log += data })
+  child.once('error', (err) => { startupError = err })
+  const exited = new Promise((resolveExit) => child.once('close', resolveExit))
+  const base = `http://127.0.0.1:${port}`
 
   try {
-    const base = `http://127.0.0.1:${port}`
-    await waitFor(async () => (await fetch(`${base}/`)).ok, 60_000)
-    const widget = await checkWidgetInjected(base, log)
+    await waitFor(async () => {
+      if (startupError || child.exitCode !== null) return true
+      return (await fetch(`${base}/`, { signal: AbortSignal.timeout(5_000) })).ok
+    }, 60_000)
+    if (startupError) throw startupError
+    if (child.exitCode !== null) throw new Error(`${binary} exited with code ${child.exitCode}`)
+    return await check(base)
+  } catch (err) {
+    throw new Error(`${err.message}\n--- ${binary} log ---\n${log}`)
+  } finally {
+    child.kill('SIGTERM')
+    const killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000)
+    await exited
+    clearTimeout(killTimer)
+  }
+}
+
+async function devServerSmoke(appDir, relFile) {
+  return withServer(appDir, 'vite', (port) => ['--port', String(port), '--strictPort', '--host', '127.0.0.1'], async (base) => {
+    const widget = await checkWidgetInjected(base)
     const res = await fetch(`${base}/${relFile}`)
     const served = await res.text()
     const stamp = expectedStamp(appDir, relFile)
 
     if (!served.includes('data-remarq-source')) {
-      throw new Error(`Vite served ${relFile} with no data-remarq-source at all\n--- vite log ---\n${log}`)
+      throw new Error(`Vite served ${relFile} with no data-remarq-source at all`)
     }
     if (!served.includes(stamp)) {
       const found = served.match(/(?:src|app)\/[\w./-]+:\d+:\d+/g) ?? []
@@ -296,21 +268,17 @@ async function devServerSmoke(appDir, relFile) {
       )
     }
     return { stamp, widget }
-  } finally {
-    child.kill('SIGTERM')
-    await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000))])
-    if (child.exitCode === null) child.kill('SIGKILL')
-  }
+  })
 }
 
 /**
  * The page Vite serves must carry the widget script tag, and that URL must
  * serve the generated module that starts the widget.
  */
-async function checkWidgetInjected(base, log) {
+async function checkWidgetInjected(base) {
   const html = await (await fetch(`${base}/`)).text()
   if (!html.includes(`src="${WIDGET_SCRIPT_SRC}"`)) {
-    throw new Error(`Vite served / without the widget script ${WIDGET_SCRIPT_SRC} (unplugin widget option not applied?)\n--- vite log ---\n${log}`)
+    throw new Error(`Vite served / without the widget script ${WIDGET_SCRIPT_SRC}`)
   }
   const res = await fetch(`${base}${WIDGET_SCRIPT_SRC}`)
   const body = await res.text()
@@ -320,53 +288,83 @@ async function checkWidgetInjected(base, log) {
   return `index.html has <script src="${WIDGET_SCRIPT_SRC}">, module 200 with ${WIDGET_INIT_MARKER}`
 }
 
-// doctor's build-plugin check for Next only greps next.config.* for the
-// literal text "withRemarq" (see checkBuildPlugin in packages/cli/src/
-// checks.ts) - it never loads @web-remarq/next or runs the SWC transform, so
-// it cannot distinguish a locally packed build from a stale published one.
-// Close that gap by running the installed webpack loader directly - the same
-// entry point (`@web-remarq/next/loader`) Next's own webpack config calls via
-// withRemarq() - against a real file from the scaffold, and asserting on its
-// output.
-//
-// Run as a subprocess with cwd = appDir (not in-process in this script): the
-// underlying @swc/core transform writes a `.swc/` plugin cache relative to
-// process.cwd(), and running it in-process here would drop that cache into
-// this repo's root instead of the disposable scaffold directory.
-const NEXT_LOADER_CHECK_SCRIPT = `
-import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+const NEXT_CONFIG_ROUTE = '/api/web-remarq/config.json'
+const NEXT_PAGE = 'app/page.tsx'
 
-const [, , appDir, sample] = process.argv
-const require = createRequire(join(appDir, 'noop.js'))
-const loaderFn = require(require.resolve('@web-remarq/next/loader')).default
-const source = readFileSync(sample, 'utf8')
-
-const output = await new Promise((res, rej) => {
-  const ctx = {
-    resourcePath: sample,
-    rootContext: appDir,
-    async: () => (err, code) => (err ? rej(err) : res(code)),
-  }
-  loaderFn.call(ctx, source)
-})
-
-if (!output.includes('data-remarq-source')) {
-  console.error(\`@web-remarq/next loader on \${sample} produced no data-remarq-source\`)
-  process.exit(1)
+// Keep the scaffold's config and build scripts. The fixture replaces the demo
+// content so next build does not depend on fetching the scaffold's web fonts.
+function setNextFixture(appDir) {
+  writeFileSync(join(appDir, NEXT_PAGE), `export default function Page() {
+  return <button data-test="remarq-target">Remarq target</button>
 }
-console.log(sample)
-`
+`)
+  writeFileSync(join(appDir, 'app/layout.tsx'), `import type { ReactNode } from 'react'
+export default function Layout({ children }: { children: ReactNode }) {
+  return <html lang="en"><body>{children}</body></html>
+}
+`)
+}
 
-function checkNextLoaderStamps(appDir, scriptPath) {
-  const sample = findSourceFile(appDir, ['.tsx'])
-  if (!sample) throw new Error('no .tsx file found under app/ to test the SWC loader against')
-  const stamped = runCapture(
-    `node ${shellQuote(scriptPath)} ${shellQuote(appDir)} ${shellQuote(sample)}`,
-    appDir,
-  ).trim()
-  return `${stamped} -> data-remarq-source stamped (@web-remarq/next/loader run directly)`
+async function nextPageAssets(base, html) {
+  const scriptPaths = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1])
+  if (scriptPaths.length === 0) throw new Error('Next rendered no client scripts')
+  return Promise.all(scriptPaths.map(async (path) => {
+    const res = await fetch(new URL(path, base))
+    if (!res.ok) throw new Error(`Next client script ${path} answered ${res.status}`)
+    return res.text()
+  }))
+}
+
+async function nextSmoke(appDir) {
+  const config = JSON.parse(readFileSync(join(appDir, '.remarq/config.json'), 'utf8'))
+  if (!config.token || !config.projectId) throw new Error('init did not create local pairing credentials')
+  const stamp = expectedStamp(appDir, NEXT_PAGE)
+  const args = (mode) => (port) => [mode, '--hostname', '127.0.0.1', '--port', String(port)]
+
+  await withServer(appDir, 'next', args('dev'), async (base) => {
+    const html = await (await fetch(base)).text()
+    if (!html.includes(`data-remarq-source="${stamp}"`)) {
+      throw new Error(`Next dev rendered / without the expected source stamp ${stamp}`)
+    }
+    const scripts = await nextPageAssets(base, html)
+    if (!scripts.some((script) => script.includes(NEXT_CONFIG_ROUTE))) {
+      throw new Error('Next dev client scripts do not start the widget pairing flow')
+    }
+    if ([html, ...scripts].some((body) => body.includes(config.token))) {
+      throw new Error('Next dev inlined the pairing credential into the page or client scripts')
+    }
+    const pairingUrl = `${base}${NEXT_CONFIG_ROUTE}`
+    const res = await fetch(pairingUrl, { headers: { 'Sec-Fetch-Site': 'same-origin' } })
+    if (!res.ok || !res.headers.get('cache-control')?.includes('no-store')) {
+      throw new Error(`Next dev pairing route answered ${res.status} without a successful uncached response`)
+    }
+    const pairing = await res.json()
+    if (pairing.token !== config.token || pairing.projectId !== config.projectId) {
+      throw new Error('Next dev pairing response does not match the installer credentials')
+    }
+    const crossSite = await fetch(pairingUrl, { headers: { 'Sec-Fetch-Site': 'cross-site' } })
+    if (crossSite.status !== 404 || (await crossSite.text()).includes(config.token)) {
+      throw new Error('Next dev pairing route did not deny a cross-site request')
+    }
+  })
+  console.log(`  next dev: rendered ${stamp}, bundled widget startup and served the local pairing config`)
+
+  run('npm run build', appDir)
+  const staticDir = join(appDir, '.next/static')
+  const clientFiles = readdirSync(staticDir, { recursive: true }).filter((file) => file.endsWith('.js'))
+  const scripts = clientFiles.map((file) => readFileSync(join(staticDir, file), 'utf8'))
+  await withServer(appDir, 'next', args('start'), async (base) => {
+    const html = await (await fetch(base)).text()
+    if ([html, ...scripts].some((body) => body.includes('data-remarq-source') ||
+      body.includes(NEXT_CONFIG_ROUTE) || body.includes(config.token))) {
+      throw new Error('Next production served source stamps, widget startup or pairing credentials')
+    }
+    const res = await fetch(`${base}${NEXT_CONFIG_ROUTE}`)
+    if (res.status !== 404 || (await res.text()).includes(config.token)) {
+      throw new Error(`Next production pairing route answered ${res.status} or served credentials`)
+    }
+  })
+  console.log('  next production: source stamps, widget startup and pairing credentials absent, pairing route 404')
 }
 
 console.log(`MODE: ${MODE_LABEL}`)
@@ -393,9 +391,6 @@ if (!REGISTRY_MODE) {
     console.log(`packed ${pkg.name}@${info.version} -> ${tarballPath}`)
   }
 }
-
-const nextLoaderCheckScript = join(packDir, 'next-loader-check.mjs')
-writeFileSync(nextLoaderCheckScript, NEXT_LOADER_CHECK_SCRIPT)
 
 /** Versions of the packages actually installed in the scaffold, for the report. */
 function installedVersions(appDir, names) {
@@ -457,19 +452,17 @@ for (const scaffold of SCAFFOLDS) {
     run(scaffold.cmd, dir)
     const appDir = join(dir, 'app')
 
-    const initResult = runInitJson(appDir)
-    console.log(`  init: installed ${initResult.installed.join(', ')}`)
-
-    // Vite: check init's own config edit. Next: apply the printed edit.
-    const applied = applyBuildConfigEdit(scaffold, appDir, initResult)
-    console.log(`  applied: ${applied.split('\n')[0]}${applied.includes('\n') ? ' ...' : ''}`)
+    if (scaffold.name === 'next-app') setNextFixture(appDir)
 
     if (!REGISTRY_MODE) {
-      // Override init's registry install with our local tarballs - the one step
-      // that makes this an e2e run of THIS checkout, not the last release.
       const tarballArgs = scaffold.tarballNames.map((n) => shellQuote(tarballPaths[n])).join(' ')
       run(`npm install -D ${tarballArgs}`, appDir)
     }
+
+    const initResult = runInitJson(appDir)
+    console.log(`  init: installed ${initResult.installed.join(', ')}`)
+    console.log(`  applied: ${checkBuildConfigEdit(scaffold, initResult)}`)
+
     const tooling = installedVersions(appDir, [...scaffold.tarballNames, 'vite', 'next', 'react', 'vue'].filter(
       (n, i, all) => all.indexOf(n) === i && (i < scaffold.tarballNames.length || existsSync(join(appDir, 'node_modules', n))),
     ))
@@ -485,12 +478,7 @@ for (const scaffold of SCAFFOLDS) {
       console.log(`  vite dev server: served ${scaffold.devServerFile} with data-remarq-source="${stamp}"`)
       console.log(`  widget: ${widget}`)
     } else {
-      console.log('  widget: skipped - not auto-injected outside Vite (known limitation)')
-    }
-
-    if (scaffold.name === 'next-app') {
-      const loaderDetail = checkNextLoaderStamps(appDir, nextLoaderCheckScript)
-      console.log(`  loader check: ${loaderDetail}`)
+      await nextSmoke(appDir)
     }
 
     console.log(`✔ ${scaffold.name}`)

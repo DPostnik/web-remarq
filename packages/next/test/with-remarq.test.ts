@@ -218,3 +218,16 @@ describe('withRemarq — config preservation', () => {
     expect(rule.use[0].loader).toContain('loader');
   });
 });
+
+describe('withRemarq — config factories', () => {
+  it('preserves phase arguments and instruments the resolved config', async () => {
+    process.env.NODE_ENV = 'development';
+    const original = vi.fn(async (phase: string) => ({ env: { PHASE: phase } }));
+    const wrapped = withRemarq(original);
+    await expect(wrapped('phase-development-server')).resolves.toMatchObject({
+      env: { PHASE: 'phase-development-server' },
+      webpack: expect.any(Function),
+    });
+    expect(original).toHaveBeenCalledWith('phase-development-server');
+  });
+});

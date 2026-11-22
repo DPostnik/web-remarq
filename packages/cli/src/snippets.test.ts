@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextEdits, viteConfigEdit } from './snippets'
+import { nextConfigEdit, nextEntryEdit, viteConfigEdit } from './snippets'
 import type { Detection } from './types'
 
 const vueDetection: Detection = {
@@ -36,7 +36,7 @@ describe('viteConfigEdit', () => {
   })
 })
 
-describe('nextEdits', () => {
+describe('Next.js fallback edits', () => {
   const next: Detection = {
     ...vueDetection,
     framework: 'next',
@@ -49,15 +49,16 @@ describe('nextEdits', () => {
   }
 
   it('emits the withRemarq wrapper and the client component', () => {
-    const edits = nextEdits(next)
-    expect(edits[0].snippet).toContain('withRemarq')
-    expect(edits[1].snippet).toContain("'use client'")
-    expect(edits[1].file).toBe('app/layout.tsx')
+    const config = nextConfigEdit(next, 'unsupported configuration')
+    const entry = nextEntryEdit(next, 'older Next.js')
+    expect(config.snippet).toContain('withRemarq')
+    expect(entry.snippet).toContain("'use client'")
+    expect(entry.file).toBe('app/layout.tsx')
   })
 
   it('says so when the entry point was not found', () => {
-    const edits = nextEdits({ ...next, entry: null })
-    expect(edits[1].file).toBe('<entry point not found>')
-    expect(edits[1].note).toContain('locate the entry')
+    const entry = nextEntryEdit({ ...next, entry: null }, 'older Next.js')
+    expect(entry.file).toBe('<entry point not found>')
+    expect(entry.note).toContain('Locate the entry')
   })
 })

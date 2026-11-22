@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { checkWidgetInit } from './checks'
 import { runInit } from './init'
 
 const fixture = (name: string) => resolve(__dirname, '../fixtures', name)
@@ -102,10 +103,51 @@ describe('runInit', () => {
     expect(result.edits[0].note).toContain('shared')
   })
 
-  it('keeps the manual Next.js edits', () => {
+  it('wires Next.js without changing the layout or the existing instrumentation', () => {
     copy('next-app')
+    const layout = readFileSync(join(dir, 'app/layout.tsx'), 'utf8')
+    const clientPath = join(dir, 'instrumentation-client.ts')
+    const existing = "export const onRouterTransitionStart = () => {}\n"
+    writeFileSync(clientPath, existing)
     const result = runInit(dir, {}, deps)
-    expect(result.ok && result.edits.map((e) => e.kind)).toEqual(['build-config', 'entry'])
+    expect(result.ok && result.edits).toEqual([])
+    expect(result.ok && result.edited.map((e) => e.file)).toEqual([
+      'next.config.ts', 'app/api/web-remarq/config.json/route.js', 'instrumentation-client.ts',
+    ])
+    expect(readFileSync(join(dir, 'next.config.ts'), 'utf8')).toContain("withRemarq(webRemarqConfig, { pairing: 'route' })")
+    expect(readFileSync(clientPath, 'utf8')).toContain(existing + "\n// web-remarq dev widget")
+    expect(readFileSync(join(dir, 'app/layout.tsx'), 'utf8')).toBe(layout)
+    expect(result.ok && checkWidgetInit(result.detected).status).toBe('ok')
+    const second = runInit(dir, {}, deps)
+    expect(second.ok && second.edited).toEqual([])
+    expect(second.ok && second.edits).toEqual([])
+  })
+
+  it('preserves a custom route with the same path and reports the manual Next entry edit', () => {
+    copy('next-app')
+    const route = join(dir, 'app/api/web-remarq/config.json')
+    mkdirSync(route, { recursive: true })
+    writeFileSync(join(route, 'route.ts'), 'export const GET = customHandler')
+    const result = runInit(dir, {}, deps)
+    expect(result.ok && result.edits[0].note).toContain('already exists')
+    expect(readFileSync(join(route, 'route.ts'), 'utf8')).toBe('export const GET = customHandler')
+    expect(existsSync(join(dir, 'instrumentation-client.ts'))).toBe(false)
+  })
+
+  it('keeps a manual entry fallback for older Next.js', () => {
+    copy('next-app')
+    const pkgPath = join(dir, 'package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    pkg.dependencies.next = '^14.0.0'
+    writeFileSync(pkgPath, JSON.stringify(pkg))
+    const result = runInit(dir, {}, deps)
+    expect(result.ok && result.edits.map((e) => e.kind)).toEqual(['entry'])
+
+    pkg.dependencies.next = '^16.0.0'
+    writeFileSync(pkgPath, JSON.stringify(pkg))
+    const upgraded = runInit(dir, {}, deps)
+    expect(upgraded.ok && upgraded.edits).toEqual([])
+    expect(readFileSync(join(dir, 'next.config.ts'), 'utf8')).toContain("withRemarq(webRemarqConfig, { pairing: 'route' })")
   })
 
   it('creates a gitignored .remarq/config.json with a project id and a token that never appears in the result', () => {

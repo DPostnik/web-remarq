@@ -1,10 +1,13 @@
 import { createRequire } from "node:module";
-import fs from "node:fs";
-import path from "node:path";
+import { readLocalToken } from "./local-config";
+
+export { readLocalToken };
 
 export interface RemarqOptions {
   /** Enable in production builds. Default: false */
   production?: boolean;
+  /** Skip legacy token inlining when the widget pairs through a dev route. */
+  pairing?: "route";
 }
 
 // A real `require` for both output formats. The ESM bundle has no `require`
@@ -35,38 +38,6 @@ const JSX_TEST = /\.(jsx|tsx)$/;
 export const TOKEN_ENV = "NEXT_PUBLIC_WEB_REMARQ_TOKEN";
 
 /**
- * Read the local MCP token from `.remarq/config.json`, walking up from `from`
- * to the nearest directory with `.git` and never above it: an app inside a
- * monorepo finds the repo-root config, while an app without its own `.remarq/`
- * never picks up an unrelated project's token from a parent directory. Outside
- * a git repository only `from` counts. Same rule as `locateRemarq` in
- * `@web-remarq/unplugin`. `withRemarq` calls this in development only; see
- * `isProductionBuild`.
- */
-export function readLocalToken(from: string = process.cwd()): string | null {
-  const start = path.resolve(from);
-  const configAt = (dir: string) => path.join(dir, ".remarq", "config.json");
-  let found: string | null = null;
-  for (let dir = start; ; ) {
-    if (!found && fs.existsSync(configAt(dir))) found = configAt(dir);
-    if (fs.existsSync(path.join(dir, ".git"))) break;
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      found = fs.existsSync(configAt(start)) ? configAt(start) : null;
-      break;
-    }
-    dir = parent;
-  }
-  if (!found) return null;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(found, "utf8")) as { token?: unknown };
-    return typeof parsed.token === "string" ? parsed.token : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Wrap your Next.js config to enable web-remarq source location injection.
  * Works across Next.js 13–16+ with automatic strategy detection.
  *
@@ -78,7 +49,7 @@ export function readLocalToken(from: string = process.cwd()): string | null {
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function withRemarq<T extends Record<string, any>>(
+function withRemarqConfig<T extends Record<string, any>>(
   nextConfig: T = {} as T,
   options: RemarqOptions = {},
 ): T {
@@ -102,7 +73,7 @@ function withRemarq<T extends Record<string, any>>(
   // the `production` option: that option opts into source instrumentation,
   // never into shipping a local credential in a production bundle. A value
   // the user set in `env` themselves is left untouched either way.
-  const token = isProductionBuild ? null : readLocalToken();
+  const token = isProductionBuild || options.pairing === "route" ? null : readLocalToken();
   if (token && !(nextConfig.env ?? {})[TOKEN_ENV]) {
     result.env = { ...(nextConfig.env ?? {}), [TOKEN_ENV]: token };
   }
@@ -175,6 +146,21 @@ function withRemarq<T extends Record<string, any>>(
   // Next 13: no turbopack loader support — webpack only
 
   return result as T;
+}
+
+type ConfigObject = Record<string, any>;
+type ConfigFactory<T extends ConfigObject> = (...args: any[]) => T | Promise<T>;
+
+function withRemarq<T extends ConfigObject>(nextConfig?: T, options?: RemarqOptions): T;
+function withRemarq<T extends ConfigFactory<ConfigObject>>(nextConfig: T, options?: RemarqOptions): T;
+function withRemarq(nextConfig: ConfigObject | ConfigFactory<ConfigObject> = {}, options: RemarqOptions = {}) {
+  if (typeof nextConfig !== "function") return withRemarqConfig(nextConfig, options);
+  return (...args: any[]) => {
+    const config = nextConfig(...args);
+    return config instanceof Promise
+      ? config.then((resolved) => withRemarqConfig(resolved, options))
+      : withRemarqConfig(config, options);
+  };
 }
 
 export default withRemarq;

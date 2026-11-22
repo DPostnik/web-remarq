@@ -12,7 +12,7 @@ export function RemarqDevTools() {
     if (process.env.NODE_ENV !== 'development') return
     import('web-remarq').then(({ WebRemarq, HttpStorageAdapter }) => {
       WebRemarq.init({
-        submitFlow: true,
+        simple: true,
         storage: new HttpStorageAdapter({ token: process.env.NEXT_PUBLIC_WEB_REMARQ_TOKEN }),
       })
     })
@@ -25,7 +25,7 @@ export function repoRelative(d: Detection, fileInApp: string): string {
   return relative(d.repoRoot, join(d.appDir, fileInApp)).split('\\').join('/')
 }
 
-function nextConfigEdit(d: Detection): Edit {
+export function nextConfigEdit(d: Detection, reason: string): Edit {
   return {
     file: d.configFile ? repoRelative(d, d.configFile) : '<next config not found>',
     kind: 'build-config',
@@ -34,7 +34,7 @@ function nextConfigEdit(d: Detection): Edit {
 export default withRemarq({
   // your existing Next.js config
 })`,
-    note: 'withRemarq wraps the whole config object. It is a no-op in production builds.',
+    note: `Not edited automatically: ${reason}. Wrap the exported config with withRemarq().`,
   }
 }
 
@@ -54,13 +54,13 @@ plugins: [/* your existing plugins */, ${remarqCall(d.includeGlob ?? [], widget)
   }
 }
 
-function nextEntryEdit(d: Detection): Edit {
+export function nextEntryEdit(d: Detection, reason: string): Edit {
   if (!d.entry) {
     return {
       file: '<entry point not found>',
       kind: 'entry',
       snippet: WIDGET_INIT_NEXT,
-      note: 'Could not locate the entry point automatically - locate the entry file yourself and add this there.',
+      note: `${reason} Locate the entry file and add this there.`,
     }
   }
 
@@ -68,11 +68,6 @@ function nextEntryEdit(d: Detection): Edit {
     file: repoRelative(d, d.entry),
     kind: 'entry',
     snippet: WIDGET_INIT_NEXT,
-    note: 'Create this component and render <RemarqDevTools /> inside the root layout body.',
+    note: `${reason} Create this component and render <RemarqDevTools /> in the root layout or custom App.`,
   }
-}
-
-/** Next.js setup stays manual: wrapping the config and rendering a client component. */
-export function nextEdits(d: Detection): Edit[] {
-  return [nextConfigEdit(d), nextEntryEdit(d)]
 }

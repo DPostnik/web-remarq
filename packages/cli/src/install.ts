@@ -1,5 +1,5 @@
 import { join, relative } from 'node:path'
-import { belowWidgetMinimum } from './checks'
+import { belowWidgetMinimum, hasLegacyNextAdapter } from './checks'
 import { hasDep } from './detect'
 import type { PackageJson } from './detect'
 import { readJson } from './fs-utils'
@@ -13,13 +13,14 @@ function packagesFor(d: Detection): string[] {
 
 /**
  * The packages for this stack that the app's package.json does not list yet.
- * Listed ones are left alone, so a re-run never reinstalls them - except, on Vite,
- * an installed version too old for remarq({ widget: true }), which init is about to write.
+ * Reinstall listed packages when their installed version lacks automatic widget support.
  */
 export function missingPackages(d: Detection): string[] {
   const pkg = readJson<PackageJson>(join(d.appDir, 'package.json'))
-  return packagesFor(d).filter(
-    (name) => !hasDep(pkg, name) || (d.bundler === 'vite' && belowWidgetMinimum(d.appDir, name) !== null),
+  return packagesFor(d).filter((name) =>
+    !hasDep(pkg, name) ||
+    ((d.bundler === 'vite' || name === 'web-remarq') && belowWidgetMinimum(d.appDir, name) !== null) ||
+    (name === '@web-remarq/next' && hasLegacyNextAdapter(d.appDir)),
   )
 }
 

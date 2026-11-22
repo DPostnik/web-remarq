@@ -2,9 +2,17 @@
 
 Next.js integration for [web-remarq](https://www.npmjs.com/package/web-remarq) source location injection. One wrapper, works on Next.js 13-16+ with both webpack and Turbopack.
 
-Every JSX element gets `data-remarq-source="file:line:col"` and `data-remarq-component="ComponentName"` attributes at build time, so AI agents can find the exact source code for annotated elements.
+JSX elements in `.jsx` and `.tsx` files get `data-remarq-source="file:line:col"` and `data-remarq-component="ComponentName"` attributes at build time. The widget uses heuristic source matching for JSX in `.js` files.
 
-## Install
+## Automatic setup
+
+Run `npx @web-remarq/cli init` in a Next.js 15.3+ App or Pages Router project
+with standard route extensions and server output. It wraps the Next.js config,
+adds client instrumentation and a development pairing route, and prints the
+Claude Code session command. Start `next dev` and open the app on localhost.
+The widget sends saved marks to the open agent session.
+
+## Manual install
 
 ```bash
 npm install -D @web-remarq/next
@@ -79,13 +87,19 @@ The rule matches `*.jsx` / `*.tsx` and excludes `node_modules`. Your existing
 
 ## Pairing with the local MCP server
 
-In development the wrapper reads the token from `.remarq/config.json` (walking
+The CLI adds a same-origin development endpoint at `/api/web-remarq/config.json`
+under the application's base path. It reads the project token and active MCP
+port on each request from the local `.remarq/` directory. The handler responds
+only in development and accepts loopback hosts.
+
+For manual widget setups the wrapper reads the token from `.remarq/config.json` (walking
 up from the app directory, so a monorepo app finds the repo-root config) and
 exposes it as `NEXT_PUBLIC_WEB_REMARQ_TOKEN`, which the widget snippet uses to
 pair with `npx @web-remarq/mcp`. This happens only when `NODE_ENV` is not
 `production` - never in a production build, even with `production: true` (that
 option enables source instrumentation, not credential delivery). A value you
-set yourself in `env.NEXT_PUBLIC_WEB_REMARQ_TOKEN` is always left as is.
+set yourself in `env.NEXT_PUBLIC_WEB_REMARQ_TOKEN` is preserved. Pass
+`{ pairing: 'route' }` to disable legacy token inlining when using the route.
 
 ## Requirements
 

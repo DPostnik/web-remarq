@@ -90,6 +90,31 @@ describe('matchElement — exact match chain', () => {
 });
 
 describe('matchElement — fuzzy match', () => {
+  it('reattaches a stored document root after its text and classes change', () => {
+    document.body.innerHTML = '<main>Updated layout</main>';
+    document.documentElement.className = 'new-theme';
+    try {
+      const stored = fp({ tagName: 'html', domPath: 'html', textContent: 'body { transition: width 0.3s; }' });
+      expect(matchElement(stored)).toBe(document.documentElement);
+      expect(matchElement({ ...stored, domPath: 'html.old-theme' })).toBe(document.documentElement);
+    } finally {
+      document.documentElement.removeAttribute('class');
+    }
+  });
+
+  it('reattaches a stored body with the empty path produced by fingerprinting', () => {
+    document.body.innerHTML = '<main>Updated layout</main>';
+    const siblingIndex = Array.from(document.documentElement.children).indexOf(document.body);
+    expect(matchElement(fp({ tagName: 'body', textContent: 'Previous layout', siblingIndex }))).toBe(document.body);
+  });
+
+  it('keeps removed nested roots and selector-shaped tag names detached', () => {
+    document.body.innerHTML = '<main>Updated layout</main>';
+    expect(matchElement(fp({ tagName: 'html', domPath: 'section > html', textContent: 'Old layout' }))).toBeNull();
+    expect(matchElement(fp({ tagName: 'body', domPath: 'section > body', textContent: 'Old layout' }))).toBeNull();
+    expect(matchElement(fp({ tagName: 'main, html', domPath: 'main', textContent: 'Updated layout' }))).toBeNull();
+  });
+
   it('matches by combined text + parent anchor + classes when no exact anchor available', () => {
     document.body.innerHTML = `
       <section data-annotate="checkout">

@@ -152,8 +152,21 @@ export function matchElement(
     if (el) return el
   }
 
+  // The document root and body have structural identities independent of their content.
+  const root = document.documentElement
+  if (fp.tagName === 'html' && root instanceof HTMLHtmlElement &&
+      /^html(?:\.\S+)?$/.test(fp.domPath) &&
+      fp.siblingIndex === 0 && !fp.parentAnchor) {
+    return root
+  }
+
+  if (fp.tagName === 'body' && fp.domPath === '' && document.body instanceof HTMLBodyElement) {
+    return document.body
+  }
+
   // 4. Fuzzy match by tagName + weighted scoring
-  const candidates = document.querySelectorAll<HTMLElement>(fp.tagName)
+  if (fp.tagName === '*') return null
+  const candidates = document.getElementsByTagName(fp.tagName) as HTMLCollectionOf<HTMLElement>
   let bestEl: HTMLElement | null = null
   let bestScore = 0
 

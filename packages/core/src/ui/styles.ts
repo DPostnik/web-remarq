@@ -40,9 +40,14 @@ const CSS = `
 }
 
 .remarq-toolbar {
+  --remarq-toolbar-button-size: 32px;
+  --remarq-toolbar-icon-size: 16px;
   position: fixed;
   z-index: 2147483647;
   display: flex;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+  max-width: calc(100% - 32px);
   gap: 4px;
   padding: 8px;
   background: var(--remarq-bg);
@@ -54,6 +59,13 @@ const CSS = `
   color: var(--remarq-text);
 }
 
+@media (min-width: 1800px) {
+  .remarq-toolbar {
+    --remarq-toolbar-button-size: 40px;
+    --remarq-toolbar-icon-size: 20px;
+  }
+}
+
 .remarq-toolbar.remarq-pos-bottom-right { bottom: 16px; right: 16px; }
 .remarq-toolbar.remarq-pos-bottom-left { bottom: 16px; left: 16px; flex-direction: row-reverse; }
 .remarq-toolbar.remarq-pos-top-right { top: 16px; right: 16px; }
@@ -63,16 +75,32 @@ const CSS = `
 
 .remarq-toolbar-btn {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  box-sizing: border-box;
+  width: var(--remarq-toolbar-button-size);
+  height: var(--remarq-toolbar-button-size);
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  font: inherit;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--remarq-text);
   cursor: pointer;
   position: relative;
+}
+
+.remarq-toolbar-btn > svg {
+  display: block;
+  flex: none;
+  width: var(--remarq-toolbar-icon-size);
+  height: var(--remarq-toolbar-icon-size);
+  max-width: none;
+  max-height: none;
+  margin: 0;
 }
 
 .remarq-toolbar-btn:hover { background: var(--remarq-bg-secondary); }
@@ -419,7 +447,6 @@ const CSS = `
   padding: 0 8px;
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
   color: var(--remarq-text);
 }
 .remarq-simple-status[data-state="waiting"] { color: var(--remarq-pending); }

@@ -245,6 +245,18 @@ const CSS = `
 .remarq-review-target, .remarq-review-note { color: var(--remarq-text-secondary); }
 .remarq-review a { display: inline-block; color: var(--remarq-accent); }
 .remarq-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.remarq-underline {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--remarq-accent);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  pointer-events: all;
+  z-index: 2147483646;
+}
 
 .remarq-overlay {
   position: fixed;

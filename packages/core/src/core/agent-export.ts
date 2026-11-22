@@ -94,25 +94,37 @@ function buildSearchHints(fp: ElementFingerprint): AgentSearchHints {
 }
 
 export function generateAgentExport(annotations: Annotation[], viewportBucket: number): AgentExport {
-  const agentAnnotations: AgentAnnotation[] = annotations.map(ann => ({
-    id: ann.id,
-    route: ann.route,
-    comment: ann.comment,
-    status: ann.status,
-    timestamp: ann.timestamp,
-    source: resolveSource(ann.fingerprint),
-    searchHints: buildSearchHints(ann.fingerprint),
-    ...(ann.qualityCheck ? { qualityCheck: ann.qualityCheck } : {}),
-    lifecycle: ann.lifecycle.map((ev) => {
-      const out: { type: typeof ev.type; actor: typeof ev.actor; timestamp: number; reason?: string } = {
-        type: ev.type,
-        actor: ev.actor,
-        timestamp: ev.timestamp,
-      }
-      if (ev.reason !== undefined) out.reason = ev.reason
-      return out
-    }),
-  }))
+  const agentAnnotations: AgentAnnotation[] = annotations.map(ann => {
+    const marks = ann.fingerprint.brushTargets ?? ann.fingerprint.voiceTargets
+    const targets = Array.isArray(marks) ? marks.map(({ route, viewport, fingerprint }) => ({
+      route,
+      viewport,
+      source: resolveSource(fingerprint),
+      searchHints: buildSearchHints(fingerprint),
+    })) : undefined
+    return {
+      id: ann.id,
+      route: ann.route,
+      comment: ann.fingerprint.brushTargets && targets
+        ? `${ann.comment}\n\nBrush targets\n\n${formatAgentTargets(targets)}`
+        : ann.comment,
+      status: ann.status,
+      timestamp: ann.timestamp,
+      source: resolveSource(ann.fingerprint),
+      searchHints: buildSearchHints(ann.fingerprint),
+      ...(targets ? { targets } : {}),
+      ...(ann.qualityCheck ? { qualityCheck: ann.qualityCheck } : {}),
+      lifecycle: ann.lifecycle.map((ev) => {
+        const out: { type: typeof ev.type; actor: typeof ev.actor; timestamp: number; reason?: string } = {
+          type: ev.type,
+          actor: ev.actor,
+          timestamp: ev.timestamp,
+        }
+        if (ev.reason !== undefined) out.reason = ev.reason
+        return out
+      }),
+    }
+  })
 
   return {
     version: 1,
@@ -120,4 +132,13 @@ export function generateAgentExport(annotations: Annotation[], viewportBucket: n
     viewportBucket,
     annotations: agentAnnotations,
   }
+}
+
+export function formatAgentTargets(targets: NonNullable<AgentAnnotation['targets']>): string {
+  return targets.map(({ route, viewport, source, searchHints }, index) => {
+    const lines = [`[${index + 1}] <${searchHints.tagName}> ${searchHints.domContext} · ${route} · ${viewport}`]
+    if (source) lines.push(`  Source: ${source.file}:${source.line}:${source.column}`)
+    for (const { query, glob } of searchHints.grepQueries.slice(0, 3)) lines.push(`  Search: ${query} in ${glob}`)
+    return lines.join('\n')
+  }).join('\n\n')
 }

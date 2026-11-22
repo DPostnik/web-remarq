@@ -1,4 +1,4 @@
-import type { Annotation, VoiceTarget } from './types'
+import type { Annotation, AnnotationTarget } from './types'
 import { generateAgentExport } from './agent-export'
 
 export interface VoiceMark {
@@ -10,7 +10,7 @@ export interface VoiceMark {
 export interface ReviewTarget {
   route: string
   viewport: string
-  fingerprint?: VoiceTarget['fingerprint']
+  fingerprint?: AnnotationTarget['fingerprint']
   legacy?: { tag: string; path: string }
 }
 
@@ -30,6 +30,7 @@ export function voiceTranscript(comment: string): string | undefined {
 
 export function reviewTargets(annotation: Annotation): ReviewTarget[] {
   const { comment, fingerprint, route, viewport } = annotation
+  if (Array.isArray(fingerprint.brushTargets) && fingerprint.brushTargets.length) return fingerprint.brushTargets
   if (Array.isArray(fingerprint.voiceTargets) && fingerprint.voiceTargets.length) return fingerprint.voiceTargets
 
   // Old recordings stored a numbered footer and only the first fingerprint.

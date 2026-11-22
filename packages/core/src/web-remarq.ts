@@ -4,18 +4,19 @@ import { AnnotationStorage } from './core/storage'
 import { QualityRunner } from './core/quality-runner'
 import { LocalStorageAdapter } from './core/local-storage-adapter'
 import { HttpStorageAdapter } from './core/http-storage-adapter'
-import { validateAnnotation, validateStore } from './core/validate'
+import { LIMITS, validateAnnotation, validateStore } from './core/validate'
 import { WebSpeechAdapter, type SpeechAdapter, type SpeechSession } from './core/speech'
 import { checkedVoiceTargets, formatVoiceMessage, reviewClaim, reviewTargets, voiceTranscript, type ReviewTarget, type VoiceMark } from './core/voice-message'
 import { buildDomPath, createFingerprint, FINGERPRINT_TEXT_LIMIT, getTextContent } from './core/fingerprint'
 import { matchElement } from './core/matcher'
-import { generateAgentExport, actionableOnly } from './core/agent-export'
+import { formatAgentTargets, generateAgentExport, actionableOnly } from './core/agent-export'
 import { transition, type LifecycleAction } from './core/lifecycle'
 import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
 import { Toolbar } from './ui/toolbar'
 import { ReviewPanel, type ReviewItem } from './ui/review'
 import { Overlay } from './ui/overlay'
+import { Underline } from './ui/underline'
 import { SpacingOverlay } from './ui/spacing-overlay'
 import { Popup } from './ui/popup'
 import { MarkerManager } from './ui/markers'
@@ -40,6 +41,8 @@ let activeReview: string | null = null
 const savingReview = new Map<string, Annotation>()
 const reviewMarkers = new Set<string>()
 let overlay: Overlay
+let brush: Underline
+let brushing = false
 let popup: Popup
 let markers: MarkerManager
 let qualityRunner: QualityRunner
@@ -315,6 +318,7 @@ function refreshReview(): void {
     const el = target.route === route ? findReviewElement(item) : null
     const transcript = voiceTranscript(annotation.comment)
     const voice = transcript !== undefined || annotation.fingerprint.voiceTargets?.length
+    const grouped = voice || annotation.fingerprint.brushTargets?.length
     const original = target.legacy?.path || target.fingerprint?.domPath || target.fingerprint?.tagName
     if (el) attached.set(id, el)
     if (el && (options.simple || total > 1)) {
@@ -323,7 +327,7 @@ function refreshReview(): void {
     }
     const fix = [...annotation.lifecycle].reverse().find((event) => event.type === 'fix_claimed')
     let label = fix?.reason || annotation.comment
-    if (voice) {
+    if (grouped) {
       const before = target.fingerprint?.textContent
       const current = el && getTextContent(el, 241)
       const after = current && (current.length > 240 ? current.slice(0, 240) + '…' : current)
@@ -340,7 +344,7 @@ function refreshReview(): void {
       label,
       comment: transcript ?? annotation.comment,
       route: target.route,
-      markerLabel: voice
+      markerLabel: grouped
         ? !el && target.route === route ? 'Target unavailable' : ''
         : el ? `Marked element · ${describeTarget(el) || el.tagName.toLowerCase()}`
           : target.route !== route ? `Marked element · ${target.viewport}`
@@ -370,6 +374,7 @@ function openReview(id?: string): void {
   if (!item) return
   popup.hide()
   qualityBubbles.suppress(null)
+  setBrushing(false)
   setInspecting(false)
   activeReview = item.id
   toolbar.setReviewOpen(true)
@@ -487,6 +492,7 @@ function closeRecording(): void {
   clearTimeout(voice.timer)
   voice.markers.destroy()
   for (const { annotation } of voice.marks) elementCache.delete(annotation.id)
+  setBrushing(false)
   setInspecting(false)
   toolbar.setVoiceState('idle', !!voiceMessage)
 }
@@ -512,6 +518,7 @@ function toggleRecording(): void {
     if (voice.stopping) return
     voice.stopping = true
     clearTimeout(voice.timer)
+    setBrushing(false)
     setInspecting(false)
     toolbar.setVoiceState('stopping', !!voiceMessage)
     if (!voice.session) {
@@ -534,6 +541,7 @@ function toggleRecording(): void {
     return
   }
 
+  setBrushing(false)
   setInspecting(false)
   closeReview()
   popup.hide()
@@ -664,33 +672,90 @@ function handleInspectClick(e: MouseEvent): void {
   e.stopPropagation()
 
   if (recording && !recording.stopping) {
-    const annotation = createAnnotation(element, `Voice marker ${recording.marks.length + 1}`)
-    recording.marks.push({
-      annotation,
-      elapsedMs: performance.now() - recording.startedAt,
-      transcript: recording.transcript,
-    })
-    cacheElement(annotation.id, element)
-    recording.markers.addMarker(annotation, element)
+    addVoiceTargets(recording, [element])
     return
   }
 
   setInspecting(false)
-
   const rect = element.getBoundingClientRect()
+  showAnnotationPopup([element], rect.left, rect.bottom + 8, rect.top - 8)
+}
+
+function addVoiceTargets(voice: Recording, targets: HTMLElement[]): void {
+  const remaining = LIMITS.voiceTargets - voice.marks.length
+  const elapsedMs = performance.now() - voice.startedAt
+  for (const element of targets.slice(0, remaining)) {
+    const annotation = createAnnotation(element, `Voice marker ${voice.marks.length + 1}`)
+    voice.marks.push({ annotation, elapsedMs, transcript: voice.transcript })
+    cacheElement(annotation.id, element)
+    voice.markers.addMarker(annotation, element)
+  }
+  if (remaining < targets.length) showToast(themeManager.container, `Voice feedback holds up to ${LIMITS.voiceTargets} targets.`)
+}
+
+function setBrushing(active: boolean): void {
+  brushing = active
+  brush.setActive(active)
+  toolbar.setBrushActive(active)
+}
+
+function toggleBrush(): void {
+  if (recording?.stopping) return
+  if (brushing) {
+    setBrushing(false)
+    if (recording) setInspecting(true)
+    return
+  }
+  setInspecting(false)
+  closeReview()
+  popup.hide()
+  markers.setSelected(null)
+  qualityBubbles.suppress(null)
+  setBrushing(true)
+}
+
+function handleBrushStroke(targets: HTMLElement[], point: { x: number; y: number }): void {
+  if (recording) {
+    addVoiceTargets(recording, targets)
+    return
+  }
+  setBrushing(false)
+  if (targets.length > LIMITS.voiceTargets) {
+    showToast(themeManager.container, `Underline feedback holds up to ${LIMITS.voiceTargets} targets. Try a shorter stroke.`, 6000)
+    return
+  }
+  showAnnotationPopup(targets, point.x, point.y + 8, point.y - 8, true)
+}
+
+function showAnnotationPopup(elements: HTMLElement[], x: number, y: number, anchorY: number, painted = false): void {
+  const [element] = elements
+  const anchor = painted ? createAnnotation(element) : undefined
+  const brushTargets = anchor ? elements.map((target, index) => {
+    const { fingerprint, route, viewport } = index === 0 ? anchor : createAnnotation(target)
+    return { fingerprint, route, viewport }
+  }) : undefined
   popup.show(
     {
       tag: element.tagName.toLowerCase(),
-      text: describeTarget(element),
+      text: painted && elements.length > 1 ? `${elements.length} elements` : describeTarget(element),
     },
     {
-      top: window.scrollY + rect.bottom + 8,
-      left: window.scrollX + rect.left,
-      anchorBottom: window.scrollY + rect.top - 8,
+      top: window.scrollY + y,
+      left: window.scrollX + x,
+      anchorBottom: window.scrollY + anchorY,
     },
     (comment) => {
-      const ann = createAnnotation(element, comment)
+      const ann = anchor && brushTargets
+        ? { ...anchor, comment, fingerprint: { ...anchor.fingerprint, brushTargets } }
+        : createAnnotation(element, comment)
+      if (brushTargets && !validateAnnotation(ann).ok) {
+        showToast(themeManager.container, 'Could not save underline feedback. Try a shorter stroke or comment.', 6000)
+        return
+      }
       cacheElement(ann.id, element)
+      if (elements.length > 1) {
+        elements.forEach((target, index) => cacheElement(`${ann.id}:${index + 1}`, target))
+      }
       saveAnnotation(ann)
       showToast(themeManager.container, 'Annotation added')
       qualityRunner.run(ann.id, qualityInput(ann))
@@ -721,6 +786,10 @@ function handleInspectHover(e: MouseEvent): void {
 
 function handleInspectKeydown(e: KeyboardEvent): void {
   if (options.shortcuts === false) return
+  if (e.key === 'Escape' && brushing) {
+    toggleBrush()
+    return
+  }
   if (e.key === 'Escape' && recording) {
     cancelRecording()
     return
@@ -748,6 +817,7 @@ function handleInspectKeydown(e: KeyboardEvent): void {
 
   if (e.altKey && e.code === 'KeyI' && !recording) {
     e.preventDefault()
+    setBrushing(false)
     setInspecting(!inspecting)
     if (!inspecting) {
       overlay.hide()
@@ -965,6 +1035,11 @@ function generateMarkdown(): string {
       lines.push(`- Classes: ${classes.join(' ')}`)
     }
 
+    if (fp.brushTargets) {
+      const [agent] = generateAgentExport([ann], ann.viewportBucket).annotations
+      if (agent.targets) lines.push('', formatAgentTargets(agent.targets))
+    }
+
     lines.push('')
   })
 
@@ -1061,7 +1136,7 @@ function applyTransition(id: string, action: LifecycleAction, opts: TransitionOp
   const ann = storage.getById(id)
   if (!ann) return
   if (action === 'verify' && reviewTargets(ann).length > 1) {
-    showToast(themeManager.container, 'Review each voice mark to verify this feedback.')
+    showToast(themeManager.container, 'Review each marked element to verify this feedback.')
     return
   }
   const { status, event } = transition(ann, action, opts)
@@ -1075,7 +1150,7 @@ function setupMutationObserver(): void {
   mutationObserver = new MutationObserver((mutations) => {
     let hasExternalMutation = false
     for (const m of mutations) {
-      if (m.target instanceof HTMLElement && m.target.closest('[data-remarq-theme]')) continue
+      if (m.target instanceof Element && m.target.closest('[data-remarq-theme]')) continue
       hasExternalMutation = true
       break
     }
@@ -1106,6 +1181,7 @@ export const WebRemarq = {
       storage.onChange(() => scheduleRefresh())
       themeManager = new ThemeManager(document.body, options.theme)
       overlay = new Overlay(themeManager.container)
+      brush = new Underline(themeManager.container, handleBrushStroke)
       spacingOverlay = new SpacingOverlay(themeManager.container)
       popup = new Popup(themeManager.container, options.simple)
       markers = new MarkerManager(themeManager.container, handleMarkerClick, (id, top, left) =>
@@ -1131,8 +1207,12 @@ export const WebRemarq = {
       speech = options.speech === false ? undefined : options.speech ?? new WebSpeechAdapter()
       toolbar = new Toolbar(themeManager.container, {
         onInspect: () => {
-          if (!recording) setInspecting(!inspecting)
+          if (!recording) {
+            setBrushing(false)
+            setInspecting(!inspecting)
+          }
         },
+        onBrush: toggleBrush,
         ...(speech?.isSupported() ? {
           onVoice: toggleRecording,
           onResumeVoice: resumeRecording,
@@ -1178,7 +1258,10 @@ export const WebRemarq = {
       toolbar.element.appendChild(reviewPanel.element)
 
       routeObserver = new RouteObserver()
-      unsubRoute = routeObserver.onChange(() => refreshMarkers())
+      unsubRoute = routeObserver.onChange(() => {
+        if (brushing) toggleBrush()
+        refreshMarkers()
+      })
 
       document.addEventListener('click', handleInspectClick, true)
       document.addEventListener('mousemove', handleInspectHover)
@@ -1236,12 +1319,14 @@ export const WebRemarq = {
       detachedPanel?.destroy()
       popup?.destroy()
       overlay?.destroy()
+      brush.destroy()
       spacingOverlay?.destroy()
       toolbar?.destroy()
       themeManager?.destroy()
       removeStyles()
       elementCache.clear()
       inspecting = false
+      brushing = false
       spacingMode = false
       lastSyncState = null
       unconfirmed.clear()

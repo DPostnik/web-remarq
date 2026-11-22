@@ -130,6 +130,13 @@ Get all annotations, or filter by route.
 
 Remove all annotations.
 
+## Underline buttons
+
+Select **Underline buttons** and drag across a button or just below it in either direction.
+The line stays horizontal and the selected buttons are outlined as you drag.
+Extend the line under a second button to include both in one comment.
+Releasing in empty space leaves the tool active for another attempt.
+
 ## Voice feedback
 
 In a browser with Web Speech recognition, select **Record voice feedback** and

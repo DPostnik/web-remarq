@@ -48,7 +48,7 @@ export function mergeAnnotation(base: Annotation | null, local: Annotation, serv
   const reviewChanged = !same(local.fingerprint.voiceReview, origin.fingerprint.voiceReview)
   const reviewConflict = reviewChanged && (base === null ||
     reviewClaim(local) !== reviewClaim(server) ||
-    (!local.fingerprint.voiceTargets && local.comment !== server.comment) ||
+    (!local.fingerprint.voiceTargets && !local.fingerprint.brushTargets && local.comment !== server.comment) ||
     (!same(server.fingerprint, origin.fingerprint) && !same(server.fingerprint, local.fingerprint)))
 
   for (const field of MERGEABLE_FIELDS) {

@@ -128,15 +128,19 @@ function validateFingerprint(errors: Errors, value: unknown, path = 'fingerprint
   }
 }
 
-function validateVoiceReview(errors: Errors, value: unknown): void {
+function validateTargetReview(errors: Errors, value: unknown): void {
   if (!isObject(value)) return
-  const { voiceTargets, voiceReview } = value
-  if (voiceTargets !== undefined) {
-    const path = 'fingerprint.voiceTargets'
-    if (!Array.isArray(voiceTargets) || !voiceTargets.length || voiceTargets.length > LIMITS.voiceTargets) {
+  const { voiceTargets, brushTargets, voiceReview } = value
+  if (voiceTargets !== undefined && brushTargets !== undefined) {
+    errors.add('fingerprint', 'must contain at most one target list')
+  }
+  const targets = brushTargets ?? voiceTargets
+  if (brushTargets !== undefined || voiceTargets !== undefined) {
+    const path = brushTargets !== undefined ? 'fingerprint.brushTargets' : 'fingerprint.voiceTargets'
+    if (!Array.isArray(targets) || !targets.length || targets.length > LIMITS.voiceTargets) {
       errors.add(path, `must contain 1 to ${LIMITS.voiceTargets} targets`)
     } else {
-      voiceTargets.forEach((target, index) => {
+      targets.forEach((target, index) => {
         const item = `${path}[${index}]`
         if (!isObject(target)) {
           errors.add(item, 'must be an object')
@@ -158,7 +162,7 @@ function validateVoiceReview(errors: Errors, value: unknown): void {
     }
     checkString(errors, voiceReview, 'claim', path, LIMITS.shortString)
     const { checked } = voiceReview
-    const count = Array.isArray(voiceTargets) ? voiceTargets.length : LIMITS.voiceTargets
+    const count = Array.isArray(targets) ? targets.length : LIMITS.voiceTargets
     if (!Array.isArray(checked) || checked.length > count || new Set(checked).size !== checked.length ||
         !checked.every((index) => Number.isInteger(index) && index >= 0 && index < count)) {
       errors.add(`${path}.checked`, 'must contain valid target indices')
@@ -219,7 +223,7 @@ export function validateAnnotation(input: unknown): ValidationResult {
   checkInteger(errors, input, 'timestamp', 'annotation', 1)
   if (!STATUSES.has(input.status as string)) errors.add('status', 'unknown status')
   validateFingerprint(errors, input.fingerprint)
-  validateVoiceReview(errors, input.fingerprint)
+  validateTargetReview(errors, input.fingerprint)
   validateLifecycle(errors, input.lifecycle)
   if (input.qualityCheck !== undefined) validateQualityCheck(errors, input.qualityCheck)
   checkInteger(errors, input, 'rev', 'annotation', 0, true)

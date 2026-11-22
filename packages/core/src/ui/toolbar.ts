@@ -20,6 +20,7 @@ export interface ToolbarCallbacks {
   onThemeToggle: () => void
   onSpacingToggle: () => void
   onHelp: () => void
+  onBrush?: () => void
   onVerificationBadgeClick?: () => void
   onSubmit?: () => void
   onVoice?: () => void
@@ -43,10 +44,12 @@ const TOOLTIPS: Record<string, string> = {
   minimize: 'Minimize',
   submit: 'Submit drafts to agent',
   voice: 'Record voice feedback',
+  brush: 'Underline buttons',
   'copy-voice': 'Copy voice feedback',
 }
 
 const ICONS = {
+  brush: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2v5a4 4 0 0 0 8 0V2M2 14h12"/></svg>',
   voice: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M4 8a4 4 0 0 0 8 0M8 12v2"/></svg>',
   stop: '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>',
   inspect: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>',
@@ -66,6 +69,7 @@ export class Toolbar {
   private badgeEl: HTMLElement
   private reviewBtn: HTMLButtonElement
   private inspectBtn: HTMLElement
+  private brushBtn?: HTMLButtonElement
   private voiceBtn?: HTMLButtonElement
   private copyVoiceBtn?: HTMLButtonElement
   private pausedVoiceEl?: HTMLElement
@@ -105,6 +109,12 @@ export class Toolbar {
 
     this.spacingBtn = this.createButton('spacing', ICONS.spacing, () => callbacks.onSpacingToggle()) as HTMLButtonElement
     this.spacingBtn.disabled = true
+
+    if (callbacks.onBrush) {
+      this.brushBtn = this.createButton('brush', ICONS.brush, callbacks.onBrush)
+      this.brushBtn.setAttribute('aria-label', TOOLTIPS.brush)
+      this.setBrushActive(false)
+    }
 
     if (callbacks.onVoice && callbacks.onCopyVoice) {
       this.voiceBtn = this.createButton('voice', ICONS.voice, callbacks.onVoice)
@@ -165,10 +175,12 @@ export class Toolbar {
     const minimizeBtn = this.createButton('minimize', ICONS.minimize, () => this.toggleMinimize())
 
     this.buttons = [this.inspectBtn, this.spacingBtn, ...(this.submitBtn ? [this.submitBtn] : []), copyBtn, exportGroup, importBtn, clearBtn, themeBtn, helpBtn]
+    if (this.brushBtn) this.buttons.push(this.brushBtn)
 
     this.toolbarEl.appendChild(this.inspectBtn)
     this.toolbarEl.appendChild(this.reviewBtn)
     this.toolbarEl.appendChild(this.spacingBtn)
+    if (this.brushBtn) this.toolbarEl.append(this.brushBtn)
     if (this.voiceBtn) this.toolbarEl.append(this.voiceBtn)
     if (this.pausedVoiceEl) this.toolbarEl.appendChild(this.pausedVoiceEl)
     if (this.submitBtn) this.toolbarEl.appendChild(this.submitBtn)
@@ -193,6 +205,11 @@ export class Toolbar {
 
   setInspectActive(active: boolean): void {
     this.inspectBtn.classList.toggle('remarq-active', active)
+  }
+
+  setBrushActive(active: boolean): void {
+    this.brushBtn?.classList.toggle('remarq-active', active)
+    this.brushBtn?.setAttribute('aria-pressed', String(active))
   }
 
   setVoiceState(state: 'idle' | 'recording' | 'stopping' | 'paused', hasMessage: boolean, status = ''): void {

@@ -41,12 +41,13 @@ export interface ElementFingerprint {
   detectedSource: string | null   // from React fiber or external data-source
   detectedComponent: string | null // from fiber.type.name or displayName
 
-  voiceTargets?: VoiceTarget[]
+  voiceTargets?: AnnotationTarget[]
+  brushTargets?: AnnotationTarget[]
   voiceReview?: { claim: string; checked: number[] }
 }
 
-export interface VoiceTarget {
-  fingerprint: Omit<ElementFingerprint, 'voiceTargets' | 'voiceReview'>
+export interface AnnotationTarget {
+  fingerprint: Omit<ElementFingerprint, 'voiceTargets' | 'brushTargets' | 'voiceReview'>
   route: string
   viewport: string
 }
@@ -199,6 +200,12 @@ export interface AgentAnnotation {
   timestamp: number
   source: AgentAnnotationSource | null
   searchHints: AgentSearchHints
+  targets?: {
+    route: string
+    viewport: string
+    source: AgentAnnotationSource | null
+    searchHints: AgentSearchHints
+  }[]
   lifecycle: AgentLifecycleEvent[]
   qualityCheck?: QualityCheck
 }

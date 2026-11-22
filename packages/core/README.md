@@ -130,6 +130,10 @@ Get all annotations, or filter by route.
 
 Remove all annotations.
 
+## Comment on selected text
+
+Select text within a heading or paragraph and choose **Comment**. The annotation stores the selected quote and its surrounding text for the agent. Native copying works as usual.
+
 ## Underline buttons
 
 Select **Underline buttons** and drag across a button or just below it in either direction.

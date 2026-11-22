@@ -41,6 +41,8 @@ export interface ElementFingerprint {
   detectedSource: string | null   // from React fiber or external data-source
   detectedComponent: string | null // from fiber.type.name or displayName
 
+  selectedText?: string
+  selectionContext?: string
   voiceTargets?: AnnotationTarget[]
   brushTargets?: AnnotationTarget[]
   voiceReview?: { claim: string; checked: number[] }

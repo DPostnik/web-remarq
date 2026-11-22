@@ -245,6 +245,18 @@ const CSS = `
 .remarq-review-target, .remarq-review-note { color: var(--remarq-text-secondary); }
 .remarq-review a { display: inline-block; color: var(--remarq-accent); }
 .remarq-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.remarq-selection-comment {
+  position: fixed;
+  z-index: 2147483647;
+  padding: 5px 10px;
+  border: 1px solid var(--remarq-border);
+  border-radius: 6px;
+  color: var(--remarq-text);
+  background: var(--remarq-bg);
+  cursor: pointer;
+}
+.remarq-selection-comment[hidden] { display: none; }
+
 .remarq-underline {
   position: fixed;
   inset: 0;

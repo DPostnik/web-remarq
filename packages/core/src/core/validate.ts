@@ -110,6 +110,9 @@ function validateFingerprint(errors: Errors, value: unknown, path = 'fingerprint
   for (const key of ['dataAnnotate', 'dataTestId', 'id', 'textContent', 'role', 'ariaLabel', 'parentAnchor', 'sourceLocation', 'componentName', 'detectedSource', 'detectedComponent']) {
     checkString(errors, value, key, path, LIMITS.shortString, { nullable: true, optional: true })
   }
+  for (const key of ['selectedText', 'selectionContext']) {
+    checkString(errors, value, key, path, LIMITS.comment, { optional: true })
+  }
   checkString(errors, value, 'domPath', path, LIMITS.domPath)
   checkInteger(errors, value, 'siblingIndex', path, 0)
   checkStringArray(errors, value, 'stableClasses', path, LIMITS.classCount, LIMITS.className)

@@ -93,6 +93,10 @@ function buildSearchHints(fp: ElementFingerprint): AgentSearchHints {
   }
 }
 
+export function selectionDetails(fp: ElementFingerprint): string {
+  return fp.selectedText ? `Selected text: ${fp.selectedText}\nContext: ${fp.selectionContext ?? fp.textContent ?? ''}` : ''
+}
+
 export function generateAgentExport(annotations: Annotation[], viewportBucket: number): AgentExport {
   const agentAnnotations: AgentAnnotation[] = annotations.map(ann => {
     const marks = ann.fingerprint.brushTargets ?? ann.fingerprint.voiceTargets
@@ -107,7 +111,7 @@ export function generateAgentExport(annotations: Annotation[], viewportBucket: n
       route: ann.route,
       comment: ann.fingerprint.brushTargets && targets
         ? `${ann.comment}\n\nBrush targets\n\n${formatAgentTargets(targets)}`
-        : ann.comment,
+        : [ann.comment, selectionDetails(ann.fingerprint)].filter(Boolean).join('\n\n'),
       status: ann.status,
       timestamp: ann.timestamp,
       source: resolveSource(ann.fingerprint),

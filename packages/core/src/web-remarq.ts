@@ -9,13 +9,14 @@ import { WebSpeechAdapter, type SpeechAdapter, type SpeechSession } from './core
 import { checkedVoiceTargets, formatVoiceMessage, reviewClaim, reviewTargets, voiceTranscript, type ReviewTarget, type VoiceMark } from './core/voice-message'
 import { buildDomPath, createFingerprint, FINGERPRINT_TEXT_LIMIT, getTextContent } from './core/fingerprint'
 import { matchElement } from './core/matcher'
-import { formatAgentTargets, generateAgentExport, actionableOnly } from './core/agent-export'
+import { selectionDetails, formatAgentTargets, generateAgentExport, actionableOnly } from './core/agent-export'
 import { transition, type LifecycleAction } from './core/lifecycle'
 import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
 import { Toolbar } from './ui/toolbar'
 import { ReviewPanel, type ReviewItem } from './ui/review'
 import { Overlay } from './ui/overlay'
+import { TextSelection } from './ui/text-selection'
 import { Underline } from './ui/underline'
 import { SpacingOverlay } from './ui/spacing-overlay'
 import { Popup } from './ui/popup'
@@ -41,6 +42,7 @@ let activeReview: string | null = null
 const savingReview = new Map<string, Annotation>()
 const reviewMarkers = new Set<string>()
 let overlay: Overlay
+let textSelection: TextSelection
 let brush: Underline
 let brushing = false
 let popup: Popup
@@ -727,8 +729,9 @@ function handleBrushStroke(targets: HTMLElement[], point: { x: number; y: number
   showAnnotationPopup(targets, point.x, point.y + 8, point.y - 8, true)
 }
 
-function showAnnotationPopup(elements: HTMLElement[], x: number, y: number, anchorY: number, painted = false): void {
+function showAnnotationPopup(elements: HTMLElement[], x: number, y: number, anchorY: number, painted = false, quote?: string): void {
   const [element] = elements
+  const context = quote ? (element.innerText || element.textContent || quote).slice(0, LIMITS.comment) : undefined
   const anchor = painted ? createAnnotation(element) : undefined
   const brushTargets = anchor ? elements.map((target, index) => {
     const { fingerprint, route, viewport } = index === 0 ? anchor : createAnnotation(target)
@@ -737,7 +740,7 @@ function showAnnotationPopup(elements: HTMLElement[], x: number, y: number, anch
   popup.show(
     {
       tag: element.tagName.toLowerCase(),
-      text: painted && elements.length > 1 ? `${elements.length} elements` : describeTarget(element),
+      text: quote ?? (painted && elements.length > 1 ? `${elements.length} elements` : describeTarget(element)),
     },
     {
       top: window.scrollY + y,
@@ -748,6 +751,10 @@ function showAnnotationPopup(elements: HTMLElement[], x: number, y: number, anch
       const ann = anchor && brushTargets
         ? { ...anchor, comment, fingerprint: { ...anchor.fingerprint, brushTargets } }
         : createAnnotation(element, comment)
+      if (quote) {
+        ann.fingerprint.selectedText = quote
+        ann.fingerprint.selectionContext = context
+      }
       if (brushTargets && !validateAnnotation(ann).ok) {
         showToast(themeManager.container, 'Could not save underline feedback. Try a shorter stroke or comment.', 6000)
         return
@@ -1035,6 +1042,7 @@ function generateMarkdown(): string {
       lines.push(`- Classes: ${classes.join(' ')}`)
     }
 
+    if (fp.selectedText) lines.push('', selectionDetails(fp))
     if (fp.brushTargets) {
       const [agent] = generateAgentExport([ann], ann.viewportBucket).annotations
       if (agent.targets) lines.push('', formatAgentTargets(agent.targets))
@@ -1184,6 +1192,9 @@ export const WebRemarq = {
       brush = new Underline(themeManager.container, handleBrushStroke)
       spacingOverlay = new SpacingOverlay(themeManager.container)
       popup = new Popup(themeManager.container, options.simple)
+      textSelection = new TextSelection(themeManager.container,
+        () => !inspecting && !brushing && !recording && !activeReview && !themeManager.container.querySelector('.remarq-popup'),
+        (block, quote, rect) => showAnnotationPopup([block], rect.left, rect.bottom + 8, rect.top - 8, false, quote))
       markers = new MarkerManager(themeManager.container, handleMarkerClick, (id, top, left) =>
         qualityBubbles?.updatePosition(id, top, left),
       )
@@ -1319,6 +1330,7 @@ export const WebRemarq = {
       detachedPanel?.destroy()
       popup?.destroy()
       overlay?.destroy()
+      textSelection?.destroy()
       brush.destroy()
       spacingOverlay?.destroy()
       toolbar?.destroy()

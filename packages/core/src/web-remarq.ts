@@ -280,6 +280,13 @@ interface PendingReview {
   total: number
 }
 
+function correctionTarget({ target, index, total }: PendingReview): string {
+  const ref = total > 1 ? `Target [${index + 1}]` : 'Target'
+  const element = target.legacy?.path || target.fingerprint?.domPath || target.fingerprint?.tagName
+  const detail = [target.route.slice(0, 120), element?.slice(0, 240)].filter(Boolean).join(' · ')
+  return `${ref} (${detail}): `
+}
+
 function pendingReview(): PendingReview[] {
   return storage.getAll().flatMap((stored) => {
     const annotation = savingReview.get(stored.id) ?? stored
@@ -365,7 +372,7 @@ function refreshReview(): void {
   activeReview = active.id
   markers.setSelected(activeReview)
   const description = descriptions.find(({ id }) => id === activeReview)!
-  reviewPanel.update(descriptions, description, active.target.route === route, attached.get(active.id), savingReview.has(active.annotation.id))
+  reviewPanel.update(descriptions, description, active.target.route === route, attached.get(active.id), savingReview.has(active.annotation.id), LIMITS.reason - correctionTarget(active).length)
 }
 
 function openReview(id?: string): void {
@@ -409,6 +416,22 @@ function confirmReview(): void {
     changes.status = status
     changes.lifecycle = [...annotation.lifecycle, event]
   }
+  saveReview(item, changes)
+}
+
+function rejectReview(reason: string): void {
+  const item = pendingReview().find(({ id, target }) => id === activeReview && target.route === currentRoute())
+  if (!item || savingReview.has(item.annotation.id)) return
+  const { annotation } = item
+  const { status, event } = transition(annotation, 'reject', {
+    actor: 'designer',
+    reason: `${correctionTarget(item)}${reason}`.slice(0, LIMITS.reason),
+  })
+  saveReview(item, { status, lifecycle: [...annotation.lifecycle, event] })
+}
+
+function saveReview(item: PendingReview, changes: Partial<Annotation>): void {
+  const { annotation, index } = item
   const store = storage
   savingReview.set(annotation.id, annotation)
   refreshMarkers()
@@ -1264,9 +1287,10 @@ export const WebRemarq = {
       reviewPanel = new ReviewPanel({
         select: openReview,
         confirm: confirmReview,
+        reject: rejectReview,
         close: () => closeReview(true),
       }, toolbar.element)
-      toolbar.element.appendChild(reviewPanel.element)
+      themeManager.container.appendChild(reviewPanel.element)
 
       routeObserver = new RouteObserver()
       unsubRoute = routeObserver.onChange(() => {
@@ -1333,6 +1357,7 @@ export const WebRemarq = {
       textSelection?.destroy()
       brush.destroy()
       spacingOverlay?.destroy()
+      reviewPanel?.hide()
       toolbar?.destroy()
       themeManager?.destroy()
       removeStyles()

@@ -80,7 +80,7 @@ Opt-in (default `false`) zero-config mode for working only in the browser. Marks
 
 - A new mark stays on the page until the backend accepts it. With `HttpStorageAdapter` that means its write leaves the queue. Other adapters count it as delivered as soon as `save` resolves. Undelivered marks stay visible and can be edited or deleted.
 - The toolbar counts marks across all routes. `Waiting for agent: n` covers pending marks and queued saves. `In work: n` covers marks the agent acknowledged. The counter is hidden at zero.
-- Claimed fixes return as blue markers. Select `Review n` or a marker to open the review panel beside the toolbar. The count includes remaining targets across routes. If a target cannot be located, you can verify it manually on its route.
+- Claimed fixes return as blue markers. Select `Review n` or a marker to open the review panel beside the marked element. Use **Previous** and **Next** to move between remaining targets. The count includes remaining targets across routes. If a target cannot be located, you can verify it manually on its route. Choose **Return for correction**, describe what still needs to change, then select **Send correction**. The agent receives the selected target and your note.
 - One voice recording is delivered as one annotation. Select a fix in the list below the transcript to bring its target into view. Text edits show the original and current copy. The annotation stays `fixed_unverified` until you verify its last target. Earlier checks are saved so you can continue after a reload.
 
 Pairs with the local MCP server (`npx @web-remarq/mcp`, which pushes every `pending` mark into the open Claude Code session). With Vite, `remarq({ widget: true })` from `@web-remarq/unplugin` turns this on without any init code.

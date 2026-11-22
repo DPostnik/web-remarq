@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebRemarq } from './web-remarq'
+import { generateAgentExport } from './core/agent-export'
 import { checkedVoiceTargets } from './core/voice-message'
 import type { Annotation, AnnotationStore, StorageAdapter, StorageChangeEvent } from './core/types'
 
@@ -176,7 +177,7 @@ describe('simple mode', () => {
     await tick()
     expect(markerIds()).toEqual(['other', 'voice:1', 'voice:2'])
     document.querySelector<HTMLElement>('.remarq-marker[data-annotation-id="voice:1"]')!.click()
-    const review = document.querySelector('.remarq-toolbar > .remarq-review')!
+    const review = document.querySelector('[data-remarq-theme] > .remarq-review')!
     const [, markOne, markTwo] = review.querySelectorAll<HTMLButtonElement>('.remarq-review-mark')
     expect(review.querySelector('.remarq-review-comment')?.textContent).toBe('Fix this [1] and this [2].')
     expect(review.textContent).not.toMatch(/Voice feedback|app\.ts|Search:|Agent fix details/)
@@ -224,6 +225,51 @@ describe('simple mode', () => {
     await tick()
     expect(markerIds()).toEqual([])
     expect(statusText()?.textContent).toBe('Waiting for agent: 1')
+  })
+
+  it('sends a correction for the selected target and reviews the next claim from the start', async () => {
+    const mark = makeAnnotation('voice', 't1', 'fixed_unverified', 'Voice feedback\n\nAdjust [1] and [2].')
+    const second = makeAnnotation('second', 't2')
+    second.fingerprint.domPath = 'body > button#t2'
+    mark.fingerprint.voiceTargets = [mark, second].map(({ fingerprint, route, viewport }) => ({
+      fingerprint: { ...fingerprint, voiceTargets: undefined }, route, viewport,
+    }))
+    mark.lifecycle.push({ type: 'fix_claimed', actor: 'agent', timestamp: mark.timestamp + 1 })
+    const adapter = new ControlledAdapter([mark])
+    WebRemarq.init({ simple: true, storage: adapter })
+    await tick()
+    reviewButton().click()
+    verifyButton().click()
+    await tick()
+    expect(checkedVoiceTargets(adapter.saved[0])).toEqual([0])
+
+    const panel = document.querySelector('.remarq-review')!
+    const reject = [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Return for correction')!
+    reject.click()
+    const reason = panel.querySelector<HTMLTextAreaElement>('textarea')!
+    expect(document.activeElement).toBe(reason)
+    const send = panel.querySelector<HTMLButtonElement>('button[type="submit"]')!
+    reason.value = '  '
+    send.click()
+    expect(adapter.saved).toHaveLength(1)
+    reason.value = 'The second button still clips on mobile.'
+    send.click()
+    await tick()
+    const returned = adapter.saved[1]
+    expect(returned.status).toBe('pending')
+    expect(returned.comment).toBe(mark.comment)
+    expect(generateAgentExport([returned], 1000).annotations[0].comment).toContain('Correction requested: Target [2] (/ · body > button#t2): The second button still clips on mobile.')
+    expect(returned.lifecycle.slice(-1)[0]).toMatchObject({
+      type: 'rejected', actor: 'designer', reason: 'Target [2] (/ · body > button#t2): The second button still clips on mobile.',
+    })
+    expect(reviewButton().hidden).toBe(true)
+
+    adapter.emit({ type: 'update', annotation: {
+      ...returned, status: 'fixed_unverified', lifecycle: [...returned.lifecycle,
+        { type: 'fix_claimed', actor: 'agent', timestamp: returned.timestamp + 3 }],
+    } })
+    await raf()
+    expect(reviewButton().textContent).toBe('Review 2')
   })
 
   it('unsubscribes and removes its DOM on destroy', async () => {

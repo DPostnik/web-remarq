@@ -154,16 +154,14 @@ const CSS = `
 }
 
 .remarq-review {
-  position: absolute;
-  visibility: visible;
-  bottom: calc(100% + 8px);
-  right: -1px;
+  position: fixed;
+  z-index: 2147483647;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 8px;
   width: min(clamp(300px, 25vw, 440px), calc(100vw - 32px));
-  max-height: min(360px, 48vh, var(--remarq-review-room, 100vh));
+  max-height: min(360px, 60vh);
   overflow: auto;
   box-sizing: border-box;
   padding: 12px;
@@ -175,22 +173,6 @@ const CSS = `
   box-shadow: var(--remarq-shadow);
 }
 .remarq-review[hidden], .remarq-review [hidden] { display: none; }
-.remarq-pos-bottom-left > .remarq-review, .remarq-pos-top-left > .remarq-review { left: -1px; right: auto; }
-.remarq-pos-top-right > .remarq-review, .remarq-pos-top-left > .remarq-review {
-  top: calc(100% + 8px);
-  bottom: auto;
-}
-.remarq-toolbar > .remarq-review[data-remarq-clearance="above"] {
-  position: fixed;
-  top: 10vh;
-  right: 16px;
-  bottom: auto;
-}
-.remarq-pos-top-left > .remarq-review[data-remarq-clearance="above"],
-.remarq-pos-bottom-left > .remarq-review[data-remarq-clearance="above"] {
-  left: 16px;
-  right: auto;
-}
 .remarq-review button {
   margin: 0;
   min-height: 32px;
@@ -274,6 +256,22 @@ const CSS = `
   pointer-events: all;
   z-index: 2147483646;
 }
+.remarq-review-correction { margin-top: 10px; }
+.remarq-review-correction textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  background: var(--remarq-bg-secondary);
+  color: var(--remarq-text);
+  border: 1px solid var(--remarq-border);
+  border-radius: 6px;
+  font: inherit;
+  resize: vertical;
+}
+.remarq-review-correction button + button { margin-inline-start: 8px; }
+
 
 .remarq-overlay {
   position: fixed;

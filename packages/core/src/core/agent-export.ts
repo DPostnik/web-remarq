@@ -106,12 +106,16 @@ export function generateAgentExport(annotations: Annotation[], viewportBucket: n
       source: resolveSource(fingerprint),
       searchHints: buildSearchHints(fingerprint),
     })) : undefined
+    const cycle = [...ann.lifecycle].reverse().find(event =>
+      event.type === 'rejected' || event.type === 'reopened' || event.type === 'submitted')
+    const correction = cycle?.type === 'rejected' && cycle.reason ? `Correction requested: ${cycle.reason}` : ''
+    const context = ann.fingerprint.brushTargets && targets
+      ? `Brush targets\n\n${formatAgentTargets(targets)}`
+      : selectionDetails(ann.fingerprint)
     return {
       id: ann.id,
       route: ann.route,
-      comment: ann.fingerprint.brushTargets && targets
-        ? `${ann.comment}\n\nBrush targets\n\n${formatAgentTargets(targets)}`
-        : [ann.comment, selectionDetails(ann.fingerprint)].filter(Boolean).join('\n\n'),
+      comment: [ann.comment, context, correction].filter(Boolean).join('\n\n'),
       status: ann.status,
       timestamp: ann.timestamp,
       source: resolveSource(ann.fingerprint),

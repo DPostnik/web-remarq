@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReviewPanel, type ReviewItem } from './review'
 
-const callbacks = { select() {}, confirm() {}, close() {} }
+const callbacks = { select() {}, confirm() {}, reject() {}, close() {} }
 const item: ReviewItem = { id: '1', label: 'Target', route: '/', markerLabel: 'Target', comment: 'Transcript' }
 
 describe('ReviewPanel', () => {
@@ -13,56 +13,35 @@ describe('ReviewPanel', () => {
     Reflect.deleteProperty(document, 'scrollingElement')
   })
 
-  it('reveals a clipped nested target above the panel with reduced motion', () => {
+  it('anchors below the selected target and flips above it after scrolling', () => {
     const review = new ReviewPanel(callbacks)
-    const scroller = document.createElement('div')
     const target = document.createElement('div')
-    scroller.appendChild(target)
-    document.body.append(scroller, review.element)
-    scroller.style.overflowY = 'auto'
-    Object.defineProperties(scroller, { clientHeight: { value: 300 }, scrollHeight: { value: 800 } })
-    const root = document.documentElement
-    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: root })
-    vi.spyOn(root, 'clientHeight', 'get').mockReturnValue(800)
-    vi.spyOn(root, 'clientWidth', 'get').mockReturnValue(1000)
-    vi.spyOn(root, 'scrollHeight', 'get').mockReturnValue(2000)
-    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 600, 1000, 300))
-    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(new DOMRect(400, 1000, 100, 40))
-    vi.spyOn(review.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 500, 600, 220))
-    const scrollTo = vi.fn()
-    scroller.scrollTo = scrollTo
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
-    vi.stubGlobal('matchMedia', () => ({ matches: true }))
-
-    review.update([item], item, true, target, false)
+    document.body.append(target, review.element)
+    review.element.hidden = false
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(800)
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1000)
+    vi.spyOn(review.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 200))
+    const bounds = vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(new DOMRect(80, 50, 100, 40))
+    review.update([item], item, true, target, false, 1500)
     review.reveal()
+    expect(review.element.style.top).toBe('98px')
+    expect(review.element.style.left).toBe('80px')
 
-    expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ left: 0, top: 270, behavior: 'instant' })
-    expect(scrollBy).toHaveBeenCalledExactlyOnceWith({ left: 0, top: 496, behavior: 'instant' })
+    bounds.mockReturnValue(new DOMRect(900, 650, 100, 40))
+    window.dispatchEvent(new Event('scroll'))
+    expect(review.element.style.top).toBe('442px')
+    expect(review.element.style.left).toBe('692px')
+    review.hide()
   })
 
-  it('keeps a target at the scroll limit clear by moving the panel above it', () => {
-    const toolbar = document.createElement('div')
-    const review = new ReviewPanel(callbacks, toolbar)
-    const target = document.createElement('div')
-    document.body.append(target, review.element, toolbar)
-    const root = document.documentElement
-    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: root })
-    vi.spyOn(root, 'clientHeight', 'get').mockReturnValue(800)
-    vi.spyOn(root, 'clientWidth', 'get').mockReturnValue(1000)
-    vi.spyOn(root, 'scrollHeight', 'get').mockReturnValue(800)
-    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(new DOMRect(400, 640, 100, 40))
-    vi.spyOn(review.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 500, 600, 220))
-    vi.spyOn(toolbar, 'getBoundingClientRect').mockReturnValue(new DOMRect(400, 660, 400, 80))
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
-    review.update([item], item, true, target, false)
-
-    review.reveal()
-
-    expect(review.element.dataset.remarqClearance).toBe('above')
-    expect(toolbar.hasAttribute('data-remarq-review-obstructing')).toBe(true)
-    expect(scrollBy).not.toHaveBeenCalled()
-    review.hide()
-    expect(toolbar.hasAttribute('data-remarq-review-obstructing')).toBe(false)
+  it('navigates in both directions without confirming any target', () => {
+    const select = vi.fn()
+    const review = new ReviewPanel({ ...callbacks, select })
+    const items = [item, { ...item, id: '2' }, { ...item, id: '3' }]
+    review.update(items, item, true, undefined, false, 1500)
+    const buttons = [...review.element.querySelectorAll('button')]
+    buttons.find(b => b.textContent === 'Previous')!.click()
+    buttons.find(b => b.textContent === 'Next')!.click()
+    expect(select.mock.calls).toEqual([['3'], ['2']])
   })
 })

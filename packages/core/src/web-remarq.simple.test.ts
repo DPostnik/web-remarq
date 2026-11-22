@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebRemarq } from './web-remarq'
+import { checkedVoiceTargets } from './core/voice-message'
 import type { Annotation, AnnotationStore, StorageAdapter, StorageChangeEvent } from './core/types'
 
 function makeAnnotation(id: string, anchorId: string, status: Annotation['status'] = 'pending', comment = `Fix ${anchorId}`): Annotation {
@@ -43,6 +44,8 @@ const raf = () => new Promise((r) => requestAnimationFrame(() => r(undefined)))
 const markerIds = () => Array.from(document.querySelectorAll('.remarq-marker')).map((m) => m.getAttribute('data-annotation-id'))
 const statusText = () => (document.querySelector('.remarq-simple-status') as HTMLElement | null)
 const toastText = () => document.querySelector('.remarq-toast')?.textContent ?? null
+const reviewButton = () => document.querySelector<HTMLButtonElement>('[data-remarq-action="review"]')!
+const verifyButton = () => document.querySelector<HTMLButtonElement>('.remarq-review-actions button')!
 
 function addButton(id: string): HTMLElement {
   const el = document.createElement('button')
@@ -87,7 +90,7 @@ describe('simple mode', () => {
     release()
     await tick()
     expect(markerIds()).toHaveLength(0)
-    expect(statusText()?.textContent).toBe('In work: 1')
+    expect(statusText()?.textContent).toBe('Waiting for agent: 1')
   })
 
   it('keeps marks visible and shows "Waiting for agent" while the backend does not have them', async () => {
@@ -112,40 +115,41 @@ describe('simple mode', () => {
     adapter.emit({ type: 'update', annotation: WebRemarq.getAnnotations()[0] })
     await raf()
     expect(markerIds()).toEqual([])
-    expect(statusText()?.textContent).toBe('In work: 1')
+    expect(statusText()?.textContent).toBe('Waiting for agent: 1')
   })
 
-  it('counts pending and in_progress across routes, follows subscribe events and toasts on claim', async () => {
+  it('counts pending and in_progress separately across routes, follows subscribe events and toasts on claim', async () => {
     const other = { ...makeAnnotation('b', 't2'), route: '/elsewhere' }
     const adapter = new ControlledAdapter([makeAnnotation('a', 't1'), other, makeAnnotation('c', 't2', 'fixed_unverified')])
     WebRemarq.init({ simple: true, storage: adapter })
     await tick()
-    expect(statusText()?.textContent).toBe('In work: 2')
-    expect(markerIds()).toEqual([])
+    expect(statusText()?.textContent).toBe('Waiting for agent: 2')
+    expect(markerIds()).toEqual(['c'])
     expect(toastText()).toBeNull()
+    expect(reviewButton().textContent).toBe('Review 1')
 
     adapter.emit({ type: 'update', annotation: { ...makeAnnotation('a', 't1', 'in_progress') } })
     await raf()
-    expect(statusText()?.textContent).toBe('In work: 2')
+    expect(statusText()?.textContent).toBe('In work: 1 | Waiting for agent: 1')
 
     adapter.emit({ type: 'update', annotation: { ...makeAnnotation('a', 't1', 'fixed_unverified', 'a'.repeat(60)) } })
     await raf()
-    expect(statusText()?.textContent).toBe('In work: 1')
+    expect(statusText()?.textContent).toBe('Waiting for agent: 1')
     expect(toastText()).toBe(`Fixed: ${'a'.repeat(40)}`)
 
     adapter.emit({ type: 'update', annotation: { ...makeAnnotation('b', 't2', 'dismissed') } })
     await raf()
     expect(statusText()?.style.display).toBe('none')
-    expect(markerIds()).toEqual([])
+    expect(markerIds()).toEqual(['a', 'c'])
+    expect(reviewButton().textContent).toBe('Review 2')
   })
 
-  it('renders no verification badge, lifecycle actions or history', async () => {
+  it('keeps lifecycle actions and history out of the simple waiting-mark editor', async () => {
     const adapter = new ControlledAdapter([makeAnnotation('a', 't1', 'fixed_unverified')])
     adapter.undelivered.add('a')
     WebRemarq.init({ simple: true, storage: adapter })
     await tick()
-    expect(document.querySelector('.remarq-toolbar-badge--verification')).toBeNull()
-    ;(document.querySelector('.remarq-marker') as HTMLElement | null)?.click()
+    expect(reviewButton().textContent).toBe('Review 1')
     const pending = makeAnnotation('p', 't2')
     adapter.emit({ type: 'add', annotation: pending })
     adapter.undelivered.add('p')
@@ -156,6 +160,61 @@ describe('simple mode', () => {
     expect(document.querySelector('.remarq-popup-actions-row--transitions')?.children.length).toBe(0)
   })
 
+  it('persists partial voice review across widget reloads and verifies only after all targets are checked', async () => {
+    const payload = 'Voice feedback\n\nFix this [1] and this [2].\n\n' +
+      '[1] 1.0s · / · 1024x768\n  Element: <button> body > button\n  Search: t1\n' +
+      '[2] 2.0s · / · 1024x768\n  Source: app.ts:12:4\n  Element: <button> body > button\n  Search: t2'
+    const first = makeAnnotation('voice', 't1', 'fixed_unverified', payload)
+    const second = makeAnnotation('second', 't2')
+    first.fingerprint.voiceTargets = [first, second].map(({ fingerprint, route, viewport }) => ({
+      fingerprint: { ...fingerprint, voiceTargets: undefined }, route, viewport,
+    }))
+    first.lifecycle.push({ type: 'fix_claimed', actor: 'agent', timestamp: first.timestamp + 1, reason: 'Agent fix details' })
+    document.getElementById('t2')!.textContent = 'Save changes'
+    const initial = new ControlledAdapter([makeAnnotation('other', 't1', 'fixed_unverified'), first])
+    WebRemarq.init({ simple: true, storage: initial })
+    await tick()
+    expect(markerIds()).toEqual(['other', 'voice:1', 'voice:2'])
+    document.querySelector<HTMLElement>('.remarq-marker[data-annotation-id="voice:1"]')!.click()
+    const review = document.querySelector('.remarq-toolbar > .remarq-review')!
+    const [, markOne, markTwo] = review.querySelectorAll<HTMLButtonElement>('.remarq-review-mark')
+    expect(review.querySelector('.remarq-review-comment')?.textContent).toBe('Fix this [1] and this [2].')
+    expect(review.textContent).not.toMatch(/Voice feedback|app\.ts|Search:|Agent fix details/)
+    expect(review.querySelector('.remarq-review-comment button')).toBeNull()
+    expect(markTwo.textContent).toBe('[2] Click me → Save changes')
+    expect(markOne.getAttribute('aria-pressed')).toBe('true')
+    markTwo.focus()
+    markTwo.click()
+    expect(markTwo.getAttribute('aria-pressed')).toBe('true')
+    expect(markOne.getAttribute('aria-pressed')).toBe('false')
+    expect(document.activeElement).toBe(markTwo)
+    markOne.click()
+    verifyButton().click()
+    await tick()
+    const partial = initial.saved[0]
+    expect(partial.status).toBe('fixed_unverified')
+    expect(partial.lifecycle).toEqual(first.lifecycle)
+    expect(partial.comment).toBe(payload)
+    expect(checkedVoiceTargets(partial)).toEqual([0])
+    expect(reviewButton().textContent).toBe('Review 2')
+    expect(review.querySelector('.remarq-review-mark[aria-pressed="true"]')?.textContent).toBe('[2] Click me → Save changes')
+    WebRemarq.destroy()
+
+    document.getElementById('t2')?.remove()
+    const reloaded = new ControlledAdapter([partial])
+    WebRemarq.init({ simple: true, storage: reloaded })
+    await tick()
+    expect(markerIds()).toEqual([])
+    reviewButton().click()
+    expect(document.querySelector('.remarq-review-target')?.textContent).toContain('Target unavailable')
+    expect(verifyButton().textContent).toBe('Verify manually')
+    verifyButton().click()
+    await tick()
+    expect(reloaded.saved[0].status).toBe('verified')
+    expect(reloaded.saved[0].lifecycle.slice(-1)[0]).toMatchObject({ type: 'verified', actor: 'designer' })
+    expect(reviewButton().hidden).toBe(true)
+  })
+
   it('treats adapters without delivery info as delivered right after save', async () => {
     const adapter = new ControlledAdapter()
     ;(adapter as { isDelivered?: unknown }).isDelivered = undefined
@@ -164,7 +223,7 @@ describe('simple mode', () => {
     await createMark(document.getElementById('t1')!, 'plain')
     await tick()
     expect(markerIds()).toEqual([])
-    expect(statusText()?.textContent).toBe('In work: 1')
+    expect(statusText()?.textContent).toBe('Waiting for agent: 1')
   })
 
   it('unsubscribes and removes its DOM on destroy', async () => {

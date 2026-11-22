@@ -70,6 +70,7 @@ const CSS = `
 .remarq-toolbar.remarq-pos-bottom-left { bottom: 16px; left: 16px; flex-direction: row-reverse; }
 .remarq-toolbar.remarq-pos-top-right { top: 16px; right: 16px; }
 .remarq-toolbar.remarq-pos-top-left { top: 16px; left: 16px; flex-direction: row-reverse; }
+.remarq-toolbar[data-remarq-review-obstructing] { visibility: hidden; }
 
 .remarq-toolbar.remarq-minimized { padding: 8px; }
 
@@ -103,8 +104,28 @@ const CSS = `
   margin: 0;
 }
 
+.remarq-toolbar-btn[hidden], .remarq-voice-paused[hidden],
+.remarq-toolbar.remarq-minimized .remarq-toolbar-btn[data-remarq-action="voice"]:not(.remarq-active) { display: none; }
 .remarq-toolbar-btn:hover { background: var(--remarq-bg-secondary); }
 .remarq-toolbar-btn.remarq-active { background: var(--remarq-accent); color: #ffffff; }
+
+.remarq-voice-paused {
+  position: absolute;
+  inset-inline: 0;
+  bottom: calc(100% + 8px);
+  box-sizing: border-box;
+  min-width: min(240px, 90vw);
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--remarq-bg);
+  box-shadow: var(--remarq-shadow);
+}
+.remarq-pos-top-left .remarq-voice-paused,
+.remarq-pos-top-right .remarq-voice-paused { top: calc(100% + 8px); bottom: auto; }
+.remarq-pos-top-right .remarq-voice-paused,
+.remarq-pos-bottom-right .remarq-voice-paused { left: auto; }
+.remarq-voice-paused [role="status"] { display: block; }
+.remarq-voice-paused .remarq-toolbar-btn { display: inline-flex; width: auto; padding: 0 8px; }
 
 .remarq-badge {
   position: absolute;
@@ -125,26 +146,120 @@ const CSS = `
   box-sizing: border-box;
 }
 
-.remarq-toolbar-badge--verification {
-  top: auto;
-  bottom: -6px;
-  right: -6px;
-  background: var(--remarq-status-fixed-unverified);
-  cursor: pointer;
+.remarq-toolbar-btn[data-remarq-action="review"] {
+  width: auto;
+  padding: 0 8px;
+  color: var(--remarq-accent);
+  font-weight: 600;
 }
+
+.remarq-review {
+  position: absolute;
+  visibility: visible;
+  bottom: calc(100% + 8px);
+  right: -1px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: min(clamp(300px, 25vw, 440px), calc(100vw - 32px));
+  max-height: min(360px, 48vh, var(--remarq-review-room, 100vh));
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 12px;
+  font: clamp(14px, 1vw, 16px)/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--remarq-bg);
+  color: var(--remarq-text);
+  border: 1px solid var(--remarq-border);
+  border-radius: 8px;
+  box-shadow: var(--remarq-shadow);
+}
+.remarq-review[hidden], .remarq-review [hidden] { display: none; }
+.remarq-pos-bottom-left > .remarq-review, .remarq-pos-top-left > .remarq-review { left: -1px; right: auto; }
+.remarq-pos-top-right > .remarq-review, .remarq-pos-top-left > .remarq-review {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+.remarq-toolbar > .remarq-review[data-remarq-clearance="above"] {
+  position: fixed;
+  top: 10vh;
+  right: 16px;
+  bottom: auto;
+}
+.remarq-pos-top-left > .remarq-review[data-remarq-clearance="above"],
+.remarq-pos-bottom-left > .remarq-review[data-remarq-clearance="above"] {
+  left: 16px;
+  right: auto;
+}
+.remarq-review button {
+  margin: 0;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--remarq-bg-secondary);
+  color: var(--remarq-text);
+  border: 1px solid var(--remarq-border);
+  border-radius: 6px;
+  font: inherit;
+}
+.remarq-review button { cursor: pointer; }
+.remarq-review button:disabled { opacity: .55; cursor: default; }
+.remarq-review-actions button:first-child {
+  border-color: var(--remarq-status-fixed-unverified);
+  font-weight: 600;
+}
+.remarq-review-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--remarq-text-secondary) var(--remarq-bg-secondary);
+  padding: 8px 12px 8px 0;
+  border-block: 1px solid var(--remarq-border);
+  overflow-wrap: anywhere;
+}
+.remarq-review-body p { margin: 0; }
+.remarq-review-body p + p { margin-top: 10px; }
+.remarq-review-comment { white-space: pre-wrap; }
+.remarq-review-fixes {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.remarq-review-fixes li { margin: 0; padding: 0; }
+.remarq-review button.remarq-review-mark {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.remarq-review-mark:hover, .remarq-review-mark:focus-visible { border-color: var(--remarq-accent); }
+.remarq-review button.remarq-review-mark[aria-pressed="true"] {
+  background: var(--remarq-overlay);
+  border-color: var(--remarq-accent);
+}
+.remarq-review-target, .remarq-review-note { color: var(--remarq-text-secondary); }
+.remarq-review a { display: inline-block; color: var(--remarq-accent); }
+.remarq-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .remarq-overlay {
   position: fixed;
   pointer-events: none;
+  box-sizing: border-box;
   background: var(--remarq-overlay);
   border: 2px solid var(--remarq-accent);
   border-radius: 2px;
-  z-index: 2147483646;
-  transition: all 0.05s ease-out;
+  z-index: 2147483643;
+  transform-origin: 0 0;
 }
 
 .remarq-tooltip {
   position: fixed;
+  box-sizing: border-box;
   z-index: 2147483647;
   padding: 4px 8px;
   background: var(--remarq-bg);
@@ -156,13 +271,14 @@ const CSS = `
   box-shadow: var(--remarq-shadow);
   pointer-events: none;
   white-space: nowrap;
-  max-width: 300px;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 16px));
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .remarq-status-outline {
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   box-sizing: border-box;
   border-style: solid;
@@ -171,7 +287,7 @@ const CSS = `
 }
 
 .remarq-marker {
-  position: absolute;
+  position: fixed;
   z-index: 2147483645;
   width: 24px;
   height: 24px;
@@ -201,7 +317,7 @@ const CSS = `
 }
 
 .remarq-quality-bubble {
-  position: absolute;
+  position: fixed;
   transform: translateX(-100%);
   z-index: 2147483645;
   padding: 2px 8px;
@@ -410,6 +526,8 @@ const CSS = `
   text-align: left;
   white-space: nowrap;
 }
+
+.remarq-export-menu[hidden], .remarq-export-menu button[hidden] { display: none; }
 
 .remarq-export-menu button:hover { background: var(--remarq-bg-secondary); }
 

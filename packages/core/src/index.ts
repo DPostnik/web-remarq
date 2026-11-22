@@ -26,3 +26,5 @@ export type {
   StorageSyncState,
 } from './core/types'
 export { AnnotationNotFoundError, StorageConflictError } from './core/types'
+export { WebSpeechAdapter } from './core/speech'
+export type { SpeechAdapter, SpeechCallbacks, SpeechSession } from './core/speech'

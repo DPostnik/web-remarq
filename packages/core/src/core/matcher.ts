@@ -1,5 +1,6 @@
 import type { ElementFingerprint, WebRemarqOptions } from './types'
 import { filterClasses } from './hash-detect'
+import { buildDomPath } from './fingerprint'
 
 const MATCH_THRESHOLD = 50
 
@@ -111,24 +112,10 @@ function scoreCandidate(el: HTMLElement, fp: ElementFingerprint, dataAttr: strin
   return score
 }
 
-function buildDomPath(el: HTMLElement): string {
-  const parts: string[] = []
-  let current: HTMLElement | null = el
-  while (current && current !== document.body && parts.length < 5) {
-    let segment = current.tagName.toLowerCase()
-    const stable = filterClasses(Array.from(current.classList))
-    if (stable.length > 0) {
-      segment += '.' + stable.slice(0, 2).join('.')
-    }
-    parts.unshift(segment)
-    current = current.parentElement
-  }
-  return parts.join(' > ')
-}
-
 export function matchElement(
   fp: ElementFingerprint,
   options?: Pick<WebRemarqOptions, 'dataAttribute'>,
+  strict = false,
 ): HTMLElement | null {
   const dataAttr = options?.dataAttribute ?? 'data-annotate'
 
@@ -152,6 +139,9 @@ export function matchElement(
     if (el) return el
   }
 
+  // A review must not attach a missing stable target to a similar neighbour.
+  if (strict && (fp.dataAnnotate || fp.dataTestId || fp.id)) return null
+
   // The document root and body have structural identities independent of their content.
   const root = document.documentElement
   if (fp.tagName === 'html' && root instanceof HTMLHtmlElement &&
@@ -169,14 +159,31 @@ export function matchElement(
   const candidates = document.getElementsByTagName(fp.tagName) as HTMLCollectionOf<HTMLElement>
   let bestEl: HTMLElement | null = null
   let bestScore = 0
+  let tied = false
 
   for (const candidate of candidates) {
+    if (strict && candidate.closest('[data-remarq-theme]')) continue
     const score = scoreCandidate(candidate, fp, dataAttr)
     if (score > bestScore) {
       bestScore = score
       bestEl = candidate
+      tied = false
+    } else if (score === bestScore) {
+      tied = true
     }
   }
 
-  return bestScore >= MATCH_THRESHOLD ? bestEl : null
+  if (bestScore >= MATCH_THRESHOLD) return strict && tied ? null : bestEl
+
+  // A copy edit can remove the only text signal. For review, recover a
+  // unique structural path only if the target still occupies its saved slot.
+  if (!strict || !fp.domPath || fp.parentAnchor) return null
+  let structuralMatch: HTMLElement | null = null
+  for (const candidate of candidates) {
+    if (candidate.closest('[data-remarq-theme]') || buildDomPath(candidate) !== fp.domPath) continue
+    if (structuralMatch) return null
+    structuralMatch = candidate
+  }
+  return structuralMatch?.parentElement?.children[fp.siblingIndex] === structuralMatch
+    ? structuralMatch : null
 }

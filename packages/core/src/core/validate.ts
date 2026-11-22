@@ -28,6 +28,7 @@ export const LIMITS = {
   opId: 128,
   qualityList: 50,
   cssModules: 200,
+  voiceTargets: 100,
 } as const
 
 const STATUSES = new Set(['draft', 'pending', 'in_progress', 'fixed_unverified', 'verified', 'dismissed'])
@@ -100,8 +101,7 @@ function checkInteger(errors: Errors, obj: Record<string, unknown>, key: string,
   if (!Number.isInteger(v) || (v as number) < min) errors.add(`${path}.${key}`, `must be an integer >= ${min}`)
 }
 
-function validateFingerprint(errors: Errors, value: unknown): void {
-  const path = 'fingerprint'
+function validateFingerprint(errors: Errors, value: unknown, path = 'fingerprint'): void {
   if (!isObject(value)) {
     errors.add(path, 'required object')
     return
@@ -124,6 +124,44 @@ function validateFingerprint(errors: Errors, value: unknown): void {
           break
         }
       }
+    }
+  }
+}
+
+function validateVoiceReview(errors: Errors, value: unknown): void {
+  if (!isObject(value)) return
+  const { voiceTargets, voiceReview } = value
+  if (voiceTargets !== undefined) {
+    const path = 'fingerprint.voiceTargets'
+    if (!Array.isArray(voiceTargets) || !voiceTargets.length || voiceTargets.length > LIMITS.voiceTargets) {
+      errors.add(path, `must contain 1 to ${LIMITS.voiceTargets} targets`)
+    } else {
+      voiceTargets.forEach((target, index) => {
+        const item = `${path}[${index}]`
+        if (!isObject(target)) {
+          errors.add(item, 'must be an object')
+          return
+        }
+        checkString(errors, target, 'route', item, LIMITS.route)
+        if (typeof target.viewport !== 'string' || !/^\d{1,5}x\d{1,5}$/.test(target.viewport)) {
+          errors.add(`${item}.viewport`, 'must look like 1280x720')
+        }
+        validateFingerprint(errors, target.fingerprint, `${item}.fingerprint`)
+      })
+    }
+  }
+  if (voiceReview !== undefined) {
+    const path = 'fingerprint.voiceReview'
+    if (!isObject(voiceReview)) {
+      errors.add(path, 'must be an object')
+      return
+    }
+    checkString(errors, voiceReview, 'claim', path, LIMITS.shortString)
+    const { checked } = voiceReview
+    const count = Array.isArray(voiceTargets) ? voiceTargets.length : LIMITS.voiceTargets
+    if (!Array.isArray(checked) || checked.length > count || new Set(checked).size !== checked.length ||
+        !checked.every((index) => Number.isInteger(index) && index >= 0 && index < count)) {
+      errors.add(`${path}.checked`, 'must contain valid target indices')
     }
   }
 }
@@ -181,6 +219,7 @@ export function validateAnnotation(input: unknown): ValidationResult {
   checkInteger(errors, input, 'timestamp', 'annotation', 1)
   if (!STATUSES.has(input.status as string)) errors.add('status', 'unknown status')
   validateFingerprint(errors, input.fingerprint)
+  validateVoiceReview(errors, input.fingerprint)
   validateLifecycle(errors, input.lifecycle)
   if (input.qualityCheck !== undefined) validateQualityCheck(errors, input.qualityCheck)
   checkInteger(errors, input, 'rev', 'annotation', 0, true)

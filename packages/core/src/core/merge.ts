@@ -1,5 +1,6 @@
 import type { Annotation, AnnotationEvent, AnnotationStatus } from './types'
 import { replayEvent } from './lifecycle'
+import { reviewClaim } from './voice-message'
 
 export interface MergeResult {
   /** The copy to write back (server copy plus every local change that still applies). */
@@ -44,13 +45,18 @@ export function mergeAnnotation(base: Annotation | null, local: Annotation, serv
   const origin = base ?? server
   const dropped: string[] = []
   const merged: Annotation = { ...server }
+  const reviewChanged = !same(local.fingerprint.voiceReview, origin.fingerprint.voiceReview)
+  const reviewConflict = reviewChanged && (base === null ||
+    reviewClaim(local) !== reviewClaim(server) ||
+    (!local.fingerprint.voiceTargets && local.comment !== server.comment) ||
+    (!same(server.fingerprint, origin.fingerprint) && !same(server.fingerprint, local.fingerprint)))
 
   for (const field of MERGEABLE_FIELDS) {
     const localChanged = !same(local[field], origin[field])
     if (!localChanged) continue
     // No base: any difference counts as changed on both sides.
     const serverChanged = base === null || !same(server[field], origin[field])
-    if (serverChanged && !same(local[field], server[field])) {
+    if ((field === 'fingerprint' && reviewConflict) || (serverChanged && !same(local[field], server[field]))) {
       dropped.push(field)
       continue
     }
@@ -63,7 +69,10 @@ export function mergeAnnotation(base: Annotation | null, local: Annotation, serv
   for (const event of eventsAfter(origin.lifecycle, local.lifecycle)) {
     // Identical event already recorded server-side (e.g. our own retried write).
     if (serverExtra.some((e) => same(e, event))) continue
-    const next = replayEvent(status, event.type)
+    const next = event.type === 'verified' && (reviewConflict ||
+        (base?.status === 'fixed_unverified' && reviewClaim(local) !== reviewClaim(server)))
+      ? null
+      : replayEvent(status, event.type)
     if (next === null) {
       dropped.push(`lifecycle:${event.type}`)
       continue

@@ -73,7 +73,7 @@ module.exports = {
 plugins: [remarq({ widget: true })]
 ```
 
-Injects the widget into `index.html` in `vite dev`, in simple mode with `HttpStorageAdapter` (the plugin already serves the local MCP token), so no `WebRemarq.init` is needed. Marks go to the agent through the local MCP server (`npx @web-remarq/mcp`), disappear from the page once delivered, and the toolbar shows an "In work" counter. `web-remarq` must be installed in the project; if it cannot be resolved the plugin logs one warning and injects nothing. Pass an object to tune it: `widget: { simple: false, position: 'bottom-left', theme: 'dark' }`.
+Injects the widget into `index.html` in `vite dev`, in simple mode with `HttpStorageAdapter` (the plugin already serves the local MCP token), so no `WebRemarq.init` is needed. Marks go to the agent through the local MCP server (`npx @web-remarq/mcp`) and disappear from the page once the server saves them. The toolbar counts marks under "Waiting for agent" until the agent acknowledges them, then under "In work". `web-remarq` must be installed in the project; if it cannot be resolved the plugin logs one warning and injects nothing. Pass an object to tune it: `widget: { simple: false, position: 'bottom-left', theme: 'dark' }`.
 
 Never injected in production builds, and it does not apply to SSR frameworks (SPA `index.html` only, e.g. Vue and React Vite apps). Default is off, so an existing manual `init` keeps working.
 

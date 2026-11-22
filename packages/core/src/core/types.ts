@@ -1,3 +1,5 @@
+import type { SpeechAdapter } from './speech'
+
 export interface CSSModuleClass {
   raw: string        // "lucky-banners__luckyBanners__cEqts"
   moduleHint: string // "lucky-banners"
@@ -38,6 +40,15 @@ export interface ElementFingerprint {
   componentName: string | null    // "Form"
   detectedSource: string | null   // from React fiber or external data-source
   detectedComponent: string | null // from fiber.type.name or displayName
+
+  voiceTargets?: VoiceTarget[]
+  voiceReview?: { claim: string; checked: number[] }
+}
+
+export interface VoiceTarget {
+  fingerprint: Omit<ElementFingerprint, 'voiceTargets' | 'voiceReview'>
+  route: string
+  viewport: string
 }
 
 export type AnnotationStatus =
@@ -131,14 +142,15 @@ export interface WebRemarqOptions {
   position?: ToolbarPosition
   shortcuts?: boolean
   storage?: StorageAdapter
+  speech?: SpeechAdapter | false
   qualityGate?: QualityGateOptions
   submitFlow?: boolean
   /**
    * Simple mode (default false): the user only marks things in the browser.
    * New marks are created `pending` (`submitFlow` is ignored), a mark disappears
-   * from the page once the backend has it, and the toolbar shows only a counter
-   * of marks in work. No submit button, verification section, lifecycle actions
-   * or history viewer. Stored data and lifecycle history are untouched.
+   * from the page while the agent works on it. The toolbar shows working and
+   * review counts. Claimed fixes return as markers until a human verifies them.
+   * The toolbar has no submit button or history viewer.
    */
   simple?: boolean
 }

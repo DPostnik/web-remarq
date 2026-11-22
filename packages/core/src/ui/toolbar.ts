@@ -22,6 +22,10 @@ export interface ToolbarCallbacks {
   onHelp: () => void
   onVerificationBadgeClick?: () => void
   onSubmit?: () => void
+  onVoice?: () => void
+  onResumeVoice?: () => void
+  onCancelVoice?: () => void
+  onCopyVoice?: () => void
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '')
@@ -38,9 +42,13 @@ const TOOLTIPS: Record<string, string> = {
   help: 'Keyboard shortcuts (?)',
   minimize: 'Minimize',
   submit: 'Submit drafts to agent',
+  voice: 'Record voice feedback',
+  'copy-voice': 'Copy voice feedback',
 }
 
 const ICONS = {
+  voice: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="4" height="8" rx="2"/><path d="M4 8a4 4 0 0 0 8 0M8 12v2"/></svg>',
+  stop: '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>',
   inspect: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>',
   spacing: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h12M2 14h12M2 2v12M14 2v12"/><path d="M5 5h6v6H5z" stroke-dasharray="2 1"/></svg>',
   copy: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3a1 1 0 0 1 1-1h6"/></svg>',
@@ -56,12 +64,17 @@ const ICONS = {
 export class Toolbar {
   private toolbarEl: HTMLElement
   private badgeEl: HTMLElement
-  private verificationBadgeEl: HTMLElement
+  private reviewBtn: HTMLButtonElement
   private inspectBtn: HTMLElement
+  private voiceBtn?: HTMLButtonElement
+  private copyVoiceBtn?: HTMLButtonElement
+  private pausedVoiceEl?: HTMLElement
+  private voiceStatus?: HTMLElement
   private spacingBtn: HTMLButtonElement
   private submitBtn: HTMLButtonElement | null = null
   private submitBadgeEl: HTMLElement | null = null
-  private exportMenu: HTMLElement | null = null
+  private exportMenu = document.createElement('div')
+  private exportBtn: HTMLButtonElement
   private fileInput: HTMLInputElement
   private syncEl: HTMLElement | null = null
   private simpleEl: HTMLElement | null = null
@@ -70,7 +83,7 @@ export class Toolbar {
 
   constructor(
     private container: HTMLElement,
-    private callbacks: ToolbarCallbacks,
+    callbacks: ToolbarCallbacks,
     private position: ToolbarPosition = 'bottom-right',
     private simple = false,
   ) {
@@ -84,18 +97,34 @@ export class Toolbar {
     this.badgeEl.style.display = 'none'
     this.inspectBtn.appendChild(this.badgeEl)
 
-    this.verificationBadgeEl = document.createElement('span')
-    this.verificationBadgeEl.className = 'remarq-badge remarq-toolbar-badge--verification'
-    this.verificationBadgeEl.title = 'Pending your verification'
-    this.verificationBadgeEl.style.display = 'none'
-    this.verificationBadgeEl.addEventListener('click', (e) => {
-      e.stopPropagation()
-      callbacks.onVerificationBadgeClick?.()
-    })
-    if (!simple) this.inspectBtn.appendChild(this.verificationBadgeEl)
+    this.reviewBtn = this.createButton('review', '', () => callbacks.onVerificationBadgeClick?.())
+    this.reviewBtn.type = 'button'
+    this.reviewBtn.title = 'Review claimed fixes'
+    this.reviewBtn.hidden = true
+    this.reviewBtn.setAttribute('aria-expanded', 'false')
 
     this.spacingBtn = this.createButton('spacing', ICONS.spacing, () => callbacks.onSpacingToggle()) as HTMLButtonElement
     this.spacingBtn.disabled = true
+
+    if (callbacks.onVoice && callbacks.onCopyVoice) {
+      this.voiceBtn = this.createButton('voice', ICONS.voice, callbacks.onVoice)
+      this.copyVoiceBtn = this.exportOption(TOOLTIPS['copy-voice'], callbacks.onCopyVoice)
+      this.copyVoiceBtn.setAttribute('data-remarq-action', 'copy-voice')
+      this.voiceBtn.setAttribute('aria-label', TOOLTIPS.voice)
+      this.copyVoiceBtn.hidden = true
+      this.pausedVoiceEl = document.createElement('div')
+      this.pausedVoiceEl.className = 'remarq-voice-paused'
+      this.pausedVoiceEl.hidden = true
+      this.voiceStatus = document.createElement('span')
+      this.voiceStatus.setAttribute('role', 'status')
+      const resume = this.createButton('resume-voice', 'Resume', () => callbacks.onResumeVoice?.())
+      const finish = this.createButton('finish-voice', 'Finish', callbacks.onVoice)
+      const cancel = this.createButton('cancel-voice', 'Cancel', () => callbacks.onCancelVoice?.())
+      resume.title = 'Resume voice feedback'
+      finish.title = 'Finish and save captured voice feedback'
+      cancel.title = 'Cancel voice feedback'
+      this.pausedVoiceEl.append(this.voiceStatus, resume, finish, cancel)
+    }
 
     if (callbacks.onSubmit) {
       this.submitBtn = this.createButton('submit', ICONS.submit, () => callbacks.onSubmit!()) as HTMLButtonElement
@@ -108,7 +137,17 @@ export class Toolbar {
     }
 
     const copyBtn = this.createButton('copy', ICONS.copy, () => callbacks.onCopy())
-    const exportBtn = this.createButton('export', ICONS.export, (e) => this.toggleExportMenu(e))
+    this.exportBtn = this.createButton('export', ICONS.export, () => this.setExportOpen(this.exportMenu.hidden))
+    this.exportMenu.className = 'remarq-export-menu'
+    if (this.copyVoiceBtn) this.exportMenu.append(this.copyVoiceBtn)
+    this.exportMenu.append(
+      this.exportOption('MD (file)', callbacks.onExportMd),
+      this.exportOption('JSON (file)', callbacks.onExportJson),
+    )
+    const exportGroup = document.createElement('div')
+    exportGroup.style.position = 'relative'
+    exportGroup.append(this.exportBtn, this.exportMenu)
+    this.setExportOpen(false)
 
     this.fileInput = document.createElement('input')
     this.fileInput.type = 'file'
@@ -125,13 +164,16 @@ export class Toolbar {
     const helpBtn = this.createButton('help', ICONS.help, () => callbacks.onHelp())
     const minimizeBtn = this.createButton('minimize', ICONS.minimize, () => this.toggleMinimize())
 
-    this.buttons = [this.inspectBtn, this.spacingBtn, ...(this.submitBtn ? [this.submitBtn] : []), copyBtn, exportBtn, importBtn, clearBtn, themeBtn, helpBtn]
+    this.buttons = [this.inspectBtn, this.spacingBtn, ...(this.submitBtn ? [this.submitBtn] : []), copyBtn, exportGroup, importBtn, clearBtn, themeBtn, helpBtn]
 
     this.toolbarEl.appendChild(this.inspectBtn)
+    this.toolbarEl.appendChild(this.reviewBtn)
     this.toolbarEl.appendChild(this.spacingBtn)
+    if (this.voiceBtn) this.toolbarEl.append(this.voiceBtn)
+    if (this.pausedVoiceEl) this.toolbarEl.appendChild(this.pausedVoiceEl)
     if (this.submitBtn) this.toolbarEl.appendChild(this.submitBtn)
     this.toolbarEl.appendChild(copyBtn)
-    this.toolbarEl.appendChild(exportBtn)
+    this.toolbarEl.appendChild(exportGroup)
     this.toolbarEl.appendChild(importBtn)
     this.toolbarEl.appendChild(clearBtn)
     this.toolbarEl.appendChild(themeBtn)
@@ -153,6 +195,23 @@ export class Toolbar {
     this.inspectBtn.classList.toggle('remarq-active', active)
   }
 
+  setVoiceState(state: 'idle' | 'recording' | 'stopping' | 'paused', hasMessage: boolean, status = ''): void {
+    if (!this.voiceBtn || !this.copyVoiceBtn) return
+    const active = state !== 'idle'
+    this.voiceBtn.classList.toggle('remarq-active', active)
+    this.voiceBtn.disabled = state === 'stopping'
+    this.voiceBtn.innerHTML = active ? ICONS.stop : ICONS.voice
+    this.voiceBtn.title = state === 'recording' ? 'Stop recording and save voice feedback'
+      : state === 'paused' ? 'Finish and save captured voice feedback'
+      : state === 'stopping' ? 'Finishing voice recognition' : TOOLTIPS.voice
+    this.voiceBtn.setAttribute('aria-label', this.voiceBtn.title)
+    this.copyVoiceBtn.hidden = !hasMessage
+    if (this.pausedVoiceEl && this.voiceStatus) {
+      this.pausedVoiceEl.hidden = state !== 'paused'
+      this.voiceStatus.textContent = status
+    }
+  }
+
   setSpacingActive(active: boolean): void {
     this.spacingBtn.classList.toggle('remarq-active', active)
   }
@@ -170,8 +229,20 @@ export class Toolbar {
   }
 
   setVerificationBadgeCount(count: number): void {
-    this.verificationBadgeEl.textContent = String(count)
-    this.verificationBadgeEl.style.display = count > 0 ? 'flex' : 'none'
+    this.reviewBtn.textContent = `Review ${count}`
+    this.reviewBtn.hidden = count === 0
+  }
+
+  setReviewOpen(open: boolean): void {
+    this.reviewBtn.setAttribute('aria-expanded', String(open))
+  }
+
+  get element(): HTMLElement {
+    return this.toolbarEl
+  }
+
+  focusReview(): void {
+    ;(this.reviewBtn.hidden ? this.inspectBtn : this.reviewBtn).focus({ preventScroll: true })
   }
 
   setSubmitCount(count: number): void {
@@ -181,7 +252,7 @@ export class Toolbar {
     this.submitBadgeEl.style.display = count > 0 ? 'flex' : 'none'
   }
 
-  /** Simple mode: "In work: n" (backend has them) or "Waiting for agent: n" (backend not reached yet). Hidden at 0. */
+  /** Simple mode counts acknowledged work and marks waiting for the agent. Hidden at 0. */
   setSimpleStatus(inWork: number, waiting: number): void {
     const el = this.simpleEl
     if (!el) return
@@ -215,11 +286,10 @@ export class Toolbar {
   }
 
   destroy(): void {
-    this.closeExportMenu()
     this.toolbarEl.remove()
   }
 
-  private createButton(action: string, icon: string, handler: (e: Event) => void): HTMLElement {
+  private createButton(action: string, icon: string, handler: (e: Event) => void): HTMLButtonElement {
     const btn = document.createElement('button')
     btn.className = 'remarq-toolbar-btn'
     btn.setAttribute('data-remarq-action', action)
@@ -230,6 +300,7 @@ export class Toolbar {
   }
 
   private toggleMinimize(): void {
+    this.setExportOpen(false)
     this.minimized = !this.minimized
     this.toolbarEl.classList.toggle('remarq-minimized', this.minimized)
     for (const btn of this.buttons) {
@@ -237,41 +308,20 @@ export class Toolbar {
     }
   }
 
-  private toggleExportMenu(e: Event): void {
-    if (this.exportMenu) {
-      this.closeExportMenu()
-      return
-    }
-
-    this.exportMenu = document.createElement('div')
-    this.exportMenu.className = 'remarq-export-menu'
-
-    const mdBtn = document.createElement('button')
-    mdBtn.textContent = 'MD (file)'
-    mdBtn.addEventListener('click', () => {
-      this.callbacks.onExportMd()
-      this.closeExportMenu()
+  private exportOption(label: string, action: () => void): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = label
+    button.addEventListener('click', () => {
+      this.setExportOpen(false)
+      this.exportBtn.focus()
+      action()
     })
-
-    const jsonBtn = document.createElement('button')
-    jsonBtn.textContent = 'JSON (file)'
-    jsonBtn.addEventListener('click', () => {
-      this.callbacks.onExportJson()
-      this.closeExportMenu()
-    })
-
-    this.exportMenu.appendChild(mdBtn)
-    this.exportMenu.appendChild(jsonBtn)
-
-    const exportBtn = (e.currentTarget as HTMLElement)
-    exportBtn.style.position = 'relative'
-    exportBtn.appendChild(this.exportMenu)
+    return button
   }
 
-  private closeExportMenu(): void {
-    if (this.exportMenu) {
-      this.exportMenu.remove()
-      this.exportMenu = null
-    }
+  private setExportOpen(open: boolean): void {
+    this.exportMenu.hidden = !open
+    this.exportBtn.setAttribute('aria-expanded', String(open))
   }
 }

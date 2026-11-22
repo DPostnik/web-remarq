@@ -186,3 +186,15 @@ describe('WebRemarq.submitDrafts', () => {
     expect(d1.lifecycle[d1.lifecycle.length - 1]).toMatchObject({ type: 'submitted', actor: 'designer' })
   })
 })
+
+it('ignores initial load completion after the widget is destroyed', async () => {
+  let memoryChecks = 0
+  WebRemarq.init({ storage: {
+    ...fakeAdapter([]),
+    get isMemoryOnly() { memoryChecks++; return false },
+  } })
+  WebRemarq.destroy()
+  const checksAtDestroy = memoryChecks
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(memoryChecks).toBe(checksAtDestroy)
+})

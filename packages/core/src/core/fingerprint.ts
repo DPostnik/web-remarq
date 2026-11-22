@@ -2,7 +2,7 @@ import type { ElementFingerprint, WebRemarqOptions } from './types'
 import { filterClasses, isHashedClass, decomposeCSSModules } from './hash-detect'
 import { detectRemarqPlugin, detectSource } from './source-detect'
 
-const TEXT_MAX_LENGTH = 50
+export const FINGERPRINT_TEXT_LIMIT = 50
 
 export function createFingerprint(
   el: HTMLElement,
@@ -66,7 +66,7 @@ function getStableId(el: HTMLElement): string | null {
   return id
 }
 
-function getTextContent(el: HTMLElement): string | null {
+export function getTextContent(el: HTMLElement, maxLength = FINGERPRINT_TEXT_LIMIT): string | null {
   // Use only direct text nodes, not nested children's text
   let text = ''
   for (const node of Array.from(el.childNodes)) {
@@ -82,10 +82,10 @@ function getTextContent(el: HTMLElement): string | null {
   }
 
   if (!text) return null
-  return text.length > TEXT_MAX_LENGTH ? text.slice(0, TEXT_MAX_LENGTH) : text
+  return text.slice(0, maxLength)
 }
 
-function buildDomPath(el: HTMLElement): string {
+export function buildDomPath(el: HTMLElement): string {
   const parts: string[] = []
   let current: HTMLElement | null = el
 

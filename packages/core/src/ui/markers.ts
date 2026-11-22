@@ -45,13 +45,13 @@ export class MarkerManager {
     this.startPositionLoop()
   }
 
-  addMarker(annotation: Annotation, target: HTMLElement): void {
+  addMarker(annotation: Annotation, target: HTMLElement, label?: string): void {
     this.counter++
     const markerEl = document.createElement('div')
     markerEl.className = `remarq-marker ${statusClass(annotation.status)}`
     markerEl.setAttribute('data-status', annotation.status)
     markerEl.setAttribute('data-annotation-id', annotation.id)
-    markerEl.textContent = String(this.counter)
+    markerEl.textContent = label ?? String(this.counter)
     markerEl.title = annotation.comment
 
     markerEl.addEventListener('click', () => {
@@ -113,16 +113,6 @@ export class MarkerManager {
     if (id !== null) this.updatePosition(id)
   }
 
-  scrollToMarker(id: string): void {
-    const entry = this.markers.get(id)
-    if (!entry) return
-    try {
-      entry.target.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    } catch {
-      // ignore
-    }
-  }
-
   /**
    * Keeps `selectedId` — a refresh rebuilds every marker from scratch, and the
    * popup can still be open across it. addMarker re-applies the selected
@@ -157,6 +147,13 @@ export class MarkerManager {
     }
   }
 
+  hasTarget(target: Element): boolean {
+    for (const entry of this.markers.values()) {
+      if (entry.target === target) return true
+    }
+    return false
+  }
+
   private updatePosition(id: string): void {
     const entry = this.markers.get(id)
     if (!entry) return
@@ -165,7 +162,6 @@ export class MarkerManager {
       // Markers sharing a target fan out leftwards from the corner — stacked
       // in place they fully cover each other and only the top one is clickable.
       let left =
-        window.scrollX +
         rect.right -
         MARKER_OFFSET -
         entry.stackIndex * (MARKER_SIZE + MARKER_STACK_GAP)
@@ -176,12 +172,12 @@ export class MarkerManager {
       // pin every marker to the left edge.
       const viewportWidth = window.innerWidth
       if (viewportWidth > MARKER_SIZE) {
-        const minLeft = window.scrollX + MARKER_MARGIN
-        const maxLeft = window.scrollX + viewportWidth - MARKER_SIZE - MARKER_MARGIN
+        const minLeft = MARKER_MARGIN
+        const maxLeft = viewportWidth - MARKER_SIZE - MARKER_MARGIN
         left = Math.max(minLeft, Math.min(left, maxLeft))
       }
 
-      const top = window.scrollY + rect.top - MARKER_OFFSET
+      const top = rect.top - MARKER_OFFSET
       entry.markerEl.style.top = `${top}px`
       entry.markerEl.style.left = `${left}px`
       this.onMarkerPosition?.(id, top, left)
@@ -193,8 +189,8 @@ export class MarkerManager {
       const borderWidth = selected ? SELECTED_OUTLINE_WIDTH : OUTLINE_WIDTH
       const pad = borderWidth + (selected ? SELECTED_OUTLINE_GAP : OUTLINE_GAP)
       entry.outlineEl.style.borderWidth = `${borderWidth}px`
-      entry.outlineEl.style.top = `${window.scrollY + rect.top - pad}px`
-      entry.outlineEl.style.left = `${window.scrollX + rect.left - pad}px`
+      entry.outlineEl.style.top = `${rect.top - pad}px`
+      entry.outlineEl.style.left = `${rect.left - pad}px`
       entry.outlineEl.style.width = `${rect.right - rect.left + pad * 2}px`
       entry.outlineEl.style.height = `${rect.bottom - rect.top + pad * 2}px`
     } catch {

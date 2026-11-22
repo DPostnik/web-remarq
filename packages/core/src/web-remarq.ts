@@ -4,14 +4,17 @@ import { AnnotationStorage } from './core/storage'
 import { QualityRunner } from './core/quality-runner'
 import { LocalStorageAdapter } from './core/local-storage-adapter'
 import { HttpStorageAdapter } from './core/http-storage-adapter'
-import { validateStore } from './core/validate'
-import { createFingerprint } from './core/fingerprint'
+import { validateAnnotation, validateStore } from './core/validate'
+import { WebSpeechAdapter, type SpeechAdapter, type SpeechSession } from './core/speech'
+import { checkedVoiceTargets, formatVoiceMessage, reviewClaim, reviewTargets, voiceTranscript, type ReviewTarget, type VoiceMark } from './core/voice-message'
+import { buildDomPath, createFingerprint, FINGERPRINT_TEXT_LIMIT, getTextContent } from './core/fingerprint'
 import { matchElement } from './core/matcher'
 import { generateAgentExport, actionableOnly } from './core/agent-export'
 import { transition, type LifecycleAction } from './core/lifecycle'
 import { injectStyles, removeStyles } from './ui/styles'
 import { ThemeManager } from './ui/theme'
 import { Toolbar } from './ui/toolbar'
+import { ReviewPanel, type ReviewItem } from './ui/review'
 import { Overlay } from './ui/overlay'
 import { SpacingOverlay } from './ui/spacing-overlay'
 import { Popup } from './ui/popup'
@@ -32,6 +35,10 @@ let storageAdapter: StorageAdapter
 let lastSyncState: StorageStatus['state'] | null = null
 let themeManager: ThemeManager
 let toolbar: Toolbar
+let reviewPanel: ReviewPanel
+let activeReview: string | null = null
+const savingReview = new Map<string, Annotation>()
+const reviewMarkers = new Set<string>()
 let overlay: Overlay
 let popup: Popup
 let markers: MarkerManager
@@ -46,6 +53,22 @@ let mutationObserver: MutationObserver | null = null
 let unsubRoute: (() => void) | null = null
 let refreshScheduled = false
 let savedCursor = ''
+let speech: SpeechAdapter | undefined
+interface Recording {
+  session?: SpeechSession
+  timer?: ReturnType<typeof setTimeout>
+  attemptsWithoutSpeech: number
+  startedAt: number
+  transcript: string
+  stopping: boolean
+  anchor: Annotation
+  marks: VoiceMark[]
+  markers: MarkerManager
+}
+const SPEECH_RETRY_DELAYS = [250, 1000, 2000]
+const SPEECH_STOP_TIMEOUT = 3000
+let recording: Recording | undefined
+let voiceMessage = ''
 // Simple mode: ids whose first save has not resolved yet (kept visible), and the last seen status per id (to detect agent claims).
 const unconfirmed = new Set<string>()
 let statusSnapshot: Map<string, Annotation['status']> | null = null
@@ -183,15 +206,18 @@ function isSimpleVisible(ann: Annotation): boolean {
 
 function updateSimpleStatus(): void {
   const all = storage.getAll()
-  const inWork = all.filter((a) => IN_WORK(a) && !isWaiting(a)).length
-  const waiting = all.filter((a) => IN_WORK(a) && !unconfirmed.has(a.id) && !storage.isDelivered(a.id)).length
+  const inWork = all.filter((a) => a.status === 'in_progress' && !isWaiting(a)).length
+  const waiting = all.filter((a) => IN_WORK(a) && !unconfirmed.has(a.id) && (a.status === 'pending' || !storage.isDelivered(a.id))).length
   toolbar.setSimpleStatus(inWork, waiting)
 
   const previous = statusSnapshot
   statusSnapshot = new Map(all.map((a) => [a.id, a.status]))
   if (!previous) return
   const claimed = all.filter((a) => a.status === 'fixed_unverified' && (previous.get(a.id) === 'pending' || previous.get(a.id) === 'in_progress'))
-  if (claimed.length === 1) showToast(themeManager.container, `Fixed: ${claimed[0].comment.slice(0, 40)}`)
+  if (claimed.length === 1) {
+    const { comment } = claimed[0]
+    showToast(themeManager.container, `Fixed: ${(voiceTranscript(comment) ?? comment).slice(0, 40)}`)
+  }
   else if (claimed.length > 1) showToast(themeManager.container, `Fixed: ${claimed.length} marks`)
 }
 
@@ -201,7 +227,10 @@ function refreshMarkers(): void {
   const otherBreakpoint: Annotation[] = []
   const detached: Annotation[] = []
   const route = currentRoute()
-  const anns = options.simple ? storage.getByRoute(route).filter(isSimpleVisible) : storage.getByRoute(route)
+  const anns = storage.getByRoute(route).filter((ann) =>
+    ann.status !== 'fixed_unverified' ? !options.simple || isSimpleVisible(ann)
+      : !options.simple && reviewTargets(ann).length === 1,
+  )
   const bucket = toBucket(window.innerWidth)  // always read fresh
 
   for (const ann of anns) {
@@ -222,6 +251,7 @@ function refreshMarkers(): void {
   qualityBubbles?.syncVisible(new Set(attached.map(({ ann }) => ann.id)))
 
   detachedPanel.update(otherBreakpoint, detached)
+  refreshReview()
 
   if (options.simple) {
     updateSimpleStatus()
@@ -231,19 +261,169 @@ function refreshMarkers(): void {
   const needsAttention = anns.filter(
     (a) => a.status === 'pending' || a.status === 'in_progress',
   ).length
-  const needsVerification = anns.filter((a) => a.status === 'fixed_unverified').length
   toolbar.setBadgeCount(needsAttention)
-  toolbar.setVerificationBadgeCount(needsVerification)
   if (options.submitFlow) {
     toolbar.setSubmitCount(anns.filter((a) => a.status === 'draft').length)
   }
 }
 
-function jumpToFirstUnverified(): void {
-  if (!storage || !markers) return
-  const ann = storage.getByRoute(currentRoute()).find((a) => a.status === 'fixed_unverified')
-  if (!ann) return
-  markers.scrollToMarker(ann.id)
+interface PendingReview {
+  id: string
+  annotation: Annotation
+  target: ReviewTarget
+  index: number
+  total: number
+}
+
+function pendingReview(): PendingReview[] {
+  return storage.getAll().flatMap((stored) => {
+    const annotation = savingReview.get(stored.id) ?? stored
+    if (annotation.status !== 'fixed_unverified') return []
+    const targets = reviewTargets(annotation)
+    const checked = checkedVoiceTargets(annotation)
+    return targets.flatMap((target, index) => checked.includes(index) ? [] : [{
+      id: targets.length === 1 ? annotation.id : `${annotation.id}:${index + 1}`,
+      annotation, target, index, total: targets.length,
+    }])
+  })
+}
+
+function findReviewElement(item: PendingReview): HTMLElement | null {
+  const { id, target } = item
+  const saved = getCachedElement(id)
+  if (saved && !target.legacy) return saved
+  if (target.legacy) {
+    const { tag, path } = target.legacy
+    const candidates = Array.from(document.getElementsByTagName(tag)).filter((element) =>
+      !element.closest('[data-remarq-theme]') &&
+      buildDomPath(element as HTMLElement) === path,
+    )
+    return candidates.length === 1 ? candidates[0] as HTMLElement : null
+  }
+  if (!target.fingerprint) return null
+  return matchElement(target.fingerprint, options, true)
+}
+
+function refreshReview(): void {
+  const items = pendingReview()
+  const route = currentRoute()
+  const descriptions: ReviewItem[] = []
+  const attached = new Map<string, HTMLElement>()
+  reviewMarkers.clear()
+  for (const item of items) {
+    const { id, annotation, target, index, total } = item
+    const el = target.route === route ? findReviewElement(item) : null
+    const transcript = voiceTranscript(annotation.comment)
+    const voice = transcript !== undefined || annotation.fingerprint.voiceTargets?.length
+    const original = target.legacy?.path || target.fingerprint?.domPath || target.fingerprint?.tagName
+    if (el) attached.set(id, el)
+    if (el && (options.simple || total > 1)) {
+      reviewMarkers.add(id)
+      markers.addMarker({ ...annotation, id }, el, total > 1 ? String(index + 1) : undefined)
+    }
+    const fix = [...annotation.lifecycle].reverse().find((event) => event.type === 'fix_claimed')
+    let label = fix?.reason || annotation.comment
+    if (voice) {
+      const before = target.fingerprint?.textContent
+      const current = el && getTextContent(el, 241)
+      const after = current && (current.length > 240 ? current.slice(0, 240) + '…' : current)
+      const tag = el?.localName ?? target.fingerprint?.tagName ?? target.legacy?.tag
+      label = after || before || el?.getAttribute('aria-label') || tag || 'Marked element'
+      if (el && after && before && getTextContent(el) !== before) {
+        label = `${before}${before.length === FINGERPRINT_TEXT_LIMIT ? '…' : ''} → ${after}`
+      }
+      if (!el) label = `${label} · ${target.route === route ? 'Target unavailable' : target.route}`
+      label = `[${index + 1}] ${label}`
+    }
+    descriptions.push({
+      id,
+      label,
+      comment: transcript ?? annotation.comment,
+      route: target.route,
+      markerLabel: voice
+        ? !el && target.route === route ? 'Target unavailable' : ''
+        : el ? `Marked element · ${describeTarget(el) || el.tagName.toLowerCase()}`
+          : target.route !== route ? `Marked element · ${target.viewport}`
+            : `Target unavailable · ${target.viewport}. Original target: ${original}.`,
+      ...(voice ? { voice: { id: annotation.id } } : { fixNote: fix?.reason }),
+    })
+  }
+  toolbar.setVerificationBadgeCount(items.length)
+  if (activeReview === null) return
+  const active = items.find(({ id }) => id === activeReview) ??
+    items.find(({ target }) => target.route === route) ?? items[0]
+  if (!active) {
+    closeReview(true)
+    return
+  }
+  activeReview = active.id
+  markers.setSelected(activeReview)
+  const description = descriptions.find(({ id }) => id === activeReview)!
+  reviewPanel.update(descriptions, description, active.target.route === route, attached.get(active.id), savingReview.has(active.annotation.id))
+}
+
+function openReview(id?: string): void {
+  if (recording) return
+  const items = pendingReview()
+  const item = items.find((candidate) => candidate.id === id) ??
+    items.find(({ target }) => target.route === currentRoute()) ?? items[0]
+  if (!item) return
+  popup.hide()
+  qualityBubbles.suppress(null)
+  setInspecting(false)
+  activeReview = item.id
+  toolbar.setReviewOpen(true)
+  reviewPanel.element.hidden = false
+  refreshMarkers()
+  reviewPanel.reveal()
+  reviewPanel.focus()
+}
+
+function closeReview(focus = false): void {
+  if (activeReview === null) return
+  activeReview = null
+  markers.setSelected(null)
+  toolbar.setReviewOpen(false)
+  reviewPanel.hide()
+  if (focus) toolbar.focusReview()
+}
+
+function confirmReview(): void {
+  const item = pendingReview().find(({ id, target }) => id === activeReview && target.route === currentRoute())
+  if (!item || savingReview.has(item.annotation.id)) return
+  const { annotation, index, total } = item
+  const changes: Partial<Annotation> = {}
+  const checked = [...checkedVoiceTargets(annotation), index]
+  if (total > 1) {
+    changes.fingerprint = { ...annotation.fingerprint, voiceReview: { claim: reviewClaim(annotation), checked } }
+  }
+  if (checked.length === total) {
+    const { status, event } = transition(annotation, 'verify', { actor: 'designer' })
+    changes.status = status
+    changes.lifecycle = [...annotation.lifecycle, event]
+  }
+  const store = storage
+  savingReview.set(annotation.id, annotation)
+  refreshMarkers()
+  const saving = store.update(annotation.id, changes)
+  persist(saving, 'Saving review')
+  const settled = (): void => {
+    if (!initialized || storage !== store) return
+    savingReview.delete(annotation.id)
+    if (activeReview === item.id) {
+      const remaining = pendingReview()
+      const current = remaining.find(({ id }) => id === item.id)
+      const group = remaining.filter((entry) => entry.annotation.id === annotation.id)
+      const next = group.find((entry) => entry.index > index) ?? group[0] ??
+        remaining.find(({ target }) => target.route === currentRoute()) ?? remaining[0]
+      if (!current && next) {
+        openReview(next.id)
+        return
+      }
+    }
+    refreshMarkers()
+  }
+  saving.then(settled, settled)
 }
 
 function submitAllDrafts(): number {
@@ -268,22 +448,240 @@ function scheduleRefresh(): void {
   })
 }
 
+function createAnnotation(target: HTMLElement, comment = ''): Annotation {
+  const now = Date.now()
+  return {
+    id: generateId(),
+    comment,
+    fingerprint: createFingerprint(target, {
+      classFilter: options.classFilter,
+      dataAttribute: options.dataAttribute,
+    }),
+    route: currentRoute(),
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    viewportBucket: toBucket(window.innerWidth),
+    timestamp: now,
+    status: options.submitFlow && !options.simple ? 'draft' : 'pending',
+    lifecycle: [{ type: 'created', actor: 'designer', timestamp: now }],
+  }
+}
+
+function saveAnnotation(annotation: Annotation): void {
+  const saving = storage.add(annotation)
+  persist(saving, 'Saving annotation')
+  if (options.simple) {
+    unconfirmed.add(annotation.id)
+    const settled = (): void => {
+      unconfirmed.delete(annotation.id)
+      if (initialized) refreshMarkers()
+    }
+    saving.then(settled, settled)
+  }
+  refreshMarkers()
+}
+
+function closeRecording(): void {
+  const voice = recording
+  if (!voice) return
+  recording = undefined
+  clearTimeout(voice.timer)
+  voice.markers.destroy()
+  for (const { annotation } of voice.marks) elementCache.delete(annotation.id)
+  setInspecting(false)
+  toolbar.setVoiceState('idle', !!voiceMessage)
+}
+
+function cancelRecording(): void {
+  const session = recording?.session
+  closeRecording()
+  abortSpeech(session)
+}
+
+function abortSpeech(session?: SpeechSession): void {
+  try {
+    session?.abort()
+  } catch (error) {
+    console.warn('[web-remarq] Could not abort speech recognition:', error)
+  }
+}
+
+function toggleRecording(): void {
+  if (!speech) return
+  if (recording) {
+    const voice = recording
+    if (voice.stopping) return
+    voice.stopping = true
+    clearTimeout(voice.timer)
+    setInspecting(false)
+    toolbar.setVoiceState('stopping', !!voiceMessage)
+    if (!voice.session) {
+      finishRecording()
+      return
+    }
+    voice.timer = setTimeout(() => {
+      if (recording !== voice) return
+      const session = voice.session
+      finishRecording()
+      abortSpeech(session)
+    }, SPEECH_STOP_TIMEOUT)
+    try {
+      voice.session.stop()
+    } catch {
+      const session = voice.session
+      finishRecording()
+      abortSpeech(session)
+    }
+    return
+  }
+
+  setInspecting(false)
+  closeReview()
+  popup.hide()
+  markers.setSelected(null)
+  qualityBubbles.suppress(null)
+  const voice: Recording = {
+    attemptsWithoutSpeech: 0,
+    startedAt: performance.now(),
+    transcript: '',
+    stopping: false,
+    anchor: createAnnotation(document.body),
+    marks: [],
+    markers: new MarkerManager(themeManager.container),
+  }
+  recording = voice
+  toolbar.setVoiceState('recording', !!voiceMessage)
+  setInspecting(true)
+  startSpeech(voice)
+}
+
+function resumeRecording(): void {
+  const voice = recording
+  if (!voice || voice.session || voice.stopping) return
+  voice.attemptsWithoutSpeech = 0
+  toolbar.setVoiceState('recording', !!voiceMessage)
+  startSpeech(voice)
+}
+
+function startSpeech(voice: Recording): void {
+  if (recording !== voice || !speech) return
+  const prefix = voice.transcript
+  let ended = false
+  const onEnd = (error?: string): void => {
+    if (ended || recording !== voice) return
+    ended = true
+    voice.session = undefined
+    if (voice.stopping) {
+      finishRecording()
+      return
+    }
+    const transient = !error || error === 'no-speech' || error === 'network' || error === 'aborted'
+    const delay = SPEECH_RETRY_DELAYS[voice.attemptsWithoutSpeech++]
+    if (transient && delay !== undefined) {
+      voice.timer = setTimeout(() => startSpeech(voice), delay)
+      return
+    }
+    toolbar.setVoiceState('paused', !!voiceMessage, speechFailureMessage(error))
+  }
+  try {
+    const session = speech.start({
+      onTranscript: (transcript) => {
+        if (ended || recording !== voice || !transcript.trim()) return
+        const combined = [prefix, transcript.trim()].filter(Boolean).join(' ')
+        if (combined !== voice.transcript) voice.attemptsWithoutSpeech = 0
+        voice.transcript = combined
+      },
+      onEnd,
+    })
+    if (!ended && recording === voice) voice.session = session
+  } catch (error) {
+    onEnd(error instanceof Error ? error.name : 'start-failed')
+  }
+}
+
+function speechFailureMessage(error = 'ended'): string {
+  switch (error) {
+    case 'not-allowed':
+    case 'service-not-allowed':
+    case 'NotAllowedError':
+      return `Speech paused (${error}). Allow microphone and speech recognition in your browser, then resume.`
+    case 'audio-capture':
+      return 'Speech paused (audio-capture). Connect or select a microphone, then resume.'
+    case 'network':
+      return 'Speech paused (network). Check your connection, then resume.'
+    case 'language-not-supported':
+      return 'Speech paused (language-not-supported). Check your browser’s speech languages.'
+    default:
+      return `Speech paused (${error}). Resume, finish, or cancel your feedback.`
+  }
+}
+
+function finishRecording(): void {
+  const voice = recording
+  if (!voice) return
+  const transcript = voice.transcript.trim()
+  if (transcript || voice.marks.length) voiceMessage = formatVoiceMessage(transcript, voice.marks)
+  const anchor = voice.marks[0]?.annotation ?? voice.anchor
+  const target = getCachedElement(anchor.id)
+  const elements = voice.marks.map(({ annotation }) => getCachedElement(annotation.id))
+  closeRecording()
+
+  if (!transcript && !voice.marks.length) {
+    showToast(themeManager.container, 'No speech or elements were captured', 6000)
+    return
+  }
+
+  // One regular annotation gives the existing outbox and both agent
+  // transports one receipt for the complete recording.
+  const fingerprint = {
+    ...anchor.fingerprint,
+    ...(voice.marks.length > 0 ? {
+      voiceTargets: voice.marks.map(({ annotation: { fingerprint, route, viewport } }) => ({ fingerprint, route, viewport })),
+    } : {}),
+  }
+  const annotation = { ...anchor, fingerprint, comment: voiceMessage }
+  if (!validateAnnotation(annotation).ok) {
+    showToast(themeManager.container, 'Could not save voice feedback. Copy it from Export.', 6000)
+    return
+  }
+  if (target) cacheElement(annotation.id, target)
+  if (elements.length > 1) {
+    elements.forEach((element, index) => {
+      if (element) cacheElement(`${annotation.id}:${index + 1}`, element)
+    })
+  }
+  saveAnnotation(annotation)
+  showToast(themeManager.container, 'Voice feedback added.')
+}
+
 function handleInspectClick(e: MouseEvent): void {
   if (!inspecting) return
 
-  const target = e.target as HTMLElement
-  if (!target || target.closest('[data-remarq-theme]')) return
+  const target = e.target
+  if (!(target instanceof Element) || target.closest('[data-remarq-theme]')) return
+  const element = target as HTMLElement
 
   e.preventDefault()
   e.stopPropagation()
 
+  if (recording && !recording.stopping) {
+    const annotation = createAnnotation(element, `Voice marker ${recording.marks.length + 1}`)
+    recording.marks.push({
+      annotation,
+      elapsedMs: performance.now() - recording.startedAt,
+      transcript: recording.transcript,
+    })
+    cacheElement(annotation.id, element)
+    recording.markers.addMarker(annotation, element)
+    return
+  }
+
   setInspecting(false)
 
-  const rect = target.getBoundingClientRect()
+  const rect = element.getBoundingClientRect()
   popup.show(
     {
-      tag: target.tagName.toLowerCase(),
-      text: describeTarget(target),
+      tag: element.tagName.toLowerCase(),
+      text: describeTarget(element),
     },
     {
       top: window.scrollY + rect.bottom + 8,
@@ -291,35 +689,9 @@ function handleInspectClick(e: MouseEvent): void {
       anchorBottom: window.scrollY + rect.top - 8,
     },
     (comment) => {
-      const fp = createFingerprint(target, {
-        classFilter: options.classFilter,
-        dataAttribute: options.dataAttribute,
-      })
-      const now = Date.now()
-      const ann: Annotation = {
-        id: generateId(),
-        comment,
-        fingerprint: fp,
-        route: currentRoute(),
-        viewport: `${window.innerWidth}x${window.innerHeight}`,
-        viewportBucket: toBucket(window.innerWidth),
-        timestamp: now,
-        status: options.submitFlow && !options.simple ? 'draft' : 'pending',
-        lifecycle: [{ type: 'created', actor: 'designer', timestamp: now }],
-      }
-      // Cache the element immediately — no need to re-match
-      cacheElement(ann.id, target)
-      const saving = storage.add(ann)
-      persist(saving, 'Saving annotation')
-      if (options.simple) {
-        unconfirmed.add(ann.id)
-        const settled = (): void => {
-          unconfirmed.delete(ann.id)
-          if (initialized) refreshMarkers()
-        }
-        saving.then(settled, settled)
-      }
-      refreshMarkers()
+      const ann = createAnnotation(element, comment)
+      cacheElement(ann.id, element)
+      saveAnnotation(ann)
       showToast(themeManager.container, 'Annotation added')
       qualityRunner.run(ann.id, qualityInput(ann))
     },
@@ -331,21 +703,33 @@ function handleInspectClick(e: MouseEvent): void {
 
 function handleInspectHover(e: MouseEvent): void {
   if (!inspecting) return
-  const target = e.target as HTMLElement
-  if (!target || target.closest('[data-remarq-theme]')) return
+  const target = e.target
+  if (!(target instanceof Element) || target.closest('[data-remarq-theme]')) {
+    overlay.hide()
+    spacingOverlay.hide()
+    return
+  }
 
-  if (spacingMode) {
-    overlay.show(target)
-    overlay.hideHighlight()
+  const marked = markers.hasTarget(target) || recording?.markers.hasTarget(target) === true
+  overlay.show(target, !spacingMode && !marked, marked)
+  if (spacingMode && target instanceof HTMLElement) {
     spacingOverlay.show(target)
   } else {
-    overlay.show(target)
+    spacingOverlay.hide()
   }
-  overlay.updateTooltipPosition(e.clientX, e.clientY)
 }
 
 function handleInspectKeydown(e: KeyboardEvent): void {
   if (options.shortcuts === false) return
+  if (e.key === 'Escape' && recording) {
+    cancelRecording()
+    return
+  }
+  if (e.key === 'Escape' && activeReview !== null) {
+    closeReview(true)
+    return
+  }
+
   // Ignore when typing in inputs
   const tag = (e.target as HTMLElement)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
@@ -362,7 +746,7 @@ function handleInspectKeydown(e: KeyboardEvent): void {
     if (!spacingMode) spacingOverlay.hide()
   }
 
-  if (e.altKey && e.code === 'KeyI') {
+  if (e.altKey && e.code === 'KeyI' && !recording) {
     e.preventDefault()
     setInspecting(!inspecting)
     if (!inspecting) {
@@ -393,6 +777,7 @@ function handleInspectKeydown(e: KeyboardEvent): void {
 
 function setInspecting(value: boolean): void {
   if (value && !inspecting) {
+    closeReview()
     savedCursor = document.body.style.cursor
     document.body.style.cursor = 'crosshair'
   }
@@ -411,6 +796,12 @@ function setInspecting(value: boolean): void {
 }
 
 function handleMarkerClick(annotationId: string): void {
+  if (recording) return
+  if (reviewMarkers.has(annotationId)) {
+    openReview(annotationId)
+    return
+  }
+  closeReview()
   if (popup.isOpenFor(annotationId)) {
     popup.hide()
     // This toggle path calls hide() directly, bypassing onClose — drop the
@@ -610,14 +1001,18 @@ function copyToClipboard(): void {
     showToast(themeManager.container, 'No annotations to copy')
     return
   }
+  copyText(md)
+}
+
+function copyText(text: string): void {
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(md).then(() => {
+    navigator.clipboard.writeText(text).then(() => {
       showToast(themeManager.container, 'Copied to clipboard')
     }).catch(() => {
-      fallbackCopy(md)
+      fallbackCopy(text)
     })
   } else {
-    fallbackCopy(md)
+    fallbackCopy(text)
   }
 }
 
@@ -629,8 +1024,8 @@ function fallbackCopy(text: string): void {
   document.body.appendChild(textarea)
   textarea.select()
   try {
-    document.execCommand('copy')
-    showToast(themeManager.container, 'Copied to clipboard')
+    const copied = document.execCommand('copy')
+    showToast(themeManager.container, copied ? 'Copied to clipboard' : 'Failed to copy')
   } catch {
     showToast(themeManager.container, 'Failed to copy')
   }
@@ -665,6 +1060,10 @@ function applyTransition(id: string, action: LifecycleAction, opts: TransitionOp
   if (!storage) return
   const ann = storage.getById(id)
   if (!ann) return
+  if (action === 'verify' && reviewTargets(ann).length > 1) {
+    showToast(themeManager.container, 'Review each voice mark to verify this feedback.')
+    return
+  }
   const { status, event } = transition(ann, action, opts)
   const lifecycle = [...ann.lifecycle, event]
   persist(storage.update(id, { status, lifecycle }), `Recording "${action}"`)
@@ -729,8 +1128,17 @@ export const WebRemarq = {
         refreshMarkers()
       }, position)
 
+      speech = options.speech === false ? undefined : options.speech ?? new WebSpeechAdapter()
       toolbar = new Toolbar(themeManager.container, {
-        onInspect: () => setInspecting(!inspecting),
+        onInspect: () => {
+          if (!recording) setInspecting(!inspecting)
+        },
+        ...(speech?.isSupported() ? {
+          onVoice: toggleRecording,
+          onResumeVoice: resumeRecording,
+          onCancelVoice: cancelRecording,
+          onCopyVoice: () => { if (voiceMessage) copyText(voiceMessage) },
+        } : {}),
         onSpacingToggle: () => {
           if (!inspecting) return
           spacingMode = !spacingMode
@@ -756,9 +1164,18 @@ export const WebRemarq = {
         },
         onThemeToggle: () => themeManager.toggle(),
         onHelp: () => showShortcutsModal(themeManager.container),
-        onVerificationBadgeClick: jumpToFirstUnverified,
+        onVerificationBadgeClick: () => {
+          if (activeReview === null) openReview()
+          else closeReview(true)
+        },
         ...(options.submitFlow && !options.simple ? { onSubmit: () => submitAllDrafts() } : {}),
       }, position, options.simple)
+      reviewPanel = new ReviewPanel({
+        select: openReview,
+        confirm: confirmReview,
+        close: () => closeReview(true),
+      }, toolbar.element)
+      toolbar.element.appendChild(reviewPanel.element)
 
       routeObserver = new RouteObserver()
       unsubRoute = routeObserver.onChange(() => refreshMarkers())
@@ -772,13 +1189,16 @@ export const WebRemarq = {
 
       storage.onStatus(handleSyncStatus)
 
-      storage.ready.then(() => {
-        if (storage.isMemoryOnly) {
+      const initialStorage = storage
+      initialStorage.ready.then(() => {
+        if (!initialized || storage !== initialStorage) return
+        if (initialStorage.isMemoryOnly) {
           toolbar.setMemoryWarning(true)
           showToast(themeManager.container, 'Warning: localStorage unavailable - annotations live in memory only and are lost on reload', 6000)
         }
         refreshMarkers()
       }).catch((err: unknown) => {
+        if (!initialized || storage !== initialStorage) return
         console.error('[web-remarq] Initial load failed:', err)
         showToast(themeManager.container, `Could not load annotations: ${err instanceof Error ? err.message : String(err)}`, 6000)
       })
@@ -798,6 +1218,9 @@ export const WebRemarq = {
       document.removeEventListener('keydown', handleInspectKeydown)
       mutationObserver?.disconnect()
       mutationObserver = null
+      cancelRecording()
+      speech = undefined
+      voiceMessage = ''
       if (inspecting) {
         document.body.style.cursor = savedCursor
       }
@@ -822,6 +1245,9 @@ export const WebRemarq = {
       spacingMode = false
       lastSyncState = null
       unconfirmed.clear()
+      activeReview = null
+      savingReview.clear()
+      reviewMarkers.clear()
       statusSnapshot = null
       initialized = false
     } catch (err) {

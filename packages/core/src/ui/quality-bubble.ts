@@ -58,7 +58,7 @@ export class QualityBubbleManager {
     }
   }
 
-  /** Fed by the markers' rAF loop with the marker's page coordinates. */
+  /** Fed by the markers' rAF loop with the marker's viewport coordinates. */
   updatePosition(id: string, markerTop: number, markerLeft: number): void {
     const entry = this.bubbles.get(id)
     if (!entry) return

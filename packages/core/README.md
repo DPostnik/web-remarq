@@ -78,11 +78,10 @@ Pairs naturally with `HttpStorageAdapter` and `npx @web-remarq/mcp` in local mod
 
 Opt-in (default `false`) zero-config mode for working only in the browser. Marks are created `pending` directly (`submitFlow` is ignored) and go to the agent on their own; the toolbar has no Submit button.
 
-- A mark stays on the page only until the backend has it. With `HttpStorageAdapter` that means the write was accepted by the local server (it is no longer queued or parked); other adapters count as delivered as soon as `save` resolves. Marks waiting for an unreachable or unpaired server stay visible, and can still be edited or deleted.
-- Marks with status `fixed_unverified`, `verified` or `dismissed` show no marker.
-- The toolbar shows a counter: `In work: n` (pending or in-progress marks the backend has, all routes) and `Waiting for agent: n` while marks are undelivered. Hidden at 0.
-- When the agent claims a fix, a short toast shows `Fixed: <comment>`.
-- The verification badge, lifecycle action buttons and history viewer are not rendered. Stored data and lifecycle history are unchanged: this is a UI mode only.
+- A new mark stays on the page until the backend accepts it. With `HttpStorageAdapter` that means its write leaves the queue. Other adapters count it as delivered as soon as `save` resolves. Undelivered marks stay visible and can be edited or deleted.
+- The toolbar counts marks across all routes. `Waiting for agent: n` covers pending marks and queued saves. `In work: n` covers marks the agent acknowledged. The counter is hidden at zero.
+- Claimed fixes return as blue markers. Select `Review n` or a marker to open the review panel beside the toolbar. The count includes remaining targets across routes. If a target cannot be located, you can verify it manually on its route.
+- One voice recording is delivered as one annotation. Select a fix in the list below the transcript to bring its target into view. Text edits show the original and current copy. The annotation stays `fixed_unverified` until you verify its last target. Earlier checks are saved so you can continue after a reload.
 
 Pairs with the local MCP server (`npx @web-remarq/mcp`, which pushes every `pending` mark into the open Claude Code session). With Vite, `remarq({ widget: true })` from `@web-remarq/unplugin` turns this on without any init code.
 
@@ -130,6 +129,26 @@ Get all annotations, or filter by route.
 ### `WebRemarq.clearAll()`
 
 Remove all annotations.
+
+## Voice feedback
+
+In a browser with Web Speech recognition, select **Record voice feedback** and
+allow microphone access. Speak while you click elements to mark them. Select
+**Stop recording and save voice feedback** to save a single annotation with the
+transcript, numbered references, elapsed times, and element details. Select
+**Export → Copy voice feedback** to copy the same message. Press Escape to cancel.
+
+With the zero-config local server, the agent receives the recording as one item.
+Draft mode still requires **Submit**. If the browser ends recognition early,
+Web Remarq retries while retaining your transcript and marks. When speech
+pauses, the toolbar shows the error and lets you resume, finish with the
+captured feedback, or cancel. The browser supplies provisional words, so marker
+placement in the transcript is approximate. Your browser may use a remote
+recognition service. Web Remarq stores the transcript and element details.
+
+Use `WebRemarq.init({ speech: false })` to hide voice controls or pass a
+`SpeechAdapter` to use another recognizer. The default is `WebSpeechAdapter`,
+which accepts an optional language tag, such as `new WebSpeechAdapter('pl-PL')`.
 
 ## Storage
 

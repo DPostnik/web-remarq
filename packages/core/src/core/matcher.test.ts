@@ -187,3 +187,20 @@ describe('matchElement — fuzzy match', () => {
     expect(matchElement(target)?.textContent).toBe('b');
   });
 });
+
+describe('review after a copy edit', () => {
+  const saved = fp({ tagName: 'h1', domPath: 'main > h1', siblingIndex: 0, textContent: 'Title' });
+
+  it('reattaches a renamed heading only during review', () => {
+    document.body.innerHTML = '<main><h1>New header</h1></main>';
+    expect(matchElement(saved)).toBeNull();
+    expect(matchElement(saved, {}, true)).toBe(document.querySelector('h1'));
+  });
+
+  it('requires a unique path and the original sibling position', () => {
+    document.body.innerHTML = '<main><h1>First</h1></main><main><h1>Second</h1></main>';
+    expect(matchElement(saved, {}, true)).toBeNull();
+    document.body.innerHTML = '<main><p>Intro</p><h1>New header</h1></main>';
+    expect(matchElement(saved, {}, true)).toBeNull();
+  });
+});

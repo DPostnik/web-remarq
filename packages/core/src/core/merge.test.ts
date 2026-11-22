@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeAnnotation } from './merge'
+import { reviewClaim } from './voice-message'
 import type { Annotation, AnnotationEvent } from './types'
 
 const created: AnnotationEvent = { type: 'created', actor: 'designer', timestamp: 1 }
@@ -21,6 +22,25 @@ const acknowledged: AnnotationEvent = { type: 'acknowledged', actor: 'agent', ti
 const verified: AnnotationEvent = { type: 'verified', actor: 'developer', timestamp: 3 }
 
 describe('mergeAnnotation', () => {
+  it('does not replay a completed voice review over a newer fix claim', () => {
+    const fix: AnnotationEvent = { type: 'fix_claimed', actor: 'agent', timestamp: 2 }
+    const base = ann({ status: 'fixed_unverified', lifecycle: [created, fix] })
+    const local = {
+      ...base,
+      status: 'verified' as const,
+      lifecycle: [...base.lifecycle, verified],
+      fingerprint: { ...base.fingerprint, voiceReview: { claim: reviewClaim(base), checked: [0, 1] } },
+    }
+    const server = {
+      ...base,
+      rev: 3,
+      lifecycle: [...base.lifecycle, { type: 'rejected', actor: 'designer', timestamp: 4 } as const, { ...fix, timestamp: 5 }],
+    }
+    const result = mergeAnnotation(base, local, server)
+    expect(result.annotation).toEqual(server)
+    expect(result.dropped).toEqual(['fingerprint', 'lifecycle:verified'])
+  })
+
   it('keeps a local comment edit when the server only moved the status', () => {
     const base = ann()
     const local = ann({ comment: 'edited offline' })

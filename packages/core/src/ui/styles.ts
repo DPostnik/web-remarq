@@ -245,6 +245,11 @@ const CSS = `
 .remarq-review-target, .remarq-review-note { color: var(--remarq-text-secondary); }
 .remarq-review a { display: inline-block; color: var(--remarq-accent); }
 .remarq-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+:where(button:not([data-remarq-theme] *)) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .remarq-selection-comment {
   position: fixed;
   z-index: 2147483647;

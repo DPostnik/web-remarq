@@ -128,6 +128,13 @@ Everyone with the project key sees the same annotations (row-level security keye
 
 `WebRemarq.init({ storage })` accepts any `StorageAdapter` implementation. Default is localStorage. See the [core package README](./packages/core/README.md#storage) for the interface and custom adapter examples. A Supabase-backed adapter for team collaboration ships separately as [`@web-remarq/cloud`](./packages/cloud).
 
+## Release 0.12.0 · November 23, 2026
+
+- Select text to include the quote and its context in a comment. Underline adjacent buttons to report them together.
+- Review fixes beside the marked element. Switch targets with the header arrows or by clicking a marked element, then verify the fix or return it for correction.
+
+[npm package](https://www.npmjs.com/package/web-remarq/v/0.12.0) · [Tagged source on GitHub](https://github.com/DPostnik/web-remarq/tree/v0.12.0)
+
 ## License
 
 MIT

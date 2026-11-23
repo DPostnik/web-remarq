@@ -302,6 +302,15 @@ not automatically dispatch a mark with an existing receipt or intent.
 If the CLI executable could not start, fix its path and restart the server
 to retry pending work.
 
+If Codex stops after editing a file, resume the original thread. Use
+`get_annotation` to check the mark. For an `in_progress` mark, compare the
+current acknowledgement in `.remarq/tasks/<id>.md` with the original
+successful call in the thread history. If they match for the current work cycle,
+inspect the source diff and finish any remaining changes before calling
+`claim_fix`. If the result of an earlier `claim_fix` call is unknown, retry
+with the same `operationId`. A mark at `fixed_unverified` is ready for human
+verification.
+
 ## Cloud mode prerequisites
 
 1. A Supabase project provisioned with `@web-remarq/cloud` (≥0.4.0). Run

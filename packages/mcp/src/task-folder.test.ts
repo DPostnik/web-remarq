@@ -57,6 +57,23 @@ describe('renderTaskFile', () => {
     expect(md.toLowerCase()).toContain('do not edit')
   })
 
+  it('projects recovery instructions and the current acknowledgement for in-progress work', () => {
+    const md = renderTaskFile(ann('a1', 'in_progress', { lifecycle: [
+      { type: 'acknowledged', actor: 'agent', timestamp: 1, opId: 'old-ack' },
+      { type: 'fix_claimed', actor: 'agent', timestamp: 2 },
+      { type: 'rejected', actor: 'developer', timestamp: 3 },
+      { type: 'acknowledged', actor: 'agent', timestamp: 4, opId: 'current-ack' },
+    ] }))
+    expect(md).toContain('Current acknowledgement operation ID: "current-ack"')
+    expect(md).toContain('Current acknowledgement timestamp: 4')
+    expect(md).toContain('original successful acknowledgement for this cycle')
+    expect(md).toContain('apply only the remaining changes')
+    expect(md).toContain('claim_fix')
+    expect(md).not.toContain('old-ack')
+    expect(md).not.toContain('BEFORE touching code')
+    expect(renderTaskFile(ann('legacy', 'in_progress'))).not.toContain('Current acknowledgement operation ID:')
+  })
+
   it('surfaces a non-clear quality verdict', () => {
     const md = renderTaskFile(ann('a1', 'pending', {
       qualityCheck: {

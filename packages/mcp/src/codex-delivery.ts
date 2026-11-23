@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { closeSync, fsyncSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Annotation, StorageAdapter } from 'web-remarq'
 import { isSafeAnnotationId } from 'web-remarq/core'
 import { renderMarks } from './channel-delivery.js'
@@ -23,6 +24,7 @@ interface CodexDeliveryOptions {
   storage: Pick<StorageAdapter, 'load'>
   projectId: string
   ledgerPath: string
+  tasksDir: string
   config: CodexConfig
   log?: (message: string) => void
 }
@@ -63,12 +65,13 @@ function markCycle(mark: Annotation): number {
   ).length ?? 0
 }
 
-function sendMark(config: CodexConfig, mark: Annotation, signal: AbortSignal) {
+function sendMark(config: CodexConfig, mark: Annotation, taskPath: string, signal: AbortSignal) {
   const message = [
     'The user submitted this browser mark for a code fix in this project.',
-    'Call the web-remarq MCP acknowledge tool for this mark before editing.',
+    'Call the web-remarq MCP acknowledge tool for this mark with a fresh operationId before editing.',
     'After fixing it, call claim_fix so a human can verify it. If you cannot act, call dismiss with a reason.',
     'Reuse the same operationId when retrying a lifecycle tool call. If acknowledge fails, check the current mark before acting.',
+    `If this session is interrupted after acknowledging, read the current task file at ${JSON.stringify(taskPath)}. Continue only when the current acknowledgement matches the original successful call in this session. Inspect the working tree and finish only the remaining changes before claiming the fix.`,
     renderMarks([mark]).replace(/\0/g, '\uFFFD'),
   ].join('\n\n')
   const args = ['queue', ...(config.remote ? ['--remote', config.remote] : []),
@@ -118,7 +121,7 @@ export class CodexDelivery {
 
   private async deliver(startup: boolean): Promise<void> {
     if (this.controller.signal.aborted) return
-    const { projectId, config, ledgerPath, storage } = this.opts
+    const { projectId, config, ledgerPath, storage, tasksDir } = this.opts
     const receipts = readReceipts(ledgerPath)
     const sent = new Map(receipts.filter((r) => r.projectId === projectId)
       .map((r) => [`${r.annotationId}:${r.cycle}`, r]))
@@ -144,7 +147,7 @@ export class CodexDelivery {
       }
       // A crash after spawning can leave the result unknown. Reserve before invoking the CLI.
       writeReceipts(ledgerPath, [...receipts, receipt])
-      const result = await sendMark(config, mark, this.controller.signal)
+      const result = await sendMark(config, mark, join(tasksDir, `${mark.id}.md`), this.controller.signal)
       if (!result.started) {
         writeReceipts(ledgerPath, receipts)
         this.log(`Could not start Codex for mark ${mark.id} (${result.exitCode ?? 'unknown error'}). Check REMARQ_CODEX_BIN and restart the MCP server.`)

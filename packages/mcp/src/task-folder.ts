@@ -65,9 +65,19 @@ export function renderTaskFile(annotation: Annotation): string {
   }
 
   lines.push('## Agent instructions', '')
-  lines.push(`1. BEFORE touching code, call the web-remarq MCP tool \`acknowledge\` with \`{ "id": ${yamlString(agent.id)}, "operationId": "<a fresh unique id you keep for retries>" }\`. Exactly one caller wins this transition. If it returns \`invalid_transition\`, someone else already moved this annotation: do NOT start work, re-read it with \`get_annotation\` and skip this file. If the call itself fails without an answer (timeout, transport error), retry with the SAME operationId - a retry is recognised and never counted twice.`)
-  lines.push('2. Apply the fix described in the comment.')
-  lines.push(`3. When the fix is committed to the working tree, call \`claim_fix\` with \`{ "id": ${yamlString(agent.id)}, "operationId": "<another fresh id>" }\`. A human verifies afterwards - never mark anything as done yourself. An \`invalid_transition\` here means the annotation changed under you (dismissed, reopened, edited): re-read it before deciding anything.`)
+  if (agent.status === 'in_progress') {
+    const latest = annotation.lifecycle[annotation.lifecycle.length - 1]
+    if (latest?.type === 'acknowledged' && latest.actor === 'agent' && latest.opId) {
+      lines.push(`Current acknowledgement operation ID: ${yamlString(latest.opId)}`)
+      lines.push(`Current acknowledgement timestamp: ${latest.timestamp}`, '')
+    }
+    lines.push('1. Use `get_annotation` to confirm the mark is still in progress and its latest lifecycle event matches the acknowledgement timestamp above. Continue only if your session history already contains the original successful acknowledgement for this cycle with the operation ID shown above. Skip the task if this evidence is missing. A replay does not establish ownership.')
+    lines.push('2. Inspect the working tree and apply only the remaining changes. If the requested change is already complete, proceed to the fix claim.')
+  } else {
+    lines.push(`1. BEFORE touching code, call the web-remarq MCP tool \`acknowledge\` with \`{ "id": ${yamlString(agent.id)}, "operationId": "<a fresh unique id you keep for retries>" }\`. Exactly one caller wins this transition. If it returns \`invalid_transition\`, someone else already moved this annotation: do NOT start work, re-read it with \`get_annotation\` and skip this file. If the call itself fails without an answer (timeout, transport error), retry with the SAME operationId - a retry is recognised and never counted twice.`)
+    lines.push('2. Apply the fix described in the comment.')
+  }
+  lines.push(`3. When the fix is complete in the working tree, call \`claim_fix\` with \`{ "id": ${yamlString(agent.id)}, "operationId": "<another fresh id>" }\`. Reuse the same operationId if the result is unknown. A human verifies afterwards - never mark anything as done yourself. On \`invalid_transition\`, re-read the annotation before deciding anything.`)
   lines.push('')
   lines.push('This file is a live projection maintained by the web-remarq MCP server: it updates when the annotation changes and disappears once the annotation is verified or dismissed. Do not edit or delete it.')
   lines.push('')

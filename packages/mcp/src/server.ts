@@ -80,6 +80,7 @@ async function main(): Promise<void> {
         storage: adapter,
         projectId: local.projectId,
         ledgerPath: join(storeDir, 'codex-delivery.json'),
+        tasksDir,
         config: config.codex,
       })
       adapter.onChange(() => codex?.onChange())

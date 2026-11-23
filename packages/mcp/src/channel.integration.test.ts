@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -131,7 +131,7 @@ describe('local delivery over stdio', () => {
     expect(existsSync(join(dir, '.remarq', 'delivery.json'))).toBe(false)
   }, 30000)
 
-  it('queues pending Codex marks while work is open and retains ambiguous receipts across threads', async () => {
+  it('recovers an interrupted Codex fix and retains delivery receipts across threads', async () => {
     const executable = join(dir, 'codex-stub')
     const calls = join(dir, 'calls.jsonl')
     const ledger = join(dir, '.remarq', 'codex-delivery.json')
@@ -159,10 +159,17 @@ if (message.includes('Mark unknown')) {
     let s = await startCodex(thread)
     expect(client.getServerCapabilities()?.experimental).toBeUndefined()
     expect((await put(s, { ...mark('draft', 'Keep in drafts'), status: 'draft' })).status).toBe(200)
-    expect((await put(s, mark('first', 'Change the price'))).status).toBe(200)
+    const source = join(dir, 'src', 'Pricing.tsx')
+    mkdirSync(dirname(source))
+    writeFileSync(source, 'export const price = 10\n')
+    const first = mark('first', 'Change the price')
+    first.fingerprint.sourceLocation = 'src/Pricing.tsx:1:14'
+    expect((await put(s, first)).status).toBe(200)
     await waitFor(() => readReceipts().some((r: { status: string }) => r.status === 'accepted'))
     const ack = await client.callTool({ name: 'acknowledge', arguments: { id: 'first', operationId: 'ack-first' } })
     expect(ack.isError).not.toBe(true)
+    const editedSource = 'export const price = 20\n'
+    writeFileSync(source, editedSource)
 
     expect((await put(s, mark('waiting', 'Rename the button'))).status).toBe(200)
     expect((await put(s, mark('unknown', 'Change the hero'))).status).toBe(200)
@@ -172,20 +179,38 @@ if (message.includes('Mark unknown')) {
       expect.objectContaining({ thread, annotationId: 'waiting', status: 'waiting_for_session', submissionId: 'receipt-id' }),
       expect.objectContaining({ thread, annotationId: 'unknown', status: 'unknown', stderr: 'connection closed\n' }),
     ])
-    const claim = await client.callTool({ name: 'claim_fix', arguments: { id: 'first', operationId: 'fix-first' } })
-    expect(claim.isError).not.toBe(true)
-    expect(await (await fetch(`${s.base}/store`, { headers: { authorization: `Bearer ${s.token()}` } })).json())
-      .toMatchObject({ store: { annotations: expect.arrayContaining([
-        expect.objectContaining({ id: 'first', status: 'fixed_unverified' }),
-        expect.objectContaining({ id: 'waiting', status: 'pending' }),
-      ]) } })
-
     expect((await put(s, mark('accepted', 'Await the next turn'))).status).toBe(200)
     await waitFor(() => readReceipts().some((r: { annotationId: string; status: string }) =>
       r.annotationId === 'accepted' && r.status === 'accepted'))
 
     await client.close()
     s = await startCodex(thread)
+    // Resume against the same project and thread after the edit, before claim_fix.
+    const getFirst = await client.callTool({ name: 'get_annotation', arguments: { id: 'first' } })
+    expect(getFirst.isError).not.toBe(true)
+    expect(getFirst.content).toEqual([
+      expect.objectContaining({ type: 'text', text: expect.stringContaining('"status":"in_progress"') }),
+    ])
+    const task = join(dir, '.remarq', 'tasks', 'first.md')
+    await waitFor(() => existsSync(task) && readFileSync(task, 'utf8').includes('Current acknowledgement operation ID: "ack-first"'))
+    expect(readFileSync(source, 'utf8')).toBe(editedSource)
+    const claimFix = () => client.callTool({ name: 'claim_fix', arguments: { id: 'first', operationId: 'fix-first' } })
+    expect((await claimFix()).isError).not.toBe(true)
+    expect((await claimFix()).isError).not.toBe(true)
+    const { store } = await (await fetch(`${s.base}/store`, {
+      headers: { authorization: `Bearer ${s.token()}` },
+    })).json()
+    expect(store.annotations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'first', status: 'fixed_unverified', lifecycle: [
+          expect.objectContaining({ type: 'created', actor: 'designer' }),
+          expect.objectContaining({ type: 'acknowledged', actor: 'agent', opId: 'ack-first' }),
+          expect.objectContaining({ type: 'fix_claimed', actor: 'agent', opId: 'fix-first' }),
+        ],
+      }),
+      expect.objectContaining({ id: 'waiting', status: 'pending' }),
+    ]))
+    expect(readFileSync(source, 'utf8')).toBe(editedSource)
     expect((await put(s, mark('same', 'New mark on the original thread'))).status).toBe(200)
     await waitFor(() => readReceipts().some((r: { annotationId: string; status: string }) =>
       r.annotationId === 'same' && r.status === 'accepted'))
@@ -197,8 +222,9 @@ if (message.includes('Mark unknown')) {
     const queued = readFileSync(calls, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
     expect(queued).toHaveLength(6)
     expect(queued[0].slice(0, -1)).toEqual(['queue', '--remote', remote, '--thread', thread, '--resume', '--message'])
-    expect(queued[0].at(-1)).toContain('source: src/Pricing.tsx:42:7')
+    expect(queued[0].at(-1)).toContain('source: src/Pricing.tsx:1:14')
     expect(queued[0].at(-1)).toMatch(/acknowledge[\s\S]+claim_fix/)
+    expect(queued[0].at(-1)).toContain(JSON.stringify(task))
     expect(queued[4].at(-1)).toContain('Mark same')
     expect(queued[5]).toContain(nextThread)
     expect(received).toHaveLength(0)

@@ -5,6 +5,7 @@ interface MarkerEntry {
   target: HTMLElement
   markerEl: HTMLElement
   outlineEl: HTMLElement
+  simpleReview: boolean
   /** Position among markers sharing the same target — fans them out so none is buried. */
   stackIndex: number
 }
@@ -30,12 +31,15 @@ const OUTLINE_WIDTH = 2
 const OUTLINE_GAP = 2
 const SELECTED_OUTLINE_WIDTH = 4
 const SELECTED_OUTLINE_GAP = 3
+const REVIEW_OUTLINE_WIDTH = 1
+const REVIEW_OUTLINE_GAP = 1
 
 export class MarkerManager {
   private markers = new Map<string, MarkerEntry>()
   private rafId: number | null = null
   private counter = 0
   private selectedId: string | null = null
+  private simpleReviewOpen = false
 
   constructor(
     private container: HTMLElement,
@@ -45,7 +49,7 @@ export class MarkerManager {
     this.startPositionLoop()
   }
 
-  addMarker(annotation: Annotation, target: HTMLElement, label?: string): void {
+  addMarker(annotation: Annotation, target: HTMLElement, label?: string, simpleReview = false): void {
     this.counter++
     const markerEl = document.createElement('div')
     markerEl.className = `remarq-marker ${statusClass(annotation.status)}`
@@ -76,8 +80,8 @@ export class MarkerManager {
 
     this.container.appendChild(outlineEl)
     this.container.appendChild(markerEl)
-    this.markers.set(annotation.id, { annotation, target, markerEl, outlineEl, stackIndex })
-    this.updatePosition(annotation.id)
+    this.markers.set(annotation.id, { annotation, target, markerEl, outlineEl, simpleReview, stackIndex })
+    this.updateSelection(annotation.id)
   }
 
   removeMarker(id: string): void {
@@ -99,18 +103,28 @@ export class MarkerManager {
     }
   }
 
-  /**
-   * Thickens the outline box of the selected annotation's element. Every
-   * annotated element already carries a permanent status outline box, so
-   * selection reads as a heavier version of it rather than a separate
-   * highlight treatment.
-   */
-  setSelected(id: string | null): void {
-    if (this.selectedId === id) return
+  setSelected(id: string | null, simpleReviewOpen = false): void {
+    const modeChanged = this.simpleReviewOpen !== simpleReviewOpen
+    if (this.selectedId === id && !modeChanged) return
     const previous = this.selectedId
     this.selectedId = id
-    if (previous !== null) this.updatePosition(previous)
-    if (id !== null) this.updatePosition(id)
+    this.simpleReviewOpen = simpleReviewOpen
+    if (modeChanged) {
+      for (const markerId of this.markers.keys()) this.updateSelection(markerId)
+      return
+    }
+    if (previous !== null) this.updateSelection(previous)
+    if (id !== null) this.updateSelection(id)
+  }
+
+  private updateSelection(id: string): void {
+    const entry = this.markers.get(id)
+    if (!entry) return
+    const inReview = this.simpleReviewOpen && entry.simpleReview
+    const selected = id === this.selectedId
+    entry.markerEl.toggleAttribute('data-remarq-review-active', inReview && selected)
+    entry.outlineEl.toggleAttribute('data-remarq-review-inactive', inReview && !selected)
+    this.updatePosition(id)
   }
 
   /**
@@ -134,6 +148,7 @@ export class MarkerManager {
     }
     this.clear()
     this.selectedId = null
+    this.simpleReviewOpen = false
   }
 
   /** Viewport rect of the marker itself, or null if it has no marker. */
@@ -152,6 +167,25 @@ export class MarkerManager {
       if (entry.target === target) return true
     }
     return false
+  }
+
+  getReviewHit(event: MouseEvent): string | null {
+    if (!this.simpleReviewOpen || event.detail === 0) return null
+    const path = event.composedPath()
+    if (path.includes(this.container)) return null
+
+    let id: string | null = null
+    let depth = path.length
+    for (const [markerId, entry] of this.markers) {
+      if (!entry.simpleReview) continue
+      const index = path.indexOf(entry.target)
+      if (index < 0 || index > depth || (index === depth && markerId !== this.selectedId)) continue
+      const { left, right, top, bottom } = entry.target.getBoundingClientRect()
+      if (event.clientX < left || event.clientX >= right || event.clientY < top || event.clientY >= bottom) continue
+      depth = index
+      id = markerId
+    }
+    return id
   }
 
   private updatePosition(id: string): void {
@@ -185,9 +219,11 @@ export class MarkerManager {
       // Mimic `outline` + `outline-offset` geometry: the box's inner border
       // edge sits `gap` outside the element, so the whole box is the element
       // rect expanded by gap + border width (border-box sizing).
+      const inReview = this.simpleReviewOpen && entry.simpleReview
       const selected = id === this.selectedId
-      const borderWidth = selected ? SELECTED_OUTLINE_WIDTH : OUTLINE_WIDTH
-      const pad = borderWidth + (selected ? SELECTED_OUTLINE_GAP : OUTLINE_GAP)
+      const borderWidth = selected ? SELECTED_OUTLINE_WIDTH : inReview ? REVIEW_OUTLINE_WIDTH : OUTLINE_WIDTH
+      const gap = selected ? SELECTED_OUTLINE_GAP : inReview ? REVIEW_OUTLINE_GAP : OUTLINE_GAP
+      const pad = borderWidth + gap
       entry.outlineEl.style.borderWidth = `${borderWidth}px`
       entry.outlineEl.style.top = `${rect.top - pad}px`
       entry.outlineEl.style.left = `${rect.left - pad}px`

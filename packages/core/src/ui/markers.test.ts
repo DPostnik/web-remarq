@@ -128,6 +128,28 @@ describe('MarkerManager positioning', () => {
     expect(markers.getMarkerRect('a1')).not.toBeNull()
     expect(markers.getMarkerRect('missing')).toBeNull()
   })
+
+  it('picks the innermost marked target in the hit path', () => {
+    const rect = { top: 200, left: 200, right: 300, bottom: 240 }
+    const parent = makeTarget(rect)
+    const child = makeTarget(rect)
+    const coveringElement = makeTarget(rect)
+    parent.appendChild(child)
+    markers.addMarker(makeAnnotation({ id: 'parent' }), parent, undefined, true)
+    markers.addMarker(makeAnnotation({ id: 'child' }), child, undefined, true)
+    markers.setSelected('parent', true)
+
+    function hit(element: HTMLElement): string | null {
+      let id: string | null = null
+      element.addEventListener('click', (event) => { id = markers.getReviewHit(event) }, { once: true })
+      element.dispatchEvent(new MouseEvent('click', { detail: 1, clientX: 210, clientY: 210 }))
+      return id
+    }
+
+    expect(hit(child)).toBe('child')
+    expect(hit(parent)).toBe('parent')
+    expect(hit(coveringElement)).toBeNull()
+  })
 })
 
 describe('MarkerManager status outline boxes', () => {

@@ -154,79 +154,176 @@ const CSS = `
 }
 
 .remarq-review {
+  --remarq-review-primary-bg: #1d4ed8;
+  --remarq-review-primary-hover: #1e40af;
+  --remarq-review-primary-text: #fff;
+  --remarq-review-link: #1d4ed8;
   position: fixed;
   z-index: 2147483647;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 8px;
-  width: min(clamp(300px, 25vw, 440px), calc(100vw - 32px));
-  max-height: min(360px, 60vh);
-  overflow: auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(368px, calc(100vw - 16px));
+  max-height: min(420px, calc(100vh - 16px));
+  max-height: min(420px, calc(100dvh - 16px));
   box-sizing: border-box;
-  padding: 12px;
-  font: clamp(14px, 1vw, 16px)/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: auto;
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--remarq-bg);
   color: var(--remarq-text);
   border: 1px solid var(--remarq-border);
-  border-radius: 8px;
-  box-shadow: var(--remarq-shadow);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.18), var(--remarq-shadow);
+  text-align: start;
+}
+[data-remarq-theme="dark"] .remarq-review {
+  --remarq-review-primary-bg: #93c5fd;
+  --remarq-review-primary-hover: #bfdbfe;
+  --remarq-review-primary-text: #172554;
+  --remarq-review-link: #93c5fd;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .remarq-review[data-remarq-review-moving] {
+    transition: top 185ms ease-out, left 185ms ease-out;
+  }
 }
 .remarq-review[hidden], .remarq-review [hidden] { display: none; }
-.remarq-review button {
+.remarq-review-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--remarq-border);
+}
+.remarq-review .remarq-review-title {
   margin: 0;
-  min-height: 32px;
-  box-sizing: border-box;
-  padding: 6px 10px;
-  background: var(--remarq-bg-secondary);
-  color: var(--remarq-text);
-  border: 1px solid var(--remarq-border);
-  border-radius: 6px;
   font: inherit;
+  font-weight: 700;
 }
-.remarq-review button { cursor: pointer; }
-.remarq-review button:disabled { opacity: .55; cursor: default; }
-.remarq-review-actions button:first-child {
-  border-color: var(--remarq-status-fixed-unverified);
+.remarq-review-position {
+  margin-inline-end: auto;
+  color: var(--remarq-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.remarq-review-navigation {
+  display: flex;
+  gap: 2px;
+}
+.remarq-review button {
+  box-sizing: border-box;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px 12px;
+  appearance: none;
+  border: 1px solid var(--remarq-border);
+  border-radius: 7px;
+  background: var(--remarq-bg);
+  color: var(--remarq-text);
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
 }
+.remarq-review button:disabled { opacity: .55; cursor: default; }
+.remarq-review button:enabled:hover { background: var(--remarq-bg-secondary); }
+.remarq-review button.remarq-review-primary {
+  background: var(--remarq-review-primary-bg);
+  border-color: var(--remarq-review-primary-bg);
+  color: var(--remarq-review-primary-text);
+}
+.remarq-review button.remarq-review-primary:enabled:hover {
+  background: var(--remarq-review-primary-hover);
+  border-color: var(--remarq-review-primary-hover);
+}
+.remarq-review .remarq-review-icon:not([hidden]) {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border-color: transparent;
+}
+.remarq-review button.remarq-review-close { color: var(--remarq-text-secondary); }
+.remarq-review-icon svg { display: block; width: 16px; height: 16px; margin: 0; }
+.remarq-review:focus { outline: none; }
+.remarq-review :focus-visible,
+.remarq-review:focus-visible > .remarq-review-header > .remarq-review-title {
+  outline: 2px solid var(--remarq-review-link);
+  outline-offset: 2px;
+}
+.remarq-review:focus-visible > .remarq-review-header > .remarq-review-title { border-radius: 2px; }
 .remarq-review-body {
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--remarq-text-secondary) var(--remarq-bg-secondary);
-  padding: 8px 12px 8px 0;
-  border-block: 1px solid var(--remarq-border);
+  padding: 12px 14px;
   overflow-wrap: anywhere;
 }
 .remarq-review-body p { margin: 0; }
-.remarq-review-body p + p { margin-top: 10px; }
+.remarq-review-body:focus-visible { outline-offset: -2px; }
+.remarq-review-body > :not([hidden], .remarq-review-target--visually-hidden) ~ :not([hidden], .remarq-review-target--visually-hidden) { margin-top: 8px; }
 .remarq-review-comment { white-space: pre-wrap; }
 .remarq-review-fixes {
   list-style: none;
   display: grid;
-  gap: 6px;
-  margin: 10px 0 0;
+  gap: 4px;
+  margin: 0;
   padding: 0;
 }
 .remarq-review-fixes li { margin: 0; padding: 0; }
 .remarq-review button.remarq-review-mark {
   display: block;
   width: 100%;
-  min-height: 36px;
+  padding-inline: 8px;
   text-align: start;
+  font-weight: 400;
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.remarq-review-mark:hover, .remarq-review-mark:focus-visible { border-color: var(--remarq-accent); }
 .remarq-review button.remarq-review-mark[aria-pressed="true"] {
   background: var(--remarq-overlay);
-  border-color: var(--remarq-accent);
+  border-color: var(--remarq-review-link);
 }
-.remarq-review-target, .remarq-review-note { color: var(--remarq-text-secondary); }
-.remarq-review a { display: inline-block; color: var(--remarq-accent); }
-.remarq-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.remarq-review-target, .remarq-review-note {
+  color: var(--remarq-text-secondary);
+  font-size: 13px;
+}
+.remarq-review-target.remarq-review-target--visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.remarq-review a { display: inline-block; color: var(--remarq-review-link); text-decoration: underline; }
+.remarq-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.remarq-review-footer {
+  padding: 9px 14px;
+  border-top: 1px solid var(--remarq-border);
+}
+.remarq-review-correction label { display: block; font-weight: 600; }
+.remarq-review-correction textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  margin: 5px 0 8px;
+  padding: 8px;
+  border: 1px solid var(--remarq-text-secondary);
+  border-radius: 7px;
+  background: var(--remarq-bg);
+  color: var(--remarq-text);
+  font: inherit;
+  font-weight: 400;
+  resize: vertical;
+}
+@media (pointer: coarse) {
+  .remarq-review button { min-height: 44px; }
+  .remarq-review .remarq-review-icon:not([hidden]) { width: 44px; height: 44px; }
+  .remarq-review-correction textarea { font-size: 16px; }
+}
 :where(button:not([data-remarq-theme] *)) {
   -webkit-user-select: text;
   user-select: text;
@@ -312,6 +409,7 @@ const CSS = `
   border-radius: 2px;
   z-index: 2147483644;
 }
+.remarq-status-outline[data-remarq-review-inactive] { opacity: .45; }
 
 .remarq-marker {
   position: fixed;
@@ -335,6 +433,9 @@ const CSS = `
 .remarq-marker--pending { background: var(--remarq-status-pending); }
 .remarq-marker--in-progress { background: var(--remarq-status-in-progress); }
 .remarq-marker--fixed-unverified { background: var(--remarq-status-fixed-unverified); }
+.remarq-marker[data-remarq-review-active] {
+  box-shadow: 0 0 0 2px var(--remarq-bg), 0 0 0 3px var(--remarq-status-fixed-unverified);
+}
 .remarq-marker--verified { background: var(--remarq-status-verified); opacity: 0.7; }
 .remarq-marker--dismissed { background: var(--remarq-status-dismissed); opacity: 0.5; }
 .remarq-marker--draft {

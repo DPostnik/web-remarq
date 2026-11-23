@@ -332,7 +332,7 @@ function refreshReview(): void {
     if (el) attached.set(id, el)
     if (el && (options.simple || total > 1)) {
       reviewMarkers.add(id)
-      markers.addMarker({ ...annotation, id }, el, total > 1 ? String(index + 1) : undefined)
+      markers.addMarker({ ...annotation, id }, el, total > 1 ? String(index + 1) : undefined, options.simple)
     }
     const fix = [...annotation.lifecycle].reverse().find((event) => event.type === 'fix_claimed')
     let label = fix?.reason || annotation.comment
@@ -353,6 +353,8 @@ function refreshReview(): void {
       label,
       comment: transcript ?? annotation.comment,
       route: target.route,
+      groupId: grouped ? annotation.id : undefined,
+      hideMarkerLabelWhenVisible: options.simple && !grouped && !!el,
       markerLabel: grouped
         ? !el && target.route === route ? 'Target unavailable' : ''
         : el ? `Marked element · ${describeTarget(el) || el.tagName.toLowerCase()}`
@@ -370,7 +372,7 @@ function refreshReview(): void {
     return
   }
   activeReview = active.id
-  markers.setSelected(activeReview)
+  markers.setSelected(activeReview, options.simple)
   const description = descriptions.find(({ id }) => id === activeReview)!
   reviewPanel.update(descriptions, description, active.target.route === route, attached.get(active.id), savingReview.has(active.annotation.id), LIMITS.reason - correctionTarget(active).length)
 }
@@ -686,7 +688,14 @@ function finishRecording(): void {
   showToast(themeManager.container, 'Voice feedback added.')
 }
 
-function handleInspectClick(e: MouseEvent): void {
+function handlePageClick(e: MouseEvent): void {
+  const reviewHit = markers.getReviewHit(e)
+  if (reviewHit !== null) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (reviewHit !== activeReview) handleMarkerClick(reviewHit)
+    return
+  }
   if (!inspecting) return
 
   const target = e.target
@@ -1298,7 +1307,7 @@ export const WebRemarq = {
         refreshMarkers()
       })
 
-      document.addEventListener('click', handleInspectClick, true)
+      document.addEventListener('click', handlePageClick, true)
       document.addEventListener('mousemove', handleInspectHover)
       document.addEventListener('keydown', handleInspectKeydown)
 
@@ -1331,7 +1340,7 @@ export const WebRemarq = {
   destroy(): void {
     if (!initialized) return
     try {
-      document.removeEventListener('click', handleInspectClick, true)
+      document.removeEventListener('click', handlePageClick, true)
       document.removeEventListener('mousemove', handleInspectHover)
       document.removeEventListener('keydown', handleInspectKeydown)
       mutationObserver?.disconnect()

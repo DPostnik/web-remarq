@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebRemarq } from './web-remarq'
 import { generateAgentExport } from './core/agent-export'
 import { checkedVoiceTargets } from './core/voice-message'
@@ -46,7 +46,8 @@ const markerIds = () => Array.from(document.querySelectorAll('.remarq-marker')).
 const statusText = () => (document.querySelector('.remarq-simple-status') as HTMLElement | null)
 const toastText = () => document.querySelector('.remarq-toast')?.textContent ?? null
 const reviewButton = () => document.querySelector<HTMLButtonElement>('[data-remarq-action="review"]')!
-const verifyButton = () => document.querySelector<HTMLButtonElement>('.remarq-review-actions button')!
+const reviewAction = (label: string) => document.querySelector<HTMLButtonElement>(`.remarq-review button[aria-label="${label}"]`)!
+const verifyButton = () => document.querySelector<HTMLButtonElement>('.remarq-review-footer .remarq-review-primary')!
 
 function addButton(id: string): HTMLElement {
   const el = document.createElement('button')
@@ -161,6 +162,125 @@ describe('simple mode', () => {
     expect(document.querySelector('.remarq-popup-actions-row--transitions')?.children.length).toBe(0)
   })
 
+  it('moves the target outline and numbered marker highlight between review selections', async () => {
+    const adapter = new ControlledAdapter([
+      makeAnnotation('a', 't1', 'fixed_unverified'),
+      makeAnnotation('b', 't2', 'fixed_unverified'),
+    ])
+    WebRemarq.init({ simple: true, storage: adapter })
+    await tick()
+
+    const activeMarkers = () => [...document.querySelectorAll('.remarq-marker[data-remarq-review-active]')]
+      .map((marker) => [marker.getAttribute('data-annotation-id'), marker.textContent])
+    const outline = (id: string) => document.querySelector<HTMLElement>(
+      `.remarq-status-outline[data-annotation-id="${id}"]`,
+    )!
+    const expectOutline = (id: string, width: string, inactive: boolean) => {
+      expect(outline(id).style.borderWidth).toBe(width)
+      expect(outline(id).hasAttribute('data-remarq-review-inactive')).toBe(inactive)
+    }
+    expect(activeMarkers()).toEqual([])
+    expectOutline('a', '2px', false)
+    expectOutline('b', '2px', false)
+    reviewButton().click()
+    expect(activeMarkers()).toEqual([['a', '1']])
+    expectOutline('a', '4px', false)
+    expectOutline('b', '1px', true)
+
+    reviewAction('Next fix').click()
+    expect(activeMarkers()).toEqual([['b', '2']])
+    expectOutline('a', '1px', true)
+    expectOutline('b', '4px', false)
+
+    document.querySelector<HTMLElement>('.remarq-marker[data-annotation-id="a"]')!.click()
+    expect(activeMarkers()).toEqual([['a', '1']])
+    expectOutline('a', '4px', false)
+    expectOutline('b', '1px', true)
+
+    reviewAction('Close review').click()
+    expect(activeMarkers()).toEqual([])
+    expectOutline('a', '2px', false)
+    expectOutline('b', '2px', false)
+  })
+
+  it('selects a marked control from its visible content and preserves other host clicks', async () => {
+    const target = document.getElementById('t2')!
+    const label = document.createElement('span')
+    label.textContent = target.textContent
+    target.replaceChildren(label)
+    target.getBoundingClientRect = () => new DOMRect(10, 10, 100, 40)
+    const unmarked = addButton('unmarked')
+    const hostClick = vi.fn()
+    target.addEventListener('click', hostClick)
+    unmarked.addEventListener('click', hostClick)
+    const click = (element: HTMLElement, clientX = 20) => element.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, clientX, clientY: 20 }),
+    )
+    const selected = () => document.querySelector('[data-remarq-review-active]')?.getAttribute('data-annotation-id')
+    const adapter = new ControlledAdapter([
+      makeAnnotation('a', 't1', 'fixed_unverified'),
+      makeAnnotation('b', 't2', 'fixed_unverified'),
+      makeAnnotation('c', 't2', 'fixed_unverified'),
+    ])
+    WebRemarq.init({ simple: true, storage: adapter })
+    await tick()
+
+    expect(click(label)).toBe(true)
+    expect(hostClick).toHaveBeenCalledTimes(1)
+    reviewButton().click()
+    expect(selected()).toBe('a')
+    expect(click(unmarked)).toBe(true)
+    expect(click(label, 120)).toBe(true)
+    expect(selected()).toBe('a')
+    expect(hostClick).toHaveBeenCalledTimes(3)
+
+    expect(click(label)).toBe(false)
+    expect(selected()).toBe('b')
+    document.querySelector<HTMLElement>('.remarq-marker[data-annotation-id="c"]')!.click()
+    expect(click(label)).toBe(false)
+    expect(selected()).toBe('c')
+    expect(hostClick).toHaveBeenCalledTimes(3)
+
+    reviewButton().click()
+    expect(click(label)).toBe(true)
+    expect(hostClick).toHaveBeenCalledTimes(4)
+  })
+
+  it('shows the marked element details when the ordinary review target is out of view', async ({ onTestFinished }) => {
+    const width = vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1024)
+    const height = vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(768)
+    onTestFinished(() => {
+      width.mockRestore()
+      height.mockRestore()
+    })
+    const target = document.getElementById('t1')!
+    target.style.visibility = 'visible'
+    const bounds = vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 900, 100, 40))
+    const mark = makeAnnotation('a', 't1', 'fixed_unverified')
+    const other = { ...makeAnnotation('b', 't2', 'fixed_unverified'), route: '/other' }
+    WebRemarq.init({ simple: true, storage: new ControlledAdapter([mark, other]) })
+    await tick()
+    reviewButton().click()
+
+    const details = document.querySelector<HTMLElement>('.remarq-review-target')!
+    const visuallyHidden = () => details.classList.contains('remarq-review-target--visually-hidden')
+    expect(visuallyHidden()).toBe(false)
+    expect(details.textContent).toContain('Marked element')
+
+    bounds.mockReturnValue(new DOMRect(20, 100, 100, 40))
+    window.dispatchEvent(new Event('scroll'))
+    expect(visuallyHidden()).toBe(true)
+    expect(details.hidden).toBe(false)
+
+    target.style.visibility = 'hidden'
+    window.dispatchEvent(new Event('resize'))
+    expect(visuallyHidden()).toBe(false)
+
+    reviewAction('Next fix').click()
+    expect(visuallyHidden()).toBe(false)
+    expect(details.textContent).toBe('Marked element · 1024x768')
+  })
+
   it('persists partial voice review across widget reloads and verifies only after all targets are checked', async () => {
     const payload = 'Voice feedback\n\nFix this [1] and this [2].\n\n' +
       '[1] 1.0s · / · 1024x768\n  Element: <button> body > button\n  Search: t1\n' +
@@ -178,7 +298,7 @@ describe('simple mode', () => {
     expect(markerIds()).toEqual(['other', 'voice:1', 'voice:2'])
     document.querySelector<HTMLElement>('.remarq-marker[data-annotation-id="voice:1"]')!.click()
     const review = document.querySelector('[data-remarq-theme] > .remarq-review')!
-    const [, markOne, markTwo] = review.querySelectorAll<HTMLButtonElement>('.remarq-review-mark')
+    const [markOne, markTwo] = review.querySelectorAll<HTMLButtonElement>('.remarq-review-mark')
     expect(review.querySelector('.remarq-review-comment')?.textContent).toBe('Fix this [1] and this [2].')
     expect(review.textContent).not.toMatch(/Voice feedback|app\.ts|Search:|Agent fix details/)
     expect(review.querySelector('.remarq-review-comment button')).toBeNull()

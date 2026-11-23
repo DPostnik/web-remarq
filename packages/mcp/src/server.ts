@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   }
 
   const server = new McpServer(
-    { name: 'web-remarq', version: '0.7.0' },
+    { name: 'web-remarq', version: '0.7.1' },
     delivery
       ? { capabilities: { experimental: { 'claude/channel': {} } }, instructions: CHANNEL_INSTRUCTIONS }
       : undefined,
